@@ -1,0 +1,58 @@
+# ─── Model Architecture (Pillar 4) — source of truth for src/multitask/model.py ───
+# train.py loads this file via --model-config (default configs/model/default.yaml) and saves
+# the effective model config into each checkpoint so evaluation rebuilds the identical model.
+#
+# IMPORTANT: every key below is passed as a keyword argument to the corresponding constructor
+# (SemanticEncoder / GraphEncoder / CrossModalFusion / *Head). Keys that are NOT constructor
+# parameters are kept as comments only — passing them would raise TypeError.
+model:
+  # Semantic encoder (src/semantic/encoder.py)
+  semantic:
+    backbone: "Qwen/Qwen2.5-Coder-3B-Instruct"
+    output_dim: 256            # Projected fusion embedding dimension
+    freeze_layers: 28          # Freeze bottom N of 36 transformer layers
+    dropout: 0.1
+    pooling: "mean"            # masked mean pooling over sequence states
+    # max_length: 2048         # tokenizer-level limit — handled in dataset/tokenize, not a SemanticEncoder arg
+    # hidden_size: 2048        # informational only (Qwen2.5-Coder-3B hidden dim), not a constructor arg
+
+  # Graph encoder (src/graph/encoder.py)
+  graph:
+    node_feature_dim: 128      # Initial node-embedding dimension
+    hidden_dim: 256
+    output_dim: 256            # Must equal semantic.output_dim for fusion
+    num_layers: 4
+    num_heads: 8               # GAT attention heads
+    num_edge_types: 5
+    dropout: 0.2
+    # edge_types (documented only; the 5 types are AST_CHILD, NEXT_STATEMENT,
+    # CONTROL_FLOW, DATA_FLOW, CALL — see src/graph/encoder.py EDGE_TYPE_MAP)
+
+  # Cross-modal fusion (src/fusion/cross_attention.py)
+  fusion:
+    hidden_dim: 256
+    num_heads: 8
+    num_layers: 2
+    dropout: 0.1
+    combine: "gated"           # gated | concat | mean
+
+  # Multi-task heads (src/multitask/heads.py)
+  heads:
+    binary:
+      hidden_dim: 128
+      dropout: 0.3
+    cwe:
+      num_classes: 10          # 8 target CWEs + none + CWE-Other
+      hidden_dim: 128
+      dropout: 0.3
+    severity:
+      num_classes: 4           # Low / Moderate / High / Critical
+      hidden_dim: 128
+      dropout: 0.3
+    localization:
+      hidden_dim: 128
+      dropout: 0.2
+    source_sink:
+      hidden_dim: 128
+      num_classes: 3           # normal / source / sink
+      dropout: 0.2

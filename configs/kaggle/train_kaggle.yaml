@@ -1,0 +1,41 @@
+# configs/kaggle/train_kaggle.yaml
+# Tối ưu cho Kaggle 2x T4 16GB + Internet ON + DataParallel + fp16
+# Effective batch = per_device_batch * grad_accum * num_gpus
+#   bs=2 * grad_accum=4 * 2 GPUs = eff 16 (cân bằng speed vs memory)
+training:
+  seed: 42
+  device: "auto"           # train.py sẽ wrap DataParallel nếu thấy 2 GPUs
+  num_workers: 2           # 2 workers để overlap I/O trên Kaggle (đủ nhẹ)
+  pin_memory: true
+  use_amp: true            # fp16 mixed precision — train.py đã hỗ trợ autocast
+
+  optimizer: "adamw"
+  learning_rate: 2e-5      # lr hơi cao hơn single-GPU vì eff batch lớn
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  warmup_ratio: 0.1
+
+  scheduler: "cosine"
+  epochs: 8                # ~1.5-2.5h trên 2xT4 với 1.5B + DataParallel
+  batch_size: 2            # per-device; DataParallel tự chia
+  gradient_accumulation_steps: 4  # eff = 2*4*2 = 16
+
+  early_stopping:
+    enabled: true
+    patience: 2
+    metric: "val_f1_binary"
+    mode: "max"
+
+  checkpoint:
+    save_dir: "/kaggle/working/models/checkpoints"
+    save_top_k: 1
+    save_every_n_epochs: 0
+
+  loss_weights: {binary: 1.0, cwe: 0.5, severity: 0.2, localization: 0.4, source_sink: 0.15}
+  quality_tiers: {gold: 1.0, silver: 0.85}
+
+  logging:
+    backend: "tensorboard"
+    log_dir: "/kaggle/working/runs/"
+    log_every_n_steps: 20
+    wandb_project: "vulhunter-kaggle"

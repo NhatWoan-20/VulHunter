@@ -1,0 +1,20 @@
+# configs/kaggle/model_kaggle.yaml
+# Khuyến nghị cho Kaggle 2x T4 16GB (Internet ON) — Qwen2.5-Coder-1.5B-Instruct + DataParallel + fp16
+# 1.5B ~11GB/GPU fp16+ckpt bs2 — vừa 16GB, còn dư cho optimizer
+model:
+  semantic:
+    backbone: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+    output_dim: 256
+    freeze_layers: 28          # 1.5B có 28 layers — freeze base, train 0 top (grad_ckpt bù VRAM)
+    dropout: 0.1
+    pooling: "mean"
+    gradient_checkpointing: true
+    use_fp16: true
+  graph:    {node_feature_dim: 128, hidden_dim: 256, output_dim: 256, num_layers: 4, num_heads: 8, num_edge_types: 5, dropout: 0.2}
+  fusion:   {hidden_dim: 256, num_heads: 8, num_layers: 2, dropout: 0.1, combine: "gated"}
+  heads:
+    binary:       {hidden_dim: 128, dropout: 0.3}
+    cwe:          {num_classes: 10, hidden_dim: 128, dropout: 0.3}
+    severity:     {num_classes: 4,  hidden_dim: 128, dropout: 0.3}
+    localization: {hidden_dim: 128, dropout: 0.2}
+    source_sink:  {hidden_dim: 128, num_classes: 3, dropout: 0.2}

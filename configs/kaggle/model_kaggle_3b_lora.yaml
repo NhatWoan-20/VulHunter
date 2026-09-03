@@ -1,0 +1,27 @@
+# configs/kaggle/model_kaggle_3b_lora.yaml
+# Qwen2.5-Coder-3B-Instruct + LoRA on Kaggle 2x T4 16GB (Internet ON)
+# 3B full-finetune ~19GB/GPU -> OOM. LoRA r=32 ~12GB/GPU fp16+ckpt+bs1 len2048 -> FIT (giữ full 2048 context).
+# Best LoRA recipe: r=32 alpha=64 dropout=0.05 target=all attention+MLP, RsLoRA, lr 2e-4
+model:
+  semantic:
+    backbone: "Qwen/Qwen2.5-Coder-3B-Instruct"
+    output_dim: 256
+    freeze_layers: 36          # freeze toàn bộ backbone gốc khi dùng LoRA (peft sẽ inject adapter)
+    dropout: 0.1
+    pooling: "mean"
+    gradient_checkpointing: true
+    use_fp16: true
+    use_lora: true
+    lora_r: 32
+    lora_alpha: 64
+    lora_dropout: 0.05
+    use_rslora: true
+    lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  graph:    {node_feature_dim: 128, hidden_dim: 256, output_dim: 256, num_layers: 4, num_heads: 8, num_edge_types: 5, dropout: 0.2}
+  fusion:   {hidden_dim: 256, num_heads: 8, num_layers: 2, dropout: 0.1, combine: "gated"}
+  heads:
+    binary:       {hidden_dim: 128, dropout: 0.3}
+    cwe:          {num_classes: 10, hidden_dim: 128, dropout: 0.3}
+    severity:     {num_classes: 4,  hidden_dim: 128, dropout: 0.3}
+    localization: {hidden_dim: 128, dropout: 0.2}
+    source_sink:  {hidden_dim: 128, num_classes: 3, dropout: 0.2}
