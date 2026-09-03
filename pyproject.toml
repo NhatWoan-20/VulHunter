@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "VulHunter"
+version = "0.3.3"
+description = "Hybrid multi-modal vulnerability detection for Python source code — 6/6 tasks active (Binary/CWE/Severity/Line-Localization/Source-Sink/Explanation) via Qwen2.5-Coder + GAT + cross-attention"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "NhatWoan-20"},
+]
+keywords = [
+    "vulnerability-detection",
+    "source-code-analysis",
+    "graph-neural-networks",
+    "large-language-models",
+    "multi-task-learning",
+    "python-security",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.1.0",
+    "transformers>=4.36.0",
+    "tokenizers>=0.15.0",
+    "safetensors>=0.4.0",
+    "sentencepiece>=0.1.99",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "pyyaml>=6.0",
+    "peft>=0.11.0",        # 3B LoRA on Kaggle 2xT4 (FP16, r=32, RsLoRA)
+    "accelerate>=0.30.0",  # DataParallel + prepare
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "flake8>=6.1.0",
+    "mypy>=1.5.0",
+    "isort>=5.12.0",
+]
+tracking = [
+    "tensorboard>=2.14.0",
+    "wandb>=0.16.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/NhatWoan-20/VulHunter"
+Repository = "https://github.com/NhatWoan-20/VulHunter"
+Issues = "https://github.com/NhatWoan-20/VulHunter/issues"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

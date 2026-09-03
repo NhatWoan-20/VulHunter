@@ -1,0 +1,22 @@
+# ─── Core runtime (actually imported by src/ + scripts/) ───
+torch>=2.1.0
+transformers>=4.36.0
+tokenizers>=0.15.0
+safetensors>=0.4.0
+sentencepiece>=0.1.99      # required by the Qwen2.5-Coder tokenizer at runtime
+numpy>=1.24.0
+scikit-learn>=1.3.0      # src/utils/metrics.py
+pyyaml>=6.0               # scripts/training/train.py
+
+# ─── Kaggle 3B LoRA (peft required for LoRA, accelerate for multi-GPU) ───
+peft>=0.11.0
+accelerate>=0.30.0
+
+# ─── Optional / development ───
+pytest>=7.4.0
+pytest-cov>=4.1.0
+# Experiment tracking (config references these but code falls back gracefully):
+# tensorboard>=2.14.0
+# wandb>=0.16.0
+# Notebook users only:
+# jupyter
