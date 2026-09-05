@@ -56,6 +56,21 @@ class ModelOutput:
     severity_logits: torch.Tensor | None = None
     fused_embedding: torch.Tensor | None = None
 
+    def __iter__(self):
+        return iter((
+            self.binary_logits,
+            self.cwe_logits,
+            self.localization_logits,
+            self.source_sink_logits,
+            self.severity_logits,
+            self.fused_embedding,
+        ))
+
+    def __getitem__(self, key):
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
+
 
 class VulHunterModel(nn.Module):
     """Hybrid multi-modal vulnerability detection model.

@@ -71,6 +71,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--use-amp", action="store_true", default=None, help="Bật FP16 mixed precision.")
     p.add_argument("--no-amp", action="store_true", help="Tắt AMP dù config bật.")
     p.add_argument("--num-workers", type=int, default=None)
+    p.add_argument("--data-parallel", action="store_true", default=False, help="Bật DataParallel (Lưu ý: PyTorch không hỗ trợ DataParallel cùng gradient checkpointing do deadlock).")
     return p.parse_args()
 
 
@@ -94,9 +95,7 @@ def get_device(device_str: str) -> torch.device:
             for i in range(n):
                 prop = torch.cuda.get_device_properties(i)
                 logger.info("GPU %d: %s — %.1f GB  CC %d.%d", i, prop.name, prop.total_memory / 1e9, prop.major, prop.minor)
-            if n >= 2:
-                logger.info("Phát hiện %d GPUs — sẽ dùng DataParallel (2x T4). Per-GPU VRAM không giảm, throughput x ~1.8.", n)
-            return torch.device("cuda")
+            return torch.device("cuda:0")
         logger.info("Không có GPU — dùng CPU (chậm).")
         return torch.device("cpu")
     return torch.device(device_str)
@@ -341,8 +340,32 @@ def main() -> None:
         except Exception:
             pass
 
+    # model config merge: train.yaml:model overrides model.yaml
+    model_config: dict = {}
+    if args.model_config and args.model_config.exists():
+        model_config = load_config(args.model_config).get("model", {}) or {}
+    train_model_cfg = config.get("model", {}) or {}
+    for section, values in train_model_cfg.items():
+        model_config[section] = {**(model_config.get(section, {}) or {}), **(values or {})}
+    semantic_cfg = dict(model_config.get("semantic", {}))
+    graph_cfg = dict(model_config.get("graph", {}))
+    fusion_cfg = dict(model_config.get("fusion", {}))
+    head_cfg = dict(model_config.get("heads", {}))
+
     n_gpus = torch.cuda.device_count() if torch.cuda.is_available() and device.type == "cuda" else 1
-    loader_batch_size = batch_size * n_gpus if n_gpus >= 2 else batch_size
+    # DataParallel: Trong PyTorch, DataParallel KHÔNG THỂ kết hợp với gradient_checkpointing (gây deadlock vô hạn, 0% GPU 0% CPU).
+    # Khi gradient_checkpointing bật, huấn luyện trực tiếp trên GPU chính (cuda:0) là chuẩn xác và an toàn tuyệt đối.
+    is_grad_ckpt = bool(semantic_cfg.get("gradient_checkpointing", False))
+    is_parallel = False
+    if args.data_parallel and not is_grad_ckpt and torch.cuda.is_available() and n_gpus >= 2:
+        is_parallel = True
+    elif torch.cuda.is_available() and n_gpus >= 2:
+        if is_grad_ckpt:
+            logger.info("ℹ️ Phát hiện %d GPUs nhưng Gradient Checkpointing đang BẬT -> Huấn luyện an toàn trên %s (triệt tiêu deadlock autograd của DataParallel).", n_gpus, device)
+        elif not args.data_parallel:
+            logger.info("ℹ️ Phát hiện %d GPUs. Mặc định huấn luyện an toàn trên %s (thêm --data-parallel nếu muốn bật).", n_gpus, device)
+
+    loader_batch_size = batch_size * n_gpus if is_parallel else batch_size
     eff_batch = loader_batch_size * grad_accum
     logger.info("=" * 60)
     logger.info("VulHunter Training — Internet ON, multi-GPU ready")
@@ -367,18 +390,6 @@ def main() -> None:
                             num_workers=num_workers, pin_memory=torch.cuda.is_available(), persistent_workers=num_workers > 0)
     logger.info("Train: %d | Val: %d", len(train_dataset), len(val_dataset))
 
-    # model config merge: train.yaml:model overrides model.yaml
-    model_config: dict = {}
-    if args.model_config and args.model_config.exists():
-        model_config = load_config(args.model_config).get("model", {}) or {}
-    train_model_cfg = config.get("model", {}) or {}
-    for section, values in train_model_cfg.items():
-        model_config[section] = {**(model_config.get(section, {}) or {}), **(values or {})}
-    semantic_cfg = dict(model_config.get("semantic", {}))
-    graph_cfg = dict(model_config.get("graph", {}))
-    fusion_cfg = dict(model_config.get("fusion", {}))
-    head_cfg = dict(model_config.get("heads", {}))
-
     model = VulHunterModel(mode=args.mode, semantic_config=semantic_cfg, graph_config=graph_cfg, fusion_config=fusion_cfg, head_config=head_cfg)
     model.to(device)
 
@@ -388,12 +399,9 @@ def main() -> None:
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    # DataParallel tự bật khi >=2 GPUs (Kaggle 2x T4)
-    is_parallel = False
-    if torch.cuda.is_available() and device.type == "cuda" and torch.cuda.device_count() >= 2:
+    if is_parallel:
         model = nn.DataParallel(model)
-        is_parallel = True
-        logger.info("✅ DataParallel bật — %d GPUs. Mỗi GPU giữ 1 replica (VRAM không giảm, speed x ~1.8).", torch.cuda.device_count())
+        logger.info("✅ DataParallel bật — %d GPUs.", n_gpus)
 
     # optimizer: backbone lr nhỏ, head lr x10 (tốt hơn cho LLM fine-tune)
     param_groups = []

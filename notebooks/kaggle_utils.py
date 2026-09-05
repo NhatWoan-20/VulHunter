@@ -95,10 +95,10 @@ def print_gpu_info():
                 print(f"  GPU {i}: {p.name} — {p.total_memory/1e9:.1f} GB  CC {p.major}.{p.minor}")
             g = torch.cuda.device_count()
             if g >= 2:
-                print(f"  \u2705 Phát hiện {g} GPUs — train.py sẽ tự bật DataParallel (x{ g } throughput).")
-                print(f"     Batch sẽ tự chia đều: batch_size=1 -> 1 mẫu / GPU / step (eff 32 với accum 16).")
+                print(f"  ✅ Phát hiện {g} GPUs — train.py tối ưu chạy trên GPU chính kết hợp gradient checkpointing + AMP FP16 (triệt tiêu hoàn toàn deadlock của DataParallel).")
+                print(f"     Batch: batch_size=1, accum=32 => eff batch = 32 (~9.5GB VRAM, vừa vặn 16GB).")
             elif g == 1:
-                print("  \u26a0\ufe0f  Chỉ 1 GPU được cấp (dù request T4 x2 có thể fallback). Vẫn train được, chậm hơn ~1.8x.")
+                print("  ✅ 1 GPU sẵn sàng — batch_size=1, accum=32 => eff batch = 32 (~9.5GB VRAM).")
             try:
                 import socket
                 socket.create_connection(("8.8.8.8", 53), timeout=3).close()
@@ -202,10 +202,22 @@ def setup_kaggle_env():
     os.environ.setdefault("TRANSFORMERS_CACHE", str(get_model_cache_dir()))
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     os.environ.setdefault("NCCL_DEBUG", "WARN")
+    os.environ.setdefault("NCCL_P2P_DISABLE", "1")
+    os.environ.setdefault("NCCL_IB_DISABLE", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
     # Dọn dẹp các file lock hoặc incomplete bị kẹt từ các lần chạy trước bị crash
     cache_dir = Path(os.environ["HF_HOME"])
     if cache_dir.exists():
+        locks_dir = cache_dir / ".locks"
+        if locks_dir.exists():
+            import shutil
+            try:
+                shutil.rmtree(locks_dir)
+            except Exception:
+                pass
         for f in list(cache_dir.rglob("*.lock")) + list(cache_dir.rglob("*.incomplete")):
             try:
                 f.unlink()
