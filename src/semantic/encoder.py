@@ -98,8 +98,7 @@ class SemanticEncoder(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(output_dim, output_dim),
         )
-        if dtype is not None:
-            self.projection.to(dtype)
+        # Keep projection in float32 for PyTorch AMP GradScaler compatibility
 
     def _freeze_layers(self, n: int) -> None:
         if hasattr(self.backbone, "embed_tokens"):
@@ -162,6 +161,12 @@ class SemanticEncoder(nn.Module):
             pass
         peft_config = LoraConfig(**lora_kwargs)
         self.backbone = get_peft_model(self.backbone, peft_config)
+
+        # Chuyển các tham số adapter LoRA sang float32 để GradScaler unscale_ không bị lỗi FP16 gradients
+        for param in self.backbone.parameters():
+            if param.requires_grad:
+                param.data = param.data.float()
+
         try:
             self.backbone.print_trainable_parameters()
         except Exception:

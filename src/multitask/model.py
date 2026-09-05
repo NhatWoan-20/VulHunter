@@ -143,6 +143,12 @@ class VulHunterModel(nn.Module):
         self.source_sink_head = SourceSinkHead(input_dim=output_dim, num_classes=ss_num, **ss_cfg)
         self.severity_head = SeverityHead(input_dim=output_dim, num_classes=severity_num, **severity_cfg)
 
+        # Ensure all trainable parameters (LoRA adapters, projection, heads) are in float32
+        # for PyTorch AMP GradScaler compatibility while frozen backbone stays in FP16
+        for p in self.parameters():
+            if p.requires_grad and p.dtype != torch.float32:
+                p.data = p.data.float()
+
         # Log parameter counts
         total = sum(p.numel() for p in self.parameters())
         trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)

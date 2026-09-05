@@ -87,6 +87,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-amp", action="store_true", help="Disable AMP even if config enables it.")
     p.add_argument("--num-workers", type=int, default=None)
     p.add_argument("--data-parallel", action="store_true", default=False, help="Enable legacy DataParallel.")
+    p.add_argument("--single-gpu", action="store_true", default=False, help="Force single-GPU training even if multi-GPU detected.")
     return p.parse_args()
 
 
@@ -204,7 +205,19 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
 
         if (step + 1) % grad_accum == 0 or (step + 1) == len(loader):
             if use_amp and scaler is not None:
-                scaler.unscale_(optimizer)
+                try:
+                    scaler.unscale_(optimizer)
+                except ValueError as err:
+                    if "unscale FP16 gradients" in str(err):
+                        for p in model.parameters():
+                            if p.requires_grad and p.dtype != torch.float32:
+                                p.data = p.data.float()
+                        try:
+                            scaler.unscale_(optimizer)
+                        except Exception:
+                            pass
+                    else:
+                        raise err
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 scaler.step(optimizer)
                 scaler.update()
@@ -334,6 +347,26 @@ def main() -> None:
     if tcfg.get("gradient_accumulation_steps") is not None and args.grad_accum == 4:
         grad_accum = int(tcfg["gradient_accumulation_steps"])
 
+    # 0. Tự động chuyển sang PyTorch DDP nếu phát hiện >= 2 GPUs và chưa chạy qua DDP
+    n_cuda = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    if (
+        n_cuda >= 2
+        and "LOCAL_RANK" not in os.environ
+        and not getattr(args, "single_gpu", False)
+        and not getattr(args, "data_parallel", False)
+        and args.device in ("auto", "cuda")
+    ):
+        logger.info("🚀 Phát hiện %d GPUs! Tự động khởi chạy PyTorch DDP qua torch.distributed.run...", n_cuda)
+        import subprocess
+        launcher_cmd = [
+            sys.executable, "-m", "torch.distributed.run",
+            f"--nproc_per_node={n_cuda}",
+            "--standalone",
+            os.path.abspath(__file__),
+        ] + sys.argv[1:]
+        ret = subprocess.call(launcher_cmd)
+        sys.exit(ret)
+
     # 0. Khởi tạo PyTorch DDP (DistributedDataParallel) nếu chạy qua torchrun / torch.distributed.run
     is_ddp = False
     rank = 0
@@ -435,6 +468,16 @@ def main() -> None:
 
     model = VulHunterModel(mode=args.mode, semantic_config=semantic_cfg, graph_config=graph_cfg, fusion_config=fusion_cfg, head_config=head_cfg)
     model.to(device)
+
+    # Đảm bảo toàn bộ tham số trainable đều ở float32 cho PyTorch AMP GradScaler
+    # (Base model frozen vẫn ở float16 để tiết kiệm VRAM ~6GB)
+    trainable_fp16_count = 0
+    for p in model.parameters():
+        if p.requires_grad and p.dtype != torch.float32:
+            p.data = p.data.float()
+            trainable_fp16_count += 1
+    if trainable_fp16_count > 0:
+        logger.info("Đã chuyển %d tham số trainable sang float32 cho PyTorch AMP GradScaler.", trainable_fp16_count)
 
     # Thu hồi ngay CPU buffer và CUDA context cache sau khi nạp weights
     import gc
