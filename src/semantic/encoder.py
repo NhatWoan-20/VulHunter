@@ -49,7 +49,7 @@ class SemanticEncoder(nn.Module):
         logger.info("Loading semantic backbone: %s (lora=%s)", backbone, use_lora)
         # FP16 for 3B saves ~3GB vs bf16/fp32; LoRA FP16 is fastest on T4 (no 4bit dequant)
         dtype = torch.float16 if use_fp16 else None
-        kwargs = {"trust_remote_code": True}
+        kwargs = {"trust_remote_code": True, "low_cpu_mem_usage": False}
         if dtype is not None:
             kwargs["torch_dtype"] = dtype
         self.backbone = AutoModel.from_pretrained(backbone, **kwargs)
