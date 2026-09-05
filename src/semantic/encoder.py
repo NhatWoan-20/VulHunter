@@ -61,20 +61,15 @@ class SemanticEncoder(nn.Module):
             kwargs["low_cpu_mem_usage"] = False
 
         self.backbone = AutoModel.from_pretrained(backbone, **kwargs)
-        # Remove accelerate dispatch hooks so DataParallel can replicate backbone across multiple GPUs
-        if torch.cuda.is_available():
-            try:
-                from accelerate.hooks import remove_hook_from_submodules
-                remove_hook_from_submodules(self.backbone)
-            except Exception as e:
-                logger.debug("remove_hook_from_submodules skipped: %s", e)
-
         self.hidden_size = self.backbone.config.hidden_size
         logger.info("Backbone hidden size: %d", self.hidden_size)
 
         if gradient_checkpointing and hasattr(self.backbone, "gradient_checkpointing_enable"):
             try:
-                self.backbone.gradient_checkpointing_enable()
+                try:
+                    self.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+                except TypeError:
+                    self.backbone.gradient_checkpointing_enable()
                 # required when grad ckpt is on
                 if hasattr(self.backbone, "config"):
                     self.backbone.config.use_cache = False
@@ -87,6 +82,14 @@ class SemanticEncoder(nn.Module):
         else:
             self._freeze_layers(freeze_layers)
 
+        # Remove accelerate dispatch hooks so DataParallel can replicate backbone across multiple GPUs
+        if torch.cuda.is_available():
+            try:
+                from accelerate.hooks import remove_hook_from_submodules
+                remove_hook_from_submodules(self.backbone)
+            except Exception as e:
+                logger.debug("remove_hook_from_submodules skipped: %s", e)
+
         self.projection = nn.Sequential(
             nn.LayerNorm(self.hidden_size),
             nn.Linear(self.hidden_size, output_dim),
@@ -94,6 +97,8 @@ class SemanticEncoder(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(output_dim, output_dim),
         )
+        if torch.cuda.is_available():
+            self.projection.to(torch.device("cuda:0"))
 
     def _freeze_layers(self, n: int) -> None:
         if hasattr(self.backbone, "embed_tokens"):
@@ -125,8 +130,16 @@ class SemanticEncoder(nn.Module):
         # Freeze base first (peft will re-enable LoRA adapters)
         for param in self.backbone.parameters():
             param.requires_grad = False
-        # Some peft versions support use_rslora
-        lora_kwargs: dict = dict(r=r, lora_alpha=alpha, lora_dropout=dropout, target_modules=target_modules, bias="none", task_type="CAUSAL_LM")
+
+        # Enable input require grads for gradient checkpointing compatibility with LoRA
+        if hasattr(self.backbone, "enable_input_require_grads"):
+            try:
+                self.backbone.enable_input_require_grads()
+            except Exception:
+                pass
+
+        # Use FEATURE_EXTRACTION because AutoModel loads Qwen2Model (not Qwen2ForCausalLM which requires generation methods)
+        lora_kwargs: dict = dict(r=r, lora_alpha=alpha, lora_dropout=dropout, target_modules=target_modules, bias="none", task_type="FEATURE_EXTRACTION")
         # try RsLoRA if available
         try:
             import inspect
@@ -147,7 +160,12 @@ class SemanticEncoder(nn.Module):
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, return_sequence: bool = False):
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        hidden_states = outputs.last_hidden_state
+        if hasattr(outputs, "last_hidden_state"):
+            hidden_states = outputs.last_hidden_state
+        elif isinstance(outputs, (tuple, list)):
+            hidden_states = outputs[0]
+        else:
+            hidden_states = outputs
         if self.pooling == "cls":
             pooled = hidden_states[:, 0, :]
         elif self.pooling == "mean":
