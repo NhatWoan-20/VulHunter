@@ -202,6 +202,16 @@ def setup_kaggle_env():
     os.environ.setdefault("TRANSFORMERS_CACHE", str(get_model_cache_dir()))
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     os.environ.setdefault("NCCL_DEBUG", "WARN")
+
+    # Dọn dẹp các file lock hoặc incomplete bị kẹt từ các lần chạy trước bị crash
+    cache_dir = Path(os.environ["HF_HOME"])
+    if cache_dir.exists():
+        for f in list(cache_dir.rglob("*.lock")) + list(cache_dir.rglob("*.incomplete")):
+            try:
+                f.unlink()
+            except Exception:
+                pass
+
     try:
         import torch
         if torch.cuda.is_available():

@@ -49,17 +49,19 @@ class SemanticEncoder(nn.Module):
         logger.info("Loading semantic backbone: %s (lora=%s)", backbone, use_lora)
         # FP16 for 3B saves ~3GB vs bf16/fp32; LoRA FP16 is fastest on T4 (no 4bit dequant)
         dtype = torch.float16 if use_fp16 else None
-        kwargs = {"trust_remote_code": True}
+        kwargs = {
+            "trust_remote_code": True,
+            "low_cpu_mem_usage": True,
+        }
         if dtype is not None:
             # pyrefly: ignore [bad-assignment]
             kwargs["torch_dtype"] = dtype
-        
-        # Load directly to GPU 0 if available to avoid CPU RAM OOM on Kaggle
-        if torch.cuda.is_available():
-            kwargs["device_map"] = {"": 0}
-        else:
-            kwargs["low_cpu_mem_usage"] = False
+            kwargs["dtype"] = dtype
 
+        # NOTE: Do NOT use device_map here! In transformers v5.x / late v4, device_map triggers
+        # a buggy 'Materializing param' loop that leaks 30GB+ of System RAM and crashes Kaggle containers.
+        # low_cpu_mem_usage=True safely deserializes weights on CPU (~6GB RAM), and model.to(device)
+        # in train.py cleanly transfers the model to GPU 0 without accelerate hooks, enabling DataParallel!
         self.backbone = AutoModel.from_pretrained(backbone, **kwargs)
         self.hidden_size = self.backbone.config.hidden_size
         logger.info("Backbone hidden size: %d", self.hidden_size)
@@ -82,13 +84,12 @@ class SemanticEncoder(nn.Module):
         else:
             self._freeze_layers(freeze_layers)
 
-        # Remove accelerate dispatch hooks so DataParallel can replicate backbone across multiple GPUs
-        if torch.cuda.is_available():
-            try:
-                from accelerate.hooks import remove_hook_from_submodules
-                remove_hook_from_submodules(self.backbone)
-            except Exception as e:
-                logger.debug("remove_hook_from_submodules skipped: %s", e)
+        # Remove accelerate dispatch hooks if present so DataParallel can replicate backbone across multiple GPUs
+        try:
+            from accelerate.hooks import remove_hook_from_submodules
+            remove_hook_from_submodules(self.backbone)
+        except Exception:
+            pass
 
         self.projection = nn.Sequential(
             nn.LayerNorm(self.hidden_size),
@@ -97,8 +98,8 @@ class SemanticEncoder(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(output_dim, output_dim),
         )
-        if torch.cuda.is_available():
-            self.projection.to(torch.device("cuda:0"))
+        if dtype is not None:
+            self.projection.to(dtype)
 
     def _freeze_layers(self, n: int) -> None:
         if hasattr(self.backbone, "embed_tokens"):

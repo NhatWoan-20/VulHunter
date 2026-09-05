@@ -213,7 +213,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
 
 
 @torch.no_grad()
-def evaluate(model, loader, criterion, device, is_parallel=False):
+def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False):
     model.eval()
     total: dict[str, float] = {}
     n_batches = 0
@@ -235,7 +235,12 @@ def evaluate(model, loader, criterion, device, is_parallel=False):
             kwargs["edge_index"] = batch["edge_index"].to(device)
             kwargs["edge_type"] = batch["edge_type"].to(device)
             kwargs["batch"] = batch["batch"].to(device)
-        output = model(**kwargs)
+
+        if use_amp and device.type == "cuda":
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                output = model(**kwargs)
+        else:
+            output = model(**kwargs)
         losses = criterion(**_build_loss_kwargs(output, batch, device))
         for k, v in losses.items():
             total[k] = total.get(k, 0.0) + v.item()
@@ -320,6 +325,13 @@ def main() -> None:
     args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     args.log_dir.mkdir(parents=True, exist_ok=True)
 
+    # Thêm FileHandler để luôn lưu vết toàn bộ quá trình train và traceback vào đĩa
+    log_file = args.log_dir / "train.log"
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    logger.addHandler(file_handler)
+    logging.getLogger().addHandler(file_handler)
+
     # perf flags cho T4 (Internet ON)
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
@@ -369,6 +381,12 @@ def main() -> None:
 
     model = VulHunterModel(mode=args.mode, semantic_config=semantic_cfg, graph_config=graph_cfg, fusion_config=fusion_cfg, head_config=head_cfg)
     model.to(device)
+
+    # Thu hồi ngay CPU buffer và CUDA context cache sau khi nạp weights
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     # DataParallel tự bật khi >=2 GPUs (Kaggle 2x T4)
     is_parallel = False
@@ -424,7 +442,7 @@ def main() -> None:
         t0 = time.time()
         train_losses = train_one_epoch(model, train_loader, criterion, optimizer, device, grad_accum, epoch, scaler, use_amp, is_parallel)
         scheduler.step()
-        val_losses, val_metrics = evaluate(model, val_loader, criterion, device, is_parallel)
+        val_losses, val_metrics = evaluate(model, val_loader, criterion, device, is_parallel, use_amp=use_amp)
         elapsed = time.time() - t0
         val_f1 = val_metrics.get("binary", {}).get("f1", 0.0)
         loc_f1 = val_metrics.get("localization", {}).get("f1", 0.0)
@@ -464,10 +482,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import traceback
     try:
         main()
-    except Exception as exc:
-        logger.exception("FATAL ERROR in train.py: %s", exc)
+    except BaseException as exc:
+        if isinstance(exc, SystemExit) and exc.code == 0:
+            sys.exit(0)
+        err_msg = f"\n{'='*60}\nFATAL EXCEPTION IN TRAIN.PY: {exc}\n{'='*60}\n"
+        sys.stderr.write(err_msg)
+        traceback.print_exc(file=sys.stderr)
+        logger.exception("FATAL EXCEPTION: %s", exc)
         sys.stderr.flush()
         sys.stdout.flush()
         sys.exit(1)
