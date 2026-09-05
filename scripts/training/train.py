@@ -32,6 +32,18 @@ from torch.utils.data.distributed import DistributedSampler
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+# Triệt tiêu bug peft trên Kaggle: is_torchao_available ném ImportError khi torchao < 0.16
+try:
+    import peft.import_utils
+    peft.import_utils.is_torchao_available = lambda: False
+except Exception:
+    pass
+try:
+    import peft.tuners.lora.torchao
+    peft.tuners.lora.torchao.is_torchao_available = lambda: False
+except Exception:
+    pass
+
 # pyrefly: ignore [missing-import]
 from src.multitask.model import VulHunterModel, ModelOutput  # noqa: E402
 # pyrefly: ignore [missing-import]

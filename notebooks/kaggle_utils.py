@@ -208,6 +208,18 @@ def setup_kaggle_env():
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
     os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
+    # Triệt tiêu bug peft trên Kaggle: is_torchao_available ném ImportError khi torchao < 0.16
+    try:
+        import peft.import_utils
+        peft.import_utils.is_torchao_available = lambda: False
+    except Exception:
+        pass
+    try:
+        import peft.tuners.lora.torchao
+        peft.tuners.lora.torchao.is_torchao_available = lambda: False
+    except Exception:
+        pass
+
     # Dọn dẹp các file lock hoặc incomplete bị kẹt từ các lần chạy trước bị crash
     cache_dir = Path(os.environ["HF_HOME"])
     if cache_dir.exists():

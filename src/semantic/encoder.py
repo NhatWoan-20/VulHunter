@@ -122,6 +122,18 @@ class SemanticEncoder(nn.Module):
             logger.info("Froze %d/%d layers. Trainable: %s / %s (%.1f%%)", frozen, total, f"{trainable:,}", f"{total_params:,}", 100.0 * trainable / total_params if total_params else 0)
 
     def _apply_lora(self, r: int, alpha: int, dropout: float, use_rslora: bool, target_modules: Optional[list[str]]) -> None:
+        # Triệt tiêu bug peft trên Kaggle: is_torchao_available ném ImportError khi torchao < 0.16
+        try:
+            import peft.import_utils
+            peft.import_utils.is_torchao_available = lambda: False
+        except Exception:
+            pass
+        try:
+            import peft.tuners.lora.torchao
+            peft.tuners.lora.torchao.is_torchao_available = lambda: False
+        except Exception:
+            pass
+
         try:
             from peft import LoraConfig, get_peft_model
         except ImportError as exc:
