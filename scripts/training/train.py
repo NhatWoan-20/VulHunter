@@ -90,6 +90,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--data-parallel", action="store_true", default=False, help="Enable legacy DataParallel.")
     p.add_argument("--single-gpu", action="store_true", default=False, help="Force single-GPU training even if multi-GPU detected.")
     p.add_argument("--resume", type=Path, default=None, help="Path to checkpoint (.pt) to resume training from.")
+    p.add_argument("--reset-best-f1", action="store_true", help="Reset best_f1 and early stopping score to 0 when resuming.")
     return p.parse_args()
 
 
@@ -313,6 +314,48 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
                 if tl_list:
                     all_loc_p.append(pl)
                     all_loc_t.append(tl_list)
+    if dist.is_available() and dist.is_initialized():
+        # Thu thập kết quả từ toàn bộ các GPU (ranks) về để tính metrics trên 100% tập dữ liệu validation
+        world_size = dist.get_world_size()
+        gathered: list[dict | None] = [None for _ in range(world_size)]
+        local_eval = {
+            "total": total,
+            "n_batches": n_batches,
+            "all_true": all_true,
+            "all_pred": all_pred,
+            "all_prob": all_prob,
+            "all_loc_t": all_loc_t,
+            "all_loc_p": all_loc_p,
+        }
+        dist.all_gather_object(gathered, local_eval)
+
+        m_total: dict[str, float] = {}
+        m_batches = 0
+        m_true: list[int] = []
+        m_pred: list[int] = []
+        m_prob: list[float] = []
+        m_loc_t: list[list[int]] = []
+        m_loc_p: list[list[int]] = []
+        for d in gathered:
+            if d is None:
+                continue
+            m_batches += int(d.get("n_batches", 0))
+            for k, v in d.get("total", {}).items():
+                m_total[k] = m_total.get(k, 0.0) + float(v)
+            m_true.extend(d.get("all_true", []))
+            m_pred.extend(d.get("all_pred", []))
+            m_prob.extend(d.get("all_prob", []))
+            m_loc_t.extend(d.get("all_loc_t", []))
+            m_loc_p.extend(d.get("all_loc_p", []))
+
+        total = m_total
+        n_batches = m_batches
+        all_true = m_true
+        all_pred = m_pred
+        all_prob = m_prob
+        all_loc_t = m_loc_t
+        all_loc_p = m_loc_p
+
     avg = {k: v / max(n_batches, 1) for k, v in total.items()}
     metrics: dict = {}
     if all_true:
@@ -583,6 +626,9 @@ def main() -> None:
 
         start_epoch = int(ckpt.get("epoch", 0))
         best_f1 = float(ckpt.get("best_f1", ckpt.get("val_f1", 0.0)))
+        if getattr(args, "reset_best_f1", False) or best_f1 >= 0.99:
+            logger.info("ℹ️ Best Val F1 trước đó (%.4f) được đặt lại về 0.0 để đánh giá chuẩn xác trên toàn bộ dữ liệu.", best_f1)
+            best_f1 = 0.0
         if "history" in ckpt and isinstance(ckpt["history"], list):
             history = list(ckpt["history"])
         early_stop.best_score = best_f1
