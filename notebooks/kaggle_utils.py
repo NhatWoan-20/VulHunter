@@ -39,15 +39,12 @@ def get_data_root() -> Path:
                 return p
             if (p / "splits" / "train.jsonl").exists():
                 return p / "splits"
+    if is_kaggle() and Path("/kaggle/input").exists():
+        found = list(Path("/kaggle/input").rglob("train.jsonl"))
+        if found:
+            return found[0].parent
+
     candidates: list[Path] = []
-    if is_kaggle():
-        candidates += [
-            Path("/kaggle/input/vulhunter-pre-tokenized"),
-            Path("/kaggle/input/vulhunter-master-splits"),
-            Path("/kaggle/input/vulhunter-pre-tokenized"),
-            Path("/kaggle/input/vulhunter-master-splits"),
-            Path("/kaggle/input"),  # scan con
-        ]
     root = get_project_root()
     candidates += [root / "data" / "splits", root / "data", Path("data/splits"), Path("data")]
     if is_kaggle():
@@ -57,13 +54,23 @@ def get_data_root() -> Path:
             return c
         if (c / "splits" / "train.jsonl").exists():
             return c / "splits"
-        if c.exists() and c.is_dir() and c == Path("/kaggle/input"):
-            for sub in c.iterdir():
-                if (sub / "train.jsonl").exists():
-                    return sub
-                if (sub / "splits" / "train.jsonl").exists():
-                    return sub / "splits"
     return root / "data" / "splits"
+
+def get_graph_data_path(data_root: Path | None = None) -> Path | None:
+    """Tự động tìm file master_graphs.jsonl (nếu có) trên Kaggle hoặc local."""
+    dr = data_root or get_data_root()
+    cand = dr / "master_graphs.jsonl"
+    if cand.exists():
+        return cand
+    if is_kaggle() and Path("/kaggle/input").exists():
+        found = list(Path("/kaggle/input").rglob("master_graphs.jsonl"))
+        if found:
+            return found[0]
+    root = get_project_root()
+    cand_processed = root / "data" / "processed" / "master_graphs.jsonl"
+    if cand_processed.exists():
+        return cand_processed
+    return None
 
 def get_working_root() -> Path:
     return Path("/kaggle/working") if is_kaggle() else get_project_root()
@@ -179,6 +186,8 @@ def setup_kaggle_env():
     print("=" * 60)
     root = get_project_root()
     data_root = get_data_root()
+    if data_root.exists():
+        os.environ["KAGGLE_DATA_ROOT"] = str(data_root)
     print(f"Project : {root}")
     print(f"Data    : {data_root}  exists={data_root.exists()}")
     print(f"Work    : {get_working_root()}")
