@@ -214,7 +214,7 @@ def setup_kaggle_env():
         info = inspect_splits(data_root)
         print_inspect(info)
         if info["ready_for_training"]:
-            print("\n\u2705 Data đã pre-tokenized — SẴN SÀNG TRAIN (không cần 01_preprocessing).")
+            print("\n\u2705 Data đã pre-tokenized — SẴN SÀNG TRAIN (không cần preprocessing).")
         else:
             print("\n[LỖI NGHIÊM TRỌNG] Data thiếu token_line_ids/source_sink.")
             print("Theo quy định mới, TOÀN BỘ quá trình chuẩn bị dữ liệu (Preprocessing) PHẢI được chạy ở Local.")

@@ -202,7 +202,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
         for k, v in losses.items():
             total[k] = total.get(k, 0.0) + v.item()
         n_batches += 1
-        if (step + 1) % 50 == 0:
+        if (step + 1) in (1, 10, 25) or (step + 1) % 50 == 0:
             logger.info("  Epoch %d | Step %d/%d | Loss: %.4f (loc %.4f ss %.4f) %s",
                         epoch + 1, step + 1, len(loader),
                         total.get("total", 0) / n_batches,
@@ -329,12 +329,14 @@ def main() -> None:
         except Exception:
             pass
 
-    eff_batch = batch_size * grad_accum * (torch.cuda.device_count() if torch.cuda.is_available() and device.type == "cuda" else 1)
+    n_gpus = torch.cuda.device_count() if torch.cuda.is_available() and device.type == "cuda" else 1
+    loader_batch_size = batch_size * n_gpus if n_gpus >= 2 else batch_size
+    eff_batch = loader_batch_size * grad_accum
     logger.info("=" * 60)
     logger.info("VulHunter Training — Internet ON, multi-GPU ready")
     logger.info("=" * 60)
-    logger.info("Mode: %s | Device: %s | GPUs: %d | AMP: %s", args.mode, device, torch.cuda.device_count() if torch.cuda.is_available() else 0, use_amp)
-    logger.info("Batch: %d per-device | grad_accum: %d | eff batch: %d | workers: %d", batch_size, grad_accum, eff_batch, num_workers)
+    logger.info("Mode: %s | Device: %s | GPUs: %d | AMP: %s", args.mode, device, n_gpus, use_amp)
+    logger.info("Batch: %d per-device (loader batch: %d) | grad_accum: %d | eff batch: %d | workers: %d", batch_size, loader_batch_size, grad_accum, eff_batch, num_workers)
     logger.info("Epochs: %d | LR: %g | patience: %d | max_len: %d", args.epochs, args.lr, args.patience, args.max_length)
     logger.info("Data: train=%s val=%s graph=%s", args.train_data, args.val_data, args.graph_data)
     if not args.train_data.exists():
@@ -342,11 +344,14 @@ def main() -> None:
         sys.exit(1)
 
     logger.info("Loading datasets ... (chỉ đọc, không cần writable)")
-    train_dataset = VulHunterDataset(data_path=args.train_data, max_length=args.max_length, graph_data_path=args.graph_data)
-    val_dataset = VulHunterDataset(data_path=args.val_data, max_length=args.max_length, graph_data_path=args.graph_data)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn,
+    graph_path = args.graph_data if args.mode in ("fusion", "graph_only") else None
+    train_dataset = VulHunterDataset(data_path=args.train_data, max_length=args.max_length, graph_data_path=graph_path)
+    val_dataset = VulHunterDataset(data_path=args.val_data, max_length=args.max_length, graph_data_path=None)
+    if graph_path:
+        val_dataset.graph_data = train_dataset.graph_data
+    train_loader = DataLoader(train_dataset, batch_size=loader_batch_size, shuffle=True, collate_fn=collate_fn,
                               num_workers=num_workers, pin_memory=torch.cuda.is_available(), persistent_workers=num_workers > 0)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn,
+    val_loader = DataLoader(val_dataset, batch_size=loader_batch_size, shuffle=False, collate_fn=collate_fn,
                             num_workers=num_workers, pin_memory=torch.cuda.is_available(), persistent_workers=num_workers > 0)
     logger.info("Train: %d | Val: %d", len(train_dataset), len(val_dataset))
 
