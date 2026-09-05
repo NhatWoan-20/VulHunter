@@ -51,6 +51,7 @@ class SemanticEncoder(nn.Module):
         dtype = torch.float16 if use_fp16 else None
         kwargs = {"trust_remote_code": True}
         if dtype is not None:
+            # pyrefly: ignore [bad-assignment]
             kwargs["torch_dtype"] = dtype
         
         # Load directly to GPU 0 if available to avoid CPU RAM OOM on Kaggle
@@ -60,6 +61,14 @@ class SemanticEncoder(nn.Module):
             kwargs["low_cpu_mem_usage"] = False
 
         self.backbone = AutoModel.from_pretrained(backbone, **kwargs)
+        # Remove accelerate dispatch hooks so DataParallel can replicate backbone across multiple GPUs
+        if torch.cuda.is_available():
+            try:
+                from accelerate.hooks import remove_hook_from_submodules
+                remove_hook_from_submodules(self.backbone)
+            except Exception as e:
+                logger.debug("remove_hook_from_submodules skipped: %s", e)
+
         self.hidden_size = self.backbone.config.hidden_size
         logger.info("Backbone hidden size: %d", self.hidden_size)
 

@@ -5,7 +5,7 @@
 training:
   seed: 42
   device: "auto"
-  num_workers: 2
+  num_workers: 0           # 0 workers để tránh nhân bản RAM tiến trình trên Kaggle
   pin_memory: true
   use_amp: true
 

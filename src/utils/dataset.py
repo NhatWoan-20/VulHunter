@@ -63,15 +63,69 @@ def _line_starts(text: str) -> list[int]:
     return starts
 
 
+class _LazySampleList:
+    """Lazy sequence that reads JSONL lines on demand, consuming virtually 0 MB RAM."""
+
+    def __init__(self, dataset: VulHunterDataset) -> None:
+        self._ds = dataset
+
+    def __len__(self) -> int:
+        return len(self._ds.line_offsets)
+
+    def __getitem__(self, idx: int) -> dict:
+        if isinstance(idx, slice):
+            return [self[i] for i in range(*idx.indices(len(self)))]
+        if idx < 0:
+            idx += len(self)
+        if idx < 0 or idx >= len(self):
+            raise IndexError(f"Sample index {idx} out of range ({len(self)} samples)")
+        return self._ds._read_raw_sample(idx)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
+
+
+class _LazyGraphDict:
+    """Lazy dictionary that reads graph lines on demand by sample_id, consuming ~2 MB RAM."""
+
+    def __init__(self, path: Path, offsets: dict[str, int]) -> None:
+        self._path = path
+        self._offsets = offsets
+        self._file = None
+
+    def __contains__(self, sid: str) -> bool:
+        return sid in self._offsets
+
+    def __getitem__(self, sid: str) -> dict:
+        if sid not in self._offsets:
+            raise KeyError(sid)
+        if self._file is None or self._file.closed:
+            self._file = self._path.open("rb")
+        self._file.seek(self._offsets[sid])
+        return json.loads(self._file.readline().decode("utf-8"))
+
+    def get(self, sid: str, default=None):
+        if sid in self._offsets:
+            return self[sid]
+        return default
+
+    def __len__(self) -> int:
+        return len(self._offsets)
+
+    def __del__(self) -> None:
+        if hasattr(self, "_file") and self._file is not None and not self._file.closed:
+            try:
+                self._file.close()
+            except Exception:
+                pass
+
+
 class VulHunterDataset(Dataset):
     """PyTorch Dataset for vulnerability detection.
 
-    Loads samples from a JSONL file where each line contains:
-        - code: source code string
-        - binary_label: int
-        - cwe_ids: list
-        - line_labels: list
-        - token_line_ids_qwen / source_sink_labels (new, for localization / taint)
+    Uses lazy line-offset indexing for JSONL files to achieve near-zero RAM footprint,
+    preventing OOM crashes during training and model loading.
 
     Args:
         data_path: Path to JSONL file.
@@ -89,30 +143,59 @@ class VulHunterDataset(Dataset):
     ) -> None:
         self.data_path = Path(data_path)
         self.max_length = max_length
-        self.samples: list[dict] = []
-        self.graph_data: dict[str, dict] = {}
+        self._file_handle = None
 
-        logger.info("Loading dataset from %s", self.data_path)
-        with self.data_path.open("r", encoding="utf-8") as f:
+        logger.info("Indexing dataset from %s (zero-RAM lazy loading)", self.data_path)
+        self.line_offsets: list[int] = []
+        pos = 0
+        with self.data_path.open("rb") as f:
             for line in f:
                 if line.strip():
-                    self.samples.append(json.loads(line))
-        logger.info("Loaded %d samples", len(self.samples))
+                    self.line_offsets.append(pos)
+                pos = f.tell()
+        self.samples = _LazySampleList(self)
+        logger.info("Indexed %d samples (index RAM: %.1f KB)", len(self.line_offsets), len(self.line_offsets) * 8 / 1024)
 
+        self.graph_data: dict[str, dict] | _LazyGraphDict = {}
         if graph_data_path:
             graph_path = Path(graph_data_path)
-            logger.info("Loading graph data from %s", graph_path)
-            with graph_path.open("r", encoding="utf-8") as f:
+            logger.info("Indexing graph data from %s (zero-RAM lazy loading)", graph_path)
+            graph_offsets: dict[str, int] = {}
+            pos = 0
+            with graph_path.open("rb") as f:
                 for line in f:
                     if line.strip():
-                        row = json.loads(line)
-                        sid = row.get("sample_id")
-                        if sid:
-                            self.graph_data[sid] = row
-            logger.info("Loaded graph data for %d samples", len(self.graph_data))
+                        idx_sid = line.find(b'"sample_id"')
+                        if idx_sid != -1:
+                            start = line.find(b'"', idx_sid + 11) + 1
+                            end = line.find(b'"', start)
+                            if start > 0 and end > start:
+                                sid = line[start:end].decode("utf-8")
+                                graph_offsets[sid] = pos
+                        else:
+                            row = json.loads(line.decode("utf-8"))
+                            sid = row.get("sample_id")
+                            if sid:
+                                graph_offsets[sid] = pos
+                    pos = f.tell()
+            self.graph_data = _LazyGraphDict(graph_path, graph_offsets)
+            logger.info("Indexed graph data for %d samples (index RAM: %.1f KB)", len(self.graph_data), len(graph_offsets) * 80 / 1024)
 
         self._tokenizer = None
         self._tokenizer_name = tokenizer_name
+
+    def _read_raw_sample(self, idx: int) -> dict:
+        if self._file_handle is None or self._file_handle.closed:
+            self._file_handle = self.data_path.open("rb")
+        self._file_handle.seek(self.line_offsets[idx])
+        return json.loads(self._file_handle.readline().decode("utf-8"))
+
+    def __del__(self) -> None:
+        if hasattr(self, "_file_handle") and self._file_handle is not None and not self._file_handle.closed:
+            try:
+                self._file_handle.close()
+            except Exception:
+                pass
 
     @property
     def tokenizer(self):
@@ -123,7 +206,7 @@ class VulHunterDataset(Dataset):
         return self._tokenizer
 
     def __len__(self) -> int:
-        return len(self.samples)
+        return len(self.line_offsets)
 
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
@@ -218,7 +301,12 @@ class VulHunterDataset(Dataset):
         sid = sample.get("sample_id")
         if sid and sid in self.graph_data:
             gdata = self.graph_data[sid]
-            result["node_types"] = [n.get("type", "unknown") for n in gdata.get("nodes", [])]
+            if "nodes" in gdata:
+                result["node_types"] = [n.get("type", "unknown") if isinstance(n, dict) else str(n) for n in gdata["nodes"]]
+            elif "node_types" in gdata:
+                result["node_types"] = gdata["node_types"]
+            else:
+                result["node_types"] = ["unknown"]
             edges = gdata.get("edges", [])
             if edges:
                 src = [e["source"] - 1 for e in edges]

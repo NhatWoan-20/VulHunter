@@ -464,4 +464,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        logger.exception("FATAL ERROR in train.py: %s", exc)
+        sys.stderr.flush()
+        sys.stdout.flush()
+        sys.exit(1)
