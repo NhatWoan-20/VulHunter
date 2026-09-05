@@ -24,7 +24,10 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -59,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--val-data", type=Path, default=ROOT / "data/splits/validation.jsonl")
     p.add_argument("--graph-data", type=Path, default=None)
     p.add_argument("--epochs", type=int, default=20, help="Max epochs; config overrides.")
-    p.add_argument("--batch-size", type=int, default=8, help="Per-device batch size. DataParallel chia đều.")
+    p.add_argument("--batch-size", type=int, default=8, help="Per-device batch size.")
     p.add_argument("--lr", type=float, default=1.5e-5)
     p.add_argument("--grad-accum", type=int, default=4)
     p.add_argument("--seed", type=int, default=42)
@@ -68,10 +71,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--log-dir", type=Path, default=ROOT / "runs")
     p.add_argument("--patience", type=int, default=4)
     p.add_argument("--max-length", type=int, default=2048)
-    p.add_argument("--use-amp", action="store_true", default=None, help="Bật FP16 mixed precision.")
-    p.add_argument("--no-amp", action="store_true", help="Tắt AMP dù config bật.")
+    p.add_argument("--use-amp", action="store_true", default=None, help="Enable FP16 mixed precision.")
+    p.add_argument("--no-amp", action="store_true", help="Disable AMP even if config enables it.")
     p.add_argument("--num-workers", type=int, default=None)
-    p.add_argument("--data-parallel", action="store_true", default=False, help="Bật DataParallel (Lưu ý: PyTorch không hỗ trợ DataParallel cùng gradient checkpointing do deadlock).")
+    p.add_argument("--data-parallel", action="store_true", default=False, help="Enable legacy DataParallel.")
     return p.parse_args()
 
 
@@ -163,7 +166,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
         input_ids = batch.get("input_ids", torch.zeros(1, 1, dtype=torch.long)).to(device)
         attention_mask = batch.get("attention_mask", torch.zeros(1, 1, dtype=torch.long)).to(device)
         kwargs: dict = {}
-        core = model.module if is_parallel else model
+        core = model.module if hasattr(model, "module") else model
         if core.mode in ("fusion", "semantic_only"):
             kwargs["input_ids"] = input_ids
             kwargs["attention_mask"] = attention_mask
@@ -221,7 +224,7 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
     all_prob: list[float] = []
     all_loc_t: list[list[int]] = []
     all_loc_p: list[list[int]] = []
-    core = model.module if is_parallel else model
+    core = model.module if hasattr(model, "module") else model
     for batch in loader:
         input_ids = batch.get("input_ids", torch.zeros(1, 1, dtype=torch.long)).to(device)
         attention_mask = batch.get("attention_mask", torch.zeros(1, 1, dtype=torch.long)).to(device)
@@ -319,17 +322,42 @@ def main() -> None:
     if tcfg.get("gradient_accumulation_steps") is not None and args.grad_accum == 4:
         grad_accum = int(tcfg["gradient_accumulation_steps"])
 
-    set_seed(args.seed)
-    device = get_device(args.device)
-    args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    args.log_dir.mkdir(parents=True, exist_ok=True)
+    # 0. Khởi tạo PyTorch DDP (DistributedDataParallel) nếu chạy qua torchrun / torch.distributed.run
+    is_ddp = False
+    rank = 0
+    local_rank = 0
+    world_size = 1
+    if "LOCAL_RANK" in os.environ:
+        try:
+            local_rank = int(os.environ["LOCAL_RANK"])
+            rank = int(os.environ.get("RANK", 0))
+            world_size = int(os.environ.get("WORLD_SIZE", 1))
+            torch.cuda.set_device(local_rank)
+            device = torch.device(f"cuda:{local_rank}")
+            dist.init_process_group(backend="nccl")
+            is_ddp = True
+        except Exception as e:
+            logger.warning("DDP init failed (%s), fallback single device", e)
+            is_ddp = False
 
-    # Thêm FileHandler để luôn lưu vết toàn bộ quá trình train và traceback vào đĩa
-    log_file = args.log_dir / "train.log"
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
-    logger.addHandler(file_handler)
-    logging.getLogger().addHandler(file_handler)
+    if not is_ddp:
+        device = get_device(args.device)
+
+    # Nếu chạy DDP, các tiến trình rank > 0 chỉ in cảnh báo/lỗi để log rank 0 gọn gàng
+    if is_ddp and rank != 0:
+        logger.setLevel(logging.WARNING)
+
+    set_seed(args.seed + rank)
+
+    if rank == 0:
+        args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        args.log_dir.mkdir(parents=True, exist_ok=True)
+        # Thêm FileHandler để luôn lưu vết toàn bộ quá trình train và traceback vào đĩa
+        log_file = args.log_dir / "train.log"
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+        logger.addHandler(file_handler)
+        logging.getLogger().addHandler(file_handler)
 
     # perf flags cho T4 (Internet ON)
     if torch.cuda.is_available():
@@ -353,24 +381,23 @@ def main() -> None:
     head_cfg = dict(model_config.get("heads", {}))
 
     n_gpus = torch.cuda.device_count() if torch.cuda.is_available() and device.type == "cuda" else 1
-    # DataParallel: Trong PyTorch, DataParallel KHÔNG THỂ kết hợp với gradient_checkpointing (gây deadlock vô hạn, 0% GPU 0% CPU).
-    # Khi gradient_checkpointing bật, huấn luyện trực tiếp trên GPU chính (cuda:0) là chuẩn xác và an toàn tuyệt đối.
     is_grad_ckpt = bool(semantic_cfg.get("gradient_checkpointing", False))
     is_parallel = False
-    if args.data_parallel and not is_grad_ckpt and torch.cuda.is_available() and n_gpus >= 2:
-        is_parallel = True
-    elif torch.cuda.is_available() and n_gpus >= 2:
-        if is_grad_ckpt:
-            logger.info("ℹ️ Phát hiện %d GPUs nhưng Gradient Checkpointing đang BẬT -> Huấn luyện an toàn trên %s (triệt tiêu deadlock autograd của DataParallel).", n_gpus, device)
-        elif not args.data_parallel:
-            logger.info("ℹ️ Phát hiện %d GPUs. Mặc định huấn luyện an toàn trên %s (thêm --data-parallel nếu muốn bật).", n_gpus, device)
+    if not is_ddp:
+        if args.data_parallel and not is_grad_ckpt and torch.cuda.is_available() and n_gpus >= 2:
+            is_parallel = True
+        elif torch.cuda.is_available() and n_gpus >= 2:
+            if is_grad_ckpt:
+                logger.info("ℹ️ Phát hiện %d GPUs. Khuyến nghị chạy bằng torchrun để tận dụng cả 2 GPU qua DDP. Đang chạy an toàn trên %s.", n_gpus, device)
+            elif not args.data_parallel:
+                logger.info("ℹ️ Phát hiện %d GPUs. Mặc định huấn luyện trên %s (thêm --data-parallel hoặc dùng torchrun).", n_gpus, device)
 
     loader_batch_size = batch_size * n_gpus if is_parallel else batch_size
-    eff_batch = loader_batch_size * grad_accum
+    eff_batch = loader_batch_size * grad_accum * (world_size if is_ddp else 1)
     logger.info("=" * 60)
-    logger.info("VulHunter Training — Internet ON, multi-GPU ready")
+    logger.info("VulHunter Training — Internet ON, %s", f"DDP multi-GPU ({world_size} GPUs)" if is_ddp else f"{n_gpus} GPUs")
     logger.info("=" * 60)
-    logger.info("Mode: %s | Device: %s | GPUs: %d | AMP: %s", args.mode, device, n_gpus, use_amp)
+    logger.info("Mode: %s | Device: %s | DDP: %s (rank %d/%d) | AMP: %s", args.mode, device, is_ddp, rank, world_size, use_amp)
     logger.info("Batch: %d per-device (loader batch: %d) | grad_accum: %d | eff batch: %d | workers: %d", batch_size, loader_batch_size, grad_accum, eff_batch, num_workers)
     logger.info("Epochs: %d | LR: %g | patience: %d | max_len: %d", args.epochs, args.lr, args.patience, args.max_length)
     logger.info("Data: train=%s val=%s graph=%s", args.train_data, args.val_data, args.graph_data)
@@ -384,9 +411,13 @@ def main() -> None:
     val_dataset = VulHunterDataset(data_path=args.val_data, max_length=args.max_length, graph_data_path=None)
     if graph_path:
         val_dataset.graph_data = train_dataset.graph_data
-    train_loader = DataLoader(train_dataset, batch_size=loader_batch_size, shuffle=True, collate_fn=collate_fn,
+
+    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True) if is_ddp else None
+    val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False) if is_ddp else None
+
+    train_loader = DataLoader(train_dataset, batch_size=loader_batch_size, shuffle=(train_sampler is None), sampler=train_sampler, collate_fn=collate_fn,
                               num_workers=num_workers, pin_memory=torch.cuda.is_available(), persistent_workers=num_workers > 0)
-    val_loader = DataLoader(val_dataset, batch_size=loader_batch_size, shuffle=False, collate_fn=collate_fn,
+    val_loader = DataLoader(val_dataset, batch_size=loader_batch_size, shuffle=False, sampler=val_sampler, collate_fn=collate_fn,
                             num_workers=num_workers, pin_memory=torch.cuda.is_available(), persistent_workers=num_workers > 0)
     logger.info("Train: %d | Val: %d", len(train_dataset), len(val_dataset))
 
@@ -399,7 +430,10 @@ def main() -> None:
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    if is_parallel:
+    if is_ddp:
+        model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
+        logger.info("✅ DDP kích hoạt thành công trên GPU %d (Rank %d/%d).", local_rank, rank, world_size)
+    elif is_parallel:
         model = nn.DataParallel(model)
         logger.info("✅ DataParallel bật — %d GPUs.", n_gpus)
 
@@ -447,10 +481,12 @@ def main() -> None:
     best_f1 = 0.0
     history: list[dict] = []
     for epoch in range(args.epochs):
+        if is_ddp and train_sampler is not None:
+            train_sampler.set_epoch(epoch)
         t0 = time.time()
-        train_losses = train_one_epoch(model, train_loader, criterion, optimizer, device, grad_accum, epoch, scaler, use_amp, is_parallel)
+        train_losses = train_one_epoch(model, train_loader, criterion, optimizer, device, grad_accum, epoch, scaler, use_amp, is_parallel=(is_parallel or is_ddp))
         scheduler.step()
-        val_losses, val_metrics = evaluate(model, val_loader, criterion, device, is_parallel, use_amp=use_amp)
+        val_losses, val_metrics = evaluate(model, val_loader, criterion, device, is_parallel=(is_parallel or is_ddp), use_amp=use_amp)
         elapsed = time.time() - t0
         val_f1 = val_metrics.get("binary", {}).get("f1", 0.0)
         loc_f1 = val_metrics.get("localization", {}).get("f1", 0.0)
@@ -458,35 +494,45 @@ def main() -> None:
         vram_str = ""
         if torch.cuda.is_available():
             try:
-                free, total_mem = torch.cuda.mem_get_info(0)
+                free, total_mem = torch.cuda.mem_get_info(local_rank if is_ddp else 0)
                 vram_str = f" | VRAM: {(total_mem - free) / 1e9:.1f}/{total_mem / 1e9:.1f} GB"
             except Exception:
                 pass
-        logger.info("Epoch %d/%d (%.1fs%s) | Train %.4f | Val %.4f | Val F1 %.4f | Loc F1 %.4f | AUC %.4f",
-                    epoch + 1, args.epochs, elapsed, vram_str,
-                    train_losses.get("total", 0.0), val_losses.get("total", 0.0), val_f1, loc_f1,
-                    val_metrics.get("binary", {}).get("auc", 0.0))
-        history.append({"epoch": epoch + 1, "train_loss": train_losses, "val_loss": val_losses, "val_metrics": val_metrics})
-        # unwrap state_dict khi DataParallel
-        state_dict = model.module.state_dict() if is_parallel else model.state_dict()
-        if val_f1 > best_f1:
-            best_f1 = val_f1
-            ckpt_path = args.checkpoint_dir / "best.pt"
-            torch.save({"epoch": epoch + 1, "model_state_dict": state_dict, "optimizer_state_dict": optimizer.state_dict(),
-                        "val_f1": val_f1, "val_metrics": val_metrics, "config": {"mode": args.mode, "model": model_config}}, ckpt_path)
-            logger.info("  ★ Best mới (F1=%.4f) -> %s", val_f1, ckpt_path)
+        if rank == 0:
+            logger.info("Epoch %d/%d (%.1fs%s) | Train %.4f | Val %.4f | Val F1 %.4f | Loc F1 %.4f | AUC %.4f",
+                        epoch + 1, args.epochs, elapsed, vram_str,
+                        train_losses.get("total", 0.0), val_losses.get("total", 0.0), val_f1, loc_f1,
+                        val_metrics.get("binary", {}).get("auc", 0.0))
+            history.append({"epoch": epoch + 1, "train_loss": train_losses, "val_loss": val_losses, "val_metrics": val_metrics})
+            # unwrap state_dict khi DataParallel hoặc DDP
+            state_dict = model.module.state_dict() if hasattr(model, "module") else model.state_dict()
+            if val_f1 > best_f1:
+                best_f1 = val_f1
+                ckpt_path = args.checkpoint_dir / "best.pt"
+                torch.save({"epoch": epoch + 1, "model_state_dict": state_dict, "optimizer_state_dict": optimizer.state_dict(),
+                            "val_f1": val_f1, "val_metrics": val_metrics, "config": {"mode": args.mode, "model": model_config}}, ckpt_path)
+                logger.info("  ★ Best mới (F1=%.4f) -> %s", val_f1, ckpt_path)
         if early_stop(val_f1):
-            logger.info("Early stopping sau %d epochs không cải thiện.", early_stop.patience)
+            if rank == 0:
+                logger.info("Early stopping sau %d epochs không cải thiện.", early_stop.patience)
             break
 
-    history_path = args.checkpoint_dir / "training_history.json"
-    history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
-    logger.info("=" * 60)
-    logger.info("Xong! Best Val F1: %.4f", best_f1)
-    logger.info("Checkpoint: %s", args.checkpoint_dir / "best.pt")
-    logger.info("History: %s", history_path)
-    logger.info("Trên Kaggle nhớ Save Version / Download checkpoint trước khi hết session.")
-    logger.info("=" * 60)
+    if rank == 0:
+        history_path = args.checkpoint_dir / "training_history.json"
+        history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("=" * 60)
+        logger.info("Xong! Best Val F1: %.4f", best_f1)
+        logger.info("Checkpoint: %s", args.checkpoint_dir / "best.pt")
+        logger.info("History: %s", history_path)
+        logger.info("Trên Kaggle nhớ Save Version / Download checkpoint trước khi hết session.")
+        logger.info("=" * 60)
+
+    if is_ddp:
+        try:
+            dist.barrier()
+            dist.destroy_process_group()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

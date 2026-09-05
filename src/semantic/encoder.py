@@ -46,25 +46,25 @@ class SemanticEncoder(nn.Module):
         except ImportError as exc:
             raise RuntimeError("Install `transformers`: pip install transformers") from exc
 
+        import time
         logger.info("Loading semantic backbone: %s (lora=%s)", backbone, use_lora)
         # FP16 for 3B saves ~3GB vs bf16/fp32; LoRA FP16 is fastest on T4 (no 4bit dequant)
         dtype = torch.float16 if use_fp16 else None
         kwargs = {
             "trust_remote_code": True,
-            "low_cpu_mem_usage": True,
+            "low_cpu_mem_usage": False,
         }
         if dtype is not None:
             # pyrefly: ignore [bad-assignment]
             kwargs["torch_dtype"] = dtype
             kwargs["dtype"] = dtype
 
-        # NOTE: Do NOT use device_map here! In transformers v5.x / late v4, device_map triggers
-        # a buggy 'Materializing param' loop that leaks 30GB+ of System RAM and crashes Kaggle containers.
-        # low_cpu_mem_usage=True safely deserializes weights on CPU (~6GB RAM), and model.to(device)
-        # in train.py cleanly transfers the model to GPU 0 without accelerate hooks, enabling DataParallel!
+        # low_cpu_mem_usage=False loads weights via native fast mmap (2-3s) instead of
+        # the slow 'Materializing param' loop in transformers v5 (which took 3.5+ minutes).
+        t_load_start = time.time()
         self.backbone = AutoModel.from_pretrained(backbone, **kwargs)
         self.hidden_size = self.backbone.config.hidden_size
-        logger.info("Backbone hidden size: %d", self.hidden_size)
+        logger.info("Backbone loaded in %.2fs. Hidden size: %d", time.time() - t_load_start, self.hidden_size)
 
         if gradient_checkpointing and hasattr(self.backbone, "gradient_checkpointing_enable"):
             try:
