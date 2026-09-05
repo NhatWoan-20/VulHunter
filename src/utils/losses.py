@@ -172,34 +172,42 @@ class MultiTaskLoss(nn.Module):
             denom = w.sum().clamp(min=1e-6)
             return (loss_elem * w).sum() / denom
 
-        if binary_logits is not None and binary_targets is not None and self.loss_weights.get("binary", 0) > 0:
+        if binary_logits is not None:
             device = binary_logits.device
-            logits = binary_logits.view(-1)
-            targets = binary_targets.float().view(-1)
-            ce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
-            probs = torch.sigmoid(logits)
-            p_t = probs * targets + (1 - probs) * (1 - targets)
-            focal_w = (1 - p_t) ** self.binary_loss.gamma
-            alpha_t = self.binary_loss.alpha * targets + (1 - self.binary_loss.alpha) * (1 - targets)
-            losses["binary"] = _weighted_2d(alpha_t * focal_w * ce)
+            if binary_targets is not None and self.loss_weights.get("binary", 0) > 0:
+                logits = binary_logits.view(-1)
+                targets = binary_targets.float().view(-1)
+                ce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+                probs = torch.sigmoid(logits)
+                p_t = probs * targets + (1 - probs) * (1 - targets)
+                focal_w = (1 - p_t) ** self.binary_loss.gamma
+                alpha_t = self.binary_loss.alpha * targets + (1 - self.binary_loss.alpha) * (1 - targets)
+                losses["binary"] = _weighted_2d(alpha_t * focal_w * ce)
+            else:
+                losses["binary"] = (binary_logits * 0.0).sum()
 
-        if cwe_logits is not None and cwe_targets is not None and self.loss_weights.get("cwe", 0) > 0:
+        if cwe_logits is not None:
             device = cwe_logits.device
-            valid = cwe_targets >= 0
-            ce = F.cross_entropy(cwe_logits, cwe_targets, reduction="none", label_smoothing=0.1)
-            losses["cwe"] = _weighted_2d(ce, valid)
+            computed_cwe = False
+            if cwe_targets is not None and self.loss_weights.get("cwe", 0) > 0:
+                valid = cwe_targets >= 0
+                if valid.any():
+                    ce = F.cross_entropy(cwe_logits[valid], cwe_targets[valid], reduction="none", label_smoothing=0.1)
+                    losses["cwe"] = _weighted_2d(ce, None)
+                    computed_cwe = True
+            if not computed_cwe:
+                losses["cwe"] = (cwe_logits * 0.0).sum()
 
         # Localization: pool tokens -> lines
-        if (
-            localization_logits is not None
-            and localization_targets is not None
-            and self.loss_weights.get("localization", 0) > 0
-        ):
+        if localization_logits is not None:
             device = localization_logits.device
             tok_logits = localization_logits.squeeze(-1)  # (B, L)
-            if token_line_ids is not None:
-                # ensure shape alignment: tok_logits seq len == token_line_ids seq len
-                # If mismatch due to truncation/padding, slice to min
+            computed_loc = False
+            if (
+                localization_targets is not None
+                and self.loss_weights.get("localization", 0) > 0
+                and token_line_ids is not None
+            ):
                 min_L = min(tok_logits.size(1), token_line_ids.size(1))
                 tok_logits_s = tok_logits[:, :min_L]
                 tl = token_line_ids[:, :min_L]
@@ -208,59 +216,60 @@ class MultiTaskLoss(nn.Module):
                 )
                 if flat_logits.numel() > 0:
                     if sample_weights is not None:
-                        # per-line weight = sample weight of its sample
                         w = sample_weights[flat_sample]
                         ce = F.binary_cross_entropy_with_logits(flat_logits, flat_targets, reduction="none")
                         probs = torch.sigmoid(flat_logits)
                         p_t = probs * flat_targets + (1 - probs) * (1 - flat_targets)
                         focal_w = (1 - p_t) ** 2.0
                         alpha_t = 0.5 * flat_targets + 0.5 * (1 - flat_targets)
-                        # alpha 0.5 => symmetric
                         loss_elem = alpha_t * focal_w * ce
                         losses["localization"] = (loss_elem * w).sum() / w.sum().clamp(min=1e-6)
                     else:
                         losses["localization"] = self.localization_loss(flat_logits, flat_targets)
-            else:
-                # Fallback: if no token_line_ids, treat as token-level (should not happen after fix)
-                flat_logits = tok_logits.view(-1)
-                flat_targets = localization_targets.float().view(-1) if localization_targets.dim() == 2 else localization_targets.float().view(-1)
-                # Can't align shapes; skip
-                pass
+                    computed_loc = True
+            if not computed_loc:
+                losses["localization"] = (tok_logits * 0.0).sum()
 
-        if source_sink_logits is not None and source_sink_targets is not None and self.loss_weights.get("source_sink", 0) > 0:
+        if source_sink_logits is not None:
             device = source_sink_logits.device
-            B, L, C = source_sink_logits.shape
-            # need to align L with targets
-            min_L = min(L, source_sink_targets.size(1))
-            logits_s = source_sink_logits[:, :min_L, :].reshape(B * min_L, C)
-            targets_s = source_sink_targets[:, :min_L].reshape(B * min_L)
-            valid = targets_s != -1
-            if valid.any():
-                ce = F.cross_entropy(logits_s[valid], targets_s[valid], reduction="none")
-                if sample_weights is not None:
-                    # expand sample_weights per token
-                    w_tok = sample_weights.unsqueeze(1).expand(B, min_L).reshape(B * min_L)[valid]
-                    losses["source_sink"] = (ce * w_tok).sum() / w_tok.sum().clamp(min=1e-6)
-                else:
-                    losses["source_sink"] = ce.mean()
-            else:
-                losses["source_sink"] = torch.tensor(0.0, device=device)
+            computed_ss = False
+            if source_sink_targets is not None and self.loss_weights.get("source_sink", 0) > 0:
+                B, L, C = source_sink_logits.shape
+                min_L = min(L, source_sink_targets.size(1))
+                logits_s = source_sink_logits[:, :min_L, :].reshape(B * min_L, C)
+                targets_s = source_sink_targets[:, :min_L].reshape(B * min_L)
+                valid = targets_s != -1
+                if valid.any():
+                    ce = F.cross_entropy(logits_s[valid], targets_s[valid], reduction="none")
+                    if sample_weights is not None:
+                        w_tok = sample_weights.unsqueeze(1).expand(B, min_L).reshape(B * min_L)[valid]
+                        losses["source_sink"] = (ce * w_tok).sum() / w_tok.sum().clamp(min=1e-6)
+                    else:
+                        losses["source_sink"] = ce.mean()
+                    computed_ss = True
+            if not computed_ss:
+                losses["source_sink"] = (source_sink_logits * 0.0).sum()
 
-        if severity_logits is not None and severity_targets is not None and self.loss_weights.get("severity", 0) > 0:
+        if severity_logits is not None:
             device = severity_logits.device
-            valid = severity_targets >= 0
-            if valid.any():
-                _ce = F.cross_entropy(severity_logits[valid], severity_targets[valid], reduction="none", label_smoothing=0.05)
-                if sample_weights is not None:
-                    w = sample_weights[valid]
-                    losses["severity"] = (_ce * w).sum() / w.sum().clamp(min=1e-6)
-                else:
-                    losses["severity"] = _ce.mean()
+            computed_sev = False
+            if severity_targets is not None and self.loss_weights.get("severity", 0) > 0:
+                valid = severity_targets >= 0
+                if valid.any():
+                    _ce = F.cross_entropy(severity_logits[valid], severity_targets[valid], reduction="none", label_smoothing=0.05)
+                    if sample_weights is not None:
+                        w = sample_weights[valid]
+                        losses["severity"] = (_ce * w).sum() / w.sum().clamp(min=1e-6)
+                    else:
+                        losses["severity"] = _ce.mean()
+                    computed_sev = True
+            if not computed_sev:
+                losses["severity"] = (severity_logits * 0.0).sum()
 
         if device is None:
             device = torch.device("cpu")
         total = torch.tensor(0.0, device=device)
         for task, loss in losses.items():
-            total = total + self.loss_weights.get(task, 0.0) * loss
+            total = total + self.loss_weights.get(task, 1.0) * loss
         losses["total"] = total
         return losses

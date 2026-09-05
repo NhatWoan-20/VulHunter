@@ -19,6 +19,7 @@ import os
 import random
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -145,26 +146,28 @@ def _build_loss_kwargs(output: ModelOutput, batch: dict, device: torch.device) -
     kw: dict = {}
     if output.binary_logits is not None:
         kw["binary_logits"] = output.binary_logits
-        kw["binary_targets"] = batch["binary_labels"].to(device)
+        if "binary_labels" in batch:
+            kw["binary_targets"] = batch["binary_labels"].to(device)
     if output.cwe_logits is not None:
         kw["cwe_logits"] = output.cwe_logits
-        kw["cwe_targets"] = batch["cwe_labels"].to(device)
+        if "cwe_labels" in batch:
+            kw["cwe_targets"] = batch["cwe_labels"].to(device)
     if output.severity_logits is not None:
         kw["severity_logits"] = output.severity_logits
-        kw["severity_targets"] = batch["severity_labels"].to(device)
-    if output.localization_logits is not None and "line_labels" in batch and "token_line_ids" in batch:
-        tl = batch["token_line_ids"].to(device)
-        if (tl != -1).any():
-            kw["localization_logits"] = output.localization_logits
+        if "severity_labels" in batch:
+            kw["severity_targets"] = batch["severity_labels"].to(device)
+    if output.localization_logits is not None:
+        kw["localization_logits"] = output.localization_logits
+        if "line_labels" in batch:
             kw["localization_targets"] = batch["line_labels"].to(device)
-            kw["token_line_ids"] = tl
-            if "attention_mask" in batch:
-                kw["attention_mask"] = batch["attention_mask"].to(device)
-    if output.source_sink_logits is not None and "source_sink_labels" in batch:
-        ssl = batch["source_sink_labels"].to(device)
-        if (ssl != -1).any():
-            kw["source_sink_logits"] = output.source_sink_logits
-            kw["source_sink_targets"] = ssl
+        if "token_line_ids" in batch:
+            kw["token_line_ids"] = batch["token_line_ids"].to(device)
+        if "attention_mask" in batch:
+            kw["attention_mask"] = batch["attention_mask"].to(device)
+    if output.source_sink_logits is not None:
+        kw["source_sink_logits"] = output.source_sink_logits
+        if "source_sink_labels" in batch:
+            kw["source_sink_targets"] = batch["source_sink_labels"].to(device)
     if "sample_weights" in batch:
         kw["sample_weights"] = batch["sample_weights"].to(device)
     return kw
@@ -189,21 +192,25 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
             kwargs["edge_type"] = batch["edge_type"].to(device)
             kwargs["batch"] = batch["batch"].to(device)
 
+        is_accumulating = ((step + 1) % grad_accum != 0) and ((step + 1) != len(loader))
+        sync_context = model.no_sync() if (hasattr(model, "no_sync") and is_accumulating) else nullcontext()
+
         # forward + loss trong autocast khi use_amp
-        if use_amp and device.type == "cuda":
-            with torch.autocast(device_type="cuda", dtype=torch.float16):
+        with sync_context:
+            if use_amp and device.type == "cuda":
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    output = model(**kwargs)
+                    losses = criterion(**_build_loss_kwargs(output, batch, device))
+                    loss = losses["total"] / grad_accum
+                assert scaler is not None
+                scaler.scale(loss).backward()
+            else:
                 output = model(**kwargs)
                 losses = criterion(**_build_loss_kwargs(output, batch, device))
                 loss = losses["total"] / grad_accum
-            assert scaler is not None
-            scaler.scale(loss).backward()
-        else:
-            output = model(**kwargs)
-            losses = criterion(**_build_loss_kwargs(output, batch, device))
-            loss = losses["total"] / grad_accum
-            loss.backward()
+                loss.backward()
 
-        if (step + 1) % grad_accum == 0 or (step + 1) == len(loader):
+        if not is_accumulating:
             if use_amp and scaler is not None:
                 try:
                     scaler.unscale_(optimizer)
@@ -486,7 +493,7 @@ def main() -> None:
         torch.cuda.empty_cache()
 
     if is_ddp:
-        model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
+        model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
         logger.info("✅ DDP kích hoạt thành công trên GPU %d (Rank %d/%d).", local_rank, rank, world_size)
     elif is_parallel:
         model = nn.DataParallel(model)
