@@ -281,15 +281,26 @@ def resolve_tokenizer_or_model(backbone: str) -> str:
     return backbone
 
 def save_kaggle_output_checkpoint(src: Path | None = None):
-    src = src or get_checkpoint_dir() / "best.pt"
-    if src.exists():
-        dst = get_working_root() / "vulhunter_best.pt"
-        shutil.copy2(src, dst)
-        print(f"[INFO] Checkpoint -> {dst} ({dst.stat().st_size/1e6:.1f} MB) — nhớ Save Version / Download.")
-        hist = src.parent / "training_history.json"
-        if hist.exists():
-            shutil.copy2(hist, get_working_root() / "training_history.json")
-    else:
-        print(f"[WARN] Chưa có checkpoint: {src}")
+    ckpt_dir = get_checkpoint_dir()
+    for name in ["best.pt", "last.pt", "training_history.json"]:
+        p = ckpt_dir / name
+        if p.exists():
+            dst = get_working_root() / f"vulhunter_{name}"
+            shutil.copy2(p, dst)
+            print(f"[INFO] Checkpoint -> {dst} ({dst.stat().st_size/1e6:.1f} MB) — sẵn sàng Download / Save Version.")
+
+
+def find_resume_checkpoint() -> Path | None:
+    """Tự động quét tìm file checkpoint (.pt) trong /kaggle/input để tiếp tục phiên trước."""
+    input_dir = Path("/kaggle/input")
+    if not input_dir.exists():
+        return None
+    # Ưu tiên last.pt (epoch mới nhất vừa chạy), sau đó tới best.pt
+    candidates = list(input_dir.rglob("*last*.pt")) + list(input_dir.rglob("*best*.pt"))
+    for cand in candidates:
+        cand_str = str(cand).lower()
+        if "vulhunter-pre-tokenized" not in cand_str and cand.is_file():
+            return cand
+    return None
 
 

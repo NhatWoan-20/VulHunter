@@ -89,6 +89,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-workers", type=int, default=None)
     p.add_argument("--data-parallel", action="store_true", default=False, help="Enable legacy DataParallel.")
     p.add_argument("--single-gpu", action="store_true", default=False, help="Force single-GPU training even if multi-GPU detected.")
+    p.add_argument("--resume", type=Path, default=None, help="Path to checkpoint (.pt) to resume training from.")
     return p.parse_args()
 
 
@@ -539,10 +540,59 @@ def main() -> None:
         logger.info("AMP FP16 bật — GradScaler enabled.")
     early_stop = EarlyStopping(patience=args.patience, mode="max")
 
-    logger.info("Bắt đầu train ... (Internet ON — tokenizer pull từ HF, data read-only từ /kaggle/input)")
     best_f1 = 0.0
+    start_epoch = 0
     history: list[dict] = []
-    for epoch in range(args.epochs):
+
+    # 4. Resume từ checkpoint nếu được chỉ định (--resume)
+    if args.resume:
+        resume_path = Path(args.resume)
+        if not resume_path.exists():
+            logger.error("File checkpoint resume không tồn tại: %s", resume_path)
+            sys.exit(1)
+        logger.info("🔄 Đang nạp checkpoint để tiếp tục huấn luyện: %s", resume_path)
+        ckpt = torch.load(resume_path, map_location=device, weights_only=False)
+
+        core_model = model.module if hasattr(model, "module") else model
+        if "model_state_dict" in ckpt:
+            raw_state = ckpt["model_state_dict"]
+            clean_state = {k[7:] if k.startswith("module.") else k: v for k, v in raw_state.items()}
+            missing, unexpected = core_model.load_state_dict(clean_state, strict=False)
+            logger.info("✅ Trọng số mô hình đã được khôi phục (missing=%d, unexpected=%d).", len(missing), len(unexpected))
+
+        if "optimizer_state_dict" in ckpt:
+            try:
+                optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+                logger.info("✅ Trạng thái Optimizer (AdamW) đã được khôi phục.")
+            except Exception as e:
+                logger.warning("Không khôi phục được Optimizer state: %s", e)
+
+        if "scheduler_state_dict" in ckpt:
+            try:
+                scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+                logger.info("✅ Trạng thái LR Scheduler đã được khôi phục.")
+            except Exception as e:
+                logger.warning("Không khôi phục được Scheduler state: %s", e)
+
+        if scaler is not None and "scaler_state_dict" in ckpt and ckpt["scaler_state_dict"] is not None:
+            try:
+                scaler.load_state_dict(ckpt["scaler_state_dict"])
+                logger.info("✅ Trạng thái GradScaler FP16 đã được khôi phục.")
+            except Exception as e:
+                pass
+
+        start_epoch = int(ckpt.get("epoch", 0))
+        best_f1 = float(ckpt.get("best_f1", ckpt.get("val_f1", 0.0)))
+        if "history" in ckpt and isinstance(ckpt["history"], list):
+            history = list(ckpt["history"])
+        early_stop.best_score = best_f1
+        logger.info("🚀 SẴN SÀNG RESUME: Bắt đầu từ Epoch %d/%d (Best Val F1 trước đó: %.4f, lịch sử: %d epochs).",
+                    start_epoch + 1, args.epochs, best_f1, len(history))
+        if start_epoch >= args.epochs:
+            logger.warning("⚠️ Checkpoint đã hoàn thành toàn bộ %d/%d epochs. Hãy tăng --epochs nếu muốn tiếp tục train thêm!", start_epoch, args.epochs)
+
+    logger.info("Bắt đầu train ... (Internet ON — tokenizer pull từ HF, data read-only từ /kaggle/input)")
+    for epoch in range(start_epoch, args.epochs):
         if is_ddp and train_sampler is not None:
             train_sampler.set_epoch(epoch)
         t0 = time.time()
@@ -568,11 +618,29 @@ def main() -> None:
             history.append({"epoch": epoch + 1, "train_loss": train_losses, "val_loss": val_losses, "val_metrics": val_metrics})
             # unwrap state_dict khi DataParallel hoặc DDP
             state_dict = model.module.state_dict() if hasattr(model, "module") else model.state_dict()
+
+            # Luôn cập nhật last.pt sau mỗi epoch (ghi đè file cũ, duy nhất 1 file để phục vụ Resume)
+            last_ckpt = {
+                "epoch": epoch + 1,
+                "model_state_dict": state_dict,
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "scaler_state_dict": scaler.state_dict() if scaler is not None else None,
+                "best_f1": best_f1,
+                "val_f1": val_f1,
+                "val_metrics": val_metrics,
+                "config": {"mode": args.mode, "model": model_config},
+                "history": history,
+            }
+            last_path = args.checkpoint_dir / "last.pt"
+            torch.save(last_ckpt, last_path)
+            logger.info("  💾 Checkpoint epoch %d đã lưu (ghi đè) -> %s", epoch + 1, last_path)
+
             if val_f1 > best_f1:
                 best_f1 = val_f1
+                last_ckpt["best_f1"] = best_f1
                 ckpt_path = args.checkpoint_dir / "best.pt"
-                torch.save({"epoch": epoch + 1, "model_state_dict": state_dict, "optimizer_state_dict": optimizer.state_dict(),
-                            "val_f1": val_f1, "val_metrics": val_metrics, "config": {"mode": args.mode, "model": model_config}}, ckpt_path)
+                torch.save(last_ckpt, ckpt_path)
                 logger.info("  ★ Best mới (F1=%.4f) -> %s", val_f1, ckpt_path)
         if early_stop(val_f1):
             if rank == 0:
