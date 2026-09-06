@@ -79,7 +79,8 @@ def get_checkpoint_dir() -> Path:
     return get_working_root() / "models" / "checkpoints"
 
 def get_model_cache_dir() -> Path:
-    return Path("/kaggle/working/hf_cache") if is_kaggle() else get_project_root() / "models" / "hf_cache"
+    # Trên Kaggle, dùng /tmp/hf_cache để không tốn 6.5GB quota của /kaggle/working (19.5GB limit)
+    return Path("/tmp/hf_cache") if is_kaggle() else get_project_root() / "models" / "hf_cache"
 
 # ---------------------------------------------------------------------------
 # 2. GPU — 2x T4 (3B LoRA)

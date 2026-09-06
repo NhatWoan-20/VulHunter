@@ -665,10 +665,19 @@ def main() -> None:
             # unwrap state_dict khi DataParallel hoặc DDP
             state_dict = model.module.state_dict() if hasattr(model, "module") else model.state_dict()
 
+            # Nếu mô hình sử dụng LoRA (có tham số frozen), chỉ lưu các tham số trainable (LoRA adapters + heads).
+            # Tránh lưu 3.14 tỷ tham số frozen (~6.3GB), giúp checkpoint giảm từ 6.5GB xuống ~150MB, tiết kiệm 97% ổ cứng!
+            core_model = model.module if hasattr(model, "module") else model
+            trainable_names = {name for name, p in core_model.named_parameters() if p.requires_grad}
+            if len(trainable_names) < sum(1 for _ in core_model.parameters()):
+                saved_state_dict = {k: v for k, v in state_dict.items() if (k[7:] if k.startswith("module.") else k) in trainable_names}
+            else:
+                saved_state_dict = state_dict
+
             # Luôn cập nhật last.pt sau mỗi epoch (ghi đè file cũ, duy nhất 1 file để phục vụ Resume)
             last_ckpt = {
                 "epoch": epoch + 1,
-                "model_state_dict": state_dict,
+                "model_state_dict": saved_state_dict,
                 "optimizer_state_dict": optimizer.state_dict(),
                 "scheduler_state_dict": scheduler.state_dict(),
                 "scaler_state_dict": scaler.state_dict() if scaler is not None else None,
