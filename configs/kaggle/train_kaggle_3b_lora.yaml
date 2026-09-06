@@ -16,15 +16,15 @@ training:
   warmup_ratio: 0.1
 
   scheduler: "cosine"
-  epochs: 6
+  epochs: 10
   batch_size: 1            # per-device 1 -> 2 GPUs = 2 active samples/step
   gradient_accumulation_steps: 16  # eff = 1*16*2 = 32
 
   early_stopping:
     enabled: true
-    patience: 2
-    metric: "val_f1_binary"
-    mode: "max"
+    patience: 4
+    metric: "val_loss"
+    mode: "min"
 
   checkpoint:
     save_dir: "/kaggle/working/models/checkpoints"

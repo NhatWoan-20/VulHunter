@@ -581,7 +581,9 @@ def main() -> None:
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp and device.type == "cuda") if use_amp else None
     if use_amp and device.type == "cuda":
         logger.info("AMP FP16 bật — GradScaler enabled.")
-    early_stop = EarlyStopping(patience=args.patience, mode="max")
+    early_stop_metric = tcfg.get("early_stopping", {}).get("metric", "val_f1_binary")
+    early_stop_mode = tcfg.get("early_stopping", {}).get("mode", "max")
+    early_stop = EarlyStopping(patience=args.patience, mode=early_stop_mode)
 
     best_f1 = 0.0
     start_epoch = 0
@@ -648,6 +650,12 @@ def main() -> None:
         elapsed = time.time() - t0
         val_f1 = val_metrics.get("binary", {}).get("f1", 0.0)
         loc_f1 = val_metrics.get("localization", {}).get("f1", 0.0)
+        bin_m = val_metrics.get("binary", {})
+        val_acc = bin_m.get("accuracy", 0.0)
+        val_p = bin_m.get("precision", 0.0)
+        val_r = bin_m.get("recall", 0.0)
+        val_auc = bin_m.get("auc", 0.0)
+
         # log VRAM
         vram_str = ""
         if torch.cuda.is_available():
@@ -657,10 +665,10 @@ def main() -> None:
             except Exception:
                 pass
         if rank == 0:
-            logger.info("Epoch %d/%d (%.1fs%s) | Train %.4f | Val %.4f | Val F1 %.4f | Loc F1 %.4f | AUC %.4f",
+            logger.info("Epoch %d/%d (%.1fs%s) | Train %.4f | Val %.4f | Acc %.4f | P %.4f | R %.4f | Val F1 %.4f | AUC %.4f | Loc F1 %.4f",
                         epoch + 1, args.epochs, elapsed, vram_str,
-                        train_losses.get("total", 0.0), val_losses.get("total", 0.0), val_f1, loc_f1,
-                        val_metrics.get("binary", {}).get("auc", 0.0))
+                        train_losses.get("total", 0.0), val_losses.get("total", 0.0),
+                        val_acc, val_p, val_r, val_f1, val_auc, loc_f1)
             history.append({"epoch": epoch + 1, "train_loss": train_losses, "val_loss": val_losses, "val_metrics": val_metrics})
             # unwrap state_dict khi DataParallel hoặc DDP
             state_dict = model.module.state_dict() if hasattr(model, "module") else model.state_dict()
@@ -697,7 +705,12 @@ def main() -> None:
                 ckpt_path = args.checkpoint_dir / "best.pt"
                 torch.save(last_ckpt, ckpt_path)
                 logger.info("  ★ Best mới (F1=%.4f) -> %s", val_f1, ckpt_path)
-        if early_stop(val_f1):
+        if early_stop_metric == "val_loss":
+            score = val_losses.get("total", float("inf"))
+        else:
+            score = val_f1
+
+        if early_stop(score):
             if rank == 0:
                 logger.info("Early stopping sau %d epochs không cải thiện.", early_stop.patience)
             break
