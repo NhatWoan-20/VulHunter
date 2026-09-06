@@ -286,8 +286,17 @@ def save_kaggle_output_checkpoint(src: Path | None = None):
         p = ckpt_dir / name
         if p.exists():
             dst = get_working_root() / f"vulhunter_{name}"
-            shutil.copy2(p, dst)
-            print(f"[INFO] Checkpoint -> {dst} ({dst.stat().st_size/1e6:.1f} MB) — sẵn sàng Download / Save Version.")
+            # Không nhân bản dung lượng disk (copy file 6.5GB gây lỗi ENOSPC trên Kaggle)
+            try:
+                if dst.resolve() == p.resolve():
+                    continue
+                if dst.exists() or dst.is_symlink():
+                    dst.unlink()
+                dst.symlink_to(p)
+                print(f"[INFO] Checkpoint sẵn sàng: {dst} -> {p} (0 MB symlink) — sẵn sàng Download / Save Version.")
+            except Exception:
+                # Fallback: file gốc đã an toàn tại p, không cố copy làm tràn ổ đĩa
+                print(f"[INFO] Checkpoint an toàn tại: {p} ({p.stat().st_size/1e6:.1f} MB) — sẵn sàng Download / Save Version.")
 
 
 def find_resume_checkpoint() -> Path | None:

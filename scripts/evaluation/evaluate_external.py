@@ -88,7 +88,9 @@ def load_model(checkpoint: Path, device: torch.device) -> VulHunterModel:
         fusion_config=model_config.get("fusion", {}),
         head_config=model_config.get("heads", {}),
     )
-    model.load_state_dict(checkpoint_data["model_state_dict"])
+    raw_state = checkpoint_data.get("model_state_dict", {})
+    clean_state = {k[7:] if k.startswith("module.") else k: v for k, v in raw_state.items()}
+    model.load_state_dict(clean_state, strict=False)
     return model.to(device).eval()
 
 

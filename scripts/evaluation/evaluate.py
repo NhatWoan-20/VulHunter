@@ -62,7 +62,9 @@ def load_model(checkpoint_path: Path, device: torch.device) -> VulHunterModel:
         fusion_config=model_config.get("fusion", {}),
         head_config=model_config.get("heads", {}),
     )
-    model.load_state_dict(ckpt["model_state_dict"])
+    raw_state = ckpt.get("model_state_dict", {})
+    clean_state = {k[7:] if k.startswith("module.") else k: v for k, v in raw_state.items()}
+    model.load_state_dict(clean_state, strict=False)
     model.to(device)
     model.eval()
     logger.info("Loaded model (mode=%s, epoch=%d, val_f1=%.4f)", mode, ckpt.get("epoch", 0), ckpt.get("val_f1", 0))
