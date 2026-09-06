@@ -314,3 +314,61 @@ def find_resume_checkpoint() -> Path | None:
     return None
 
 
+def inspect_disk_usage(path: Path | str | None = None) -> None:
+    """In chi tiết tình trạng dung lượng ổ cứng /kaggle/working và các thư mục chiếm dung lượng lớn nhất."""
+    target = Path(path) if path else get_working_root()
+    if not target.exists():
+        print(f"Đường dẫn không tồn tại: {target}")
+        return
+
+    print("=" * 65)
+    print(f"📊 KIỂM TRA DUNG LƯỢNG OUTPUT TẠI: {target.resolve()}")
+    print("=" * 65)
+
+    total, used, free = shutil.disk_usage(target)
+    total_gb, used_gb, free_gb = total / 1e9, used / 1e9, free / 1e9
+    percent = (used / total) * 100
+
+    bar_len = 25
+    filled = int(bar_len * (used / total))
+    bar = "█" * filled + "░" * (bar_len - filled)
+    status = "🟢 An toàn" if percent < 70 else ("🟡 Cảnh báo" if percent < 88 else "🔴 BÁO ĐỘNG (Nguy cơ tràn đĩa)")
+
+    print(f"\n📁 TỔNG QUAN PHÂN VÙNG:")
+    print(f"  - Đã dùng : {used_gb:6.2f} GB / {total_gb:.2f} GB ({percent:5.1f}%)")
+    print(f"  - Còn trống: {free_gb:6.2f} GB")
+    print(f"  - Trạng thái: [{bar}] {status}")
+
+    print(f"\n📂 CHI TIẾT CÁC MỤC TRONG {target}:")
+    items = []
+    try:
+        for item in target.iterdir():
+            if item.is_symlink():
+                items.append((item.name, 0, "Symlink"))
+            elif item.is_file():
+                items.append((item.name, item.stat().st_size, "File"))
+            elif item.is_dir():
+                d_size = sum(f.stat().st_size for f in item.rglob("*") if f.is_file() and not f.is_symlink())
+                items.append((item.name, d_size, "Thư mục"))
+    except Exception as e:
+        print(f"  Lỗi đọc thư mục: {e}")
+
+    items.sort(key=lambda x: x[1], reverse=True)
+    for name, sz, itype in items:
+        sz_str = f"{sz / 1e9:6.2f} GB" if sz >= 1e9 else (f"{sz / 1e6:6.1f} MB" if sz >= 1e6 else f"{sz / 1e3:6.1f} KB")
+        print(f"  • {sz_str}  [{itype:7s}]  {name}")
+
+    print(f"\n🔍 TOP 5 FILE LỚN NHẤT:")
+    try:
+        all_files = [f for f in target.rglob("*") if f.is_file() and not f.is_symlink()]
+        all_files.sort(key=lambda f: f.stat().st_size, reverse=True)
+        for f in all_files[:5]:
+            rel = f.relative_to(target)
+            sz_mb = f.stat().st_size / 1e6
+            sz_str = f"{sz_mb / 1000:6.2f} GB" if sz_mb >= 1000 else f"{sz_mb:6.1f} MB"
+            print(f"  • {sz_str} -> {rel}")
+    except Exception:
+        pass
+    print("=" * 65)
+
+
