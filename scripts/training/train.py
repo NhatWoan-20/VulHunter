@@ -360,6 +360,12 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
     metrics: dict = {}
     if all_true:
         metrics["binary"] = binary_metrics(np.array(all_true), np.array(all_pred), np.array(all_prob)).to_dict()
+        if not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0:
+            probs = np.array(all_prob)
+            preds = np.array(all_pred)
+            if len(probs) > 0:
+                logger.info(f"Binary probs: min={probs.min():.4f} max={probs.max():.4f} mean={probs.mean():.4f} std={probs.std():.4f}")
+                logger.info(f"Predictions: {preds.sum()}/{len(preds)} positive")
     if all_loc_t:
         metrics["localization"] = localization_metrics(all_loc_t, all_loc_p).to_dict()
     return avg, metrics
@@ -641,6 +647,10 @@ def main() -> None:
 
     logger.info("Bắt đầu train ... (Internet ON — tokenizer pull từ HF, data read-only từ /kaggle/input)")
     for epoch in range(start_epoch, args.epochs):
+        if epoch == 5:
+            logger.info("🚀 Chuyển sang Stage 2 (Epoch %d): Bật lại auxiliary losses với trọng số thấp.", epoch + 1)
+            criterion.update_weights({'binary': 1.0, 'cwe': 0.3, 'severity': 0.1, 'localization': 0.2, 'source_sink': 0.1})
+        
         if is_ddp and train_sampler is not None:
             train_sampler.set_epoch(epoch)
         t0 = time.time()

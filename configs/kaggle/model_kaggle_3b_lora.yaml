@@ -6,15 +6,15 @@ model:
   semantic:
     backbone: "Qwen/Qwen2.5-Coder-3B-Instruct"
     output_dim: 256
-    freeze_layers: 36          # freeze toàn bộ backbone gốc khi dùng LoRA (peft sẽ inject adapter)
+    freeze_layers: 28          # freeze toàn bộ backbone gốc khi dùng LoRA (peft sẽ inject adapter)
     dropout: 0.1
     pooling: "mean"
     gradient_checkpointing: true
     use_fp16: true
     use_lora: true
-    lora_r: 32
-    lora_alpha: 64
-    lora_dropout: 0.05
+    lora_r: 64
+    lora_alpha: 128
+    lora_dropout: 0.1
     use_rslora: true
     lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
   graph:    {node_feature_dim: 128, hidden_dim: 256, output_dim: 256, num_layers: 4, num_heads: 8, num_edge_types: 5, dropout: 0.2}
