@@ -120,35 +120,45 @@ def run_evaluation(model: VulHunterModel, loader: DataLoader, device: torch.devi
                 all_severity_pred.extend(output.severity_logits.argmax(dim=-1).cpu().numpy()[valid.numpy()].tolist())
 
         # Localization: max-pool tokens -> lines
-        if output.localization_logits is not None and "line_labels" in batch and "token_line_ids" in batch:
+        if (
+            getattr(model, "mode", None) != "graph_only"
+            and output.localization_logits is not None
+            and "line_labels" in batch
+            and "token_line_ids" in batch
+        ):
             tok_probs = torch.sigmoid(output.localization_logits.squeeze(-1)).cpu()
             tl = batch["token_line_ids"].cpu()
             am = batch.get("attention_mask", torch.ones_like(tl)).cpu()
             line_labels = batch["line_labels"].cpu()
-            for b in range(tok_probs.size(0)):
-                valid_token = (am[b] == 1) & (tl[b] != -1)
-                if not valid_token.any():
-                    continue
-                targets = line_labels[b]
-                valid_lines = targets != -1
-                if not valid_lines.any():
-                    continue
-                preds_line: list[int] = []
-                trues_line: list[int] = []
-                for lid in torch.where(valid_lines)[0].tolist():
-                    mask = tl[b] == lid
-                    mask = mask & valid_token
-                    if not mask.any():
+            min_L = min(tok_probs.size(1), tl.size(1))
+            if min_L > 1:
+                tok_probs = tok_probs[:, :min_L]
+                tl = tl[:, :min_L]
+                am = am[:, :min_L]
+                for b in range(tok_probs.size(0)):
+                    valid_token = (am[b] == 1) & (tl[b] != -1)
+                    if not valid_token.any():
                         continue
-                    p = float(tok_probs[b][mask].max().item())
-                    preds_line.append(1 if p > 0.5 else 0)
-                    trues_line.append(int(targets[lid].item()))
-                if trues_line:
-                    all_loc_pred.append(preds_line)
-                    all_loc_true.append(trues_line)
+                    targets = line_labels[b]
+                    valid_lines = targets != -1
+                    if not valid_lines.any():
+                        continue
+                    preds_line: list[int] = []
+                    trues_line: list[int] = []
+                    for lid in torch.where(valid_lines)[0].tolist():
+                        mask = tl[b] == lid
+                        mask = mask & valid_token
+                        if not mask.any():
+                            continue
+                        p = float(tok_probs[b][mask].max().item())
+                        preds_line.append(1 if p > 0.5 else 0)
+                        trues_line.append(int(targets[lid].item()))
+                    if trues_line:
+                        all_loc_pred.append(preds_line)
+                        all_loc_true.append(trues_line)
 
         # Source/sink token-level
-        if output.source_sink_logits is not None and "source_sink_labels" in batch:
+        if getattr(model, "mode", None) != "graph_only" and output.source_sink_logits is not None and "source_sink_labels" in batch:
             ss_labels = batch["source_sink_labels"].cpu()
             ss_logits = output.source_sink_logits.cpu()
             preds = ss_logits.argmax(dim=-1)  # (B, L)

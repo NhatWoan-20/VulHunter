@@ -287,33 +287,43 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
             all_true.extend(batch["binary_labels"].tolist())
             all_pred.extend(preds.cpu().tolist())
             all_prob.extend(probs.cpu().tolist())
-        if output.localization_logits is not None and "line_labels" in batch and "token_line_ids" in batch:
+        if (
+            core.mode != "graph_only"
+            and output.localization_logits is not None
+            and "line_labels" in batch
+            and "token_line_ids" in batch
+        ):
             tok_probs = torch.sigmoid(output.localization_logits.squeeze(-1)).cpu()
             tl = batch["token_line_ids"].cpu()
             am = batch.get("attention_mask", torch.ones_like(tl)).cpu()
             line_labels = batch["line_labels"].cpu()
-            B = tok_probs.size(0)
-            for b in range(B):
-                valid_tok = (am[b] == 1) & (tl[b] != -1)
-                if not valid_tok.any():
-                    continue
-                targets = line_labels[b]
-                valid_lines = targets != -1
-                if not valid_lines.any():
-                    continue
-                pl: list[int] = []
-                tl_list: list[int] = []
-                for lid in torch.where(valid_lines)[0].tolist():
-                    mask = tl[b] == lid
-                    mask = mask & valid_tok
-                    if not mask.any():
+            min_L = min(tok_probs.size(1), tl.size(1))
+            if min_L > 1:
+                tok_probs = tok_probs[:, :min_L]
+                tl = tl[:, :min_L]
+                am = am[:, :min_L]
+                B = tok_probs.size(0)
+                for b in range(B):
+                    valid_tok = (am[b] == 1) & (tl[b] != -1)
+                    if not valid_tok.any():
                         continue
-                    p = float(tok_probs[b][mask].max().item())
-                    pl.append(1 if p > 0.5 else 0)
-                    tl_list.append(int(targets[lid].item()))
-                if tl_list:
-                    all_loc_p.append(pl)
-                    all_loc_t.append(tl_list)
+                    targets = line_labels[b]
+                    valid_lines = targets != -1
+                    if not valid_lines.any():
+                        continue
+                    pl: list[int] = []
+                    tl_list: list[int] = []
+                    for lid in torch.where(valid_lines)[0].tolist():
+                        mask = tl[b] == lid
+                        mask = mask & valid_tok
+                        if not mask.any():
+                            continue
+                        p = float(tok_probs[b][mask].max().item())
+                        pl.append(1 if p > 0.5 else 0)
+                        tl_list.append(int(targets[lid].item()))
+                    if tl_list:
+                        all_loc_p.append(pl)
+                        all_loc_t.append(tl_list)
     if dist.is_available() and dist.is_initialized():
         # Thu thập kết quả từ toàn bộ các GPU (ranks) về để tính metrics trên 100% tập dữ liệu validation
         world_size = dist.get_world_size()
