@@ -164,6 +164,7 @@ class VulHunterModel(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         # Graph inputs
         node_types: Optional[list[str]] = None,
+        node_texts: Optional[list[str]] = None,
         edge_index: Optional[torch.Tensor] = None,
         edge_type: Optional[torch.Tensor] = None,
         batch: Optional[torch.Tensor] = None,
@@ -176,6 +177,7 @@ class VulHunterModel(nn.Module):
             input_ids: Tokenized code, shape ``(B, L)``. Required for semantic/fusion modes.
             attention_mask: Attention mask, shape ``(B, L)``. Required for semantic/fusion modes.
             node_types: List of node type strings for graph. Required for graph/fusion modes.
+            node_texts: List of node text strings for graph. Required for graph/fusion modes.
             edge_index: Edge indices, shape ``(2, E)``. Required for graph/fusion modes.
             edge_type: Edge type indices, shape ``(E,)``. Required for graph/fusion modes.
             batch: Graph batch vector, shape ``(N,)``. Required for graph/fusion modes.
@@ -198,7 +200,7 @@ class VulHunterModel(nn.Module):
 
         elif self.mode == "graph_only":
             graph_pooled, node_emb = self.graph_encoder(
-                node_types, edge_index, edge_type, batch, return_node_embeddings=True,
+                node_types, edge_index, edge_type, batch, return_node_embeddings=True, node_texts=node_texts,
             )
             fused_pooled = graph_pooled
             # For sequence-level tasks, expand graph pooled to fake sequence dim
@@ -209,7 +211,7 @@ class VulHunterModel(nn.Module):
             sem_pooled, sem_seq = self.semantic_encoder(input_ids, attention_mask, return_sequence=True)
             # Graph branch
             graph_pooled, node_emb = self.graph_encoder(
-                node_types, edge_index, edge_type, batch, return_node_embeddings=True,
+                node_types, edge_index, edge_type, batch, return_node_embeddings=True, node_texts=node_texts,
             )
             # Fuse at pooled level
             fused_pooled = self.fusion(sem_pooled, graph_pooled)

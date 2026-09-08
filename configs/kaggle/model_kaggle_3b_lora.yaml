@@ -17,7 +17,7 @@ model:
     lora_dropout: 0.1
     use_rslora: true
     lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-  graph:    {node_feature_dim: 128, hidden_dim: 256, output_dim: 256, num_layers: 4, num_heads: 8, num_edge_types: 5, dropout: 0.2}
+  graph:    {use_graphcodebert: true, node_feature_dim: 128, hidden_dim: 256, output_dim: 256, num_layers: 4, num_heads: 8, num_edge_types: 5, dropout: 0.2}
   fusion:   {hidden_dim: 256, num_heads: 8, num_layers: 2, dropout: 0.1, combine: "gated"}
   heads:
     binary:       {hidden_dim: 128, dropout: 0.3}

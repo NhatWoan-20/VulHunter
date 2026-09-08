@@ -18,6 +18,7 @@ model:
 
   # Graph encoder (src/graph/encoder.py)
   graph:
+    use_graphcodebert: true
     node_feature_dim: 128      # Initial node-embedding dimension
     hidden_dim: 256
     output_dim: 256            # Must equal semantic.output_dim for fusion

@@ -18,6 +18,7 @@ class NodeInfo:
     line: int | None
     col: int | None
     label: str | None
+    text: str | None
 
 
 class ASTGraphBuilder(ast.NodeVisitor):
@@ -32,6 +33,7 @@ class ASTGraphBuilder(ast.NodeVisitor):
         self.edges = []
         self._stack = []
         self._next_id = 1
+        self.code = code
         tree = ast.parse(code)
         self.visit(tree)
         return {"nodes": [asdict(n) for n in self.nodes], "edges": self.edges}
@@ -39,7 +41,8 @@ class ASTGraphBuilder(ast.NodeVisitor):
     def _add_node(self, node: ast.AST, label: str | None = None) -> int:
         node_id = self._next_id
         self._next_id += 1
-        self.nodes.append(NodeInfo(id=node_id, type=node.__class__.__name__, line=getattr(node, "lineno", None), col=getattr(node, "col_offset", None), label=label))
+        text = ast.get_source_segment(self.code, node) if hasattr(ast, "get_source_segment") else None
+        self.nodes.append(NodeInfo(id=node_id, type=node.__class__.__name__, line=getattr(node, "lineno", None), col=getattr(node, "col_offset", None), label=label, text=text))
         if self._stack:
             self.edges.append({"source": self._stack[-1], "target": node_id, "type": "AST_CHILD"})
         return node_id

@@ -85,6 +85,32 @@ class NodeTypeEmbedding(nn.Module):
         return self.embedding(idx_tensor)
 
 
+class GraphCodeBERTNodeEmbedding(nn.Module):
+    """Learnable embedding for node texts using GraphCodeBERT."""
+
+    def __init__(self, model_name: str = "microsoft/graphcodebert-base", freeze: bool = True, output_dim: int = 128) -> None:
+        super().__init__()
+        from transformers import AutoModel, AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name)
+        if freeze:
+            for param in self.model.parameters():
+                param.requires_grad = False
+        self.proj = nn.Linear(self.model.config.hidden_size, output_dim)
+
+    def forward(self, node_texts: list[str]) -> torch.Tensor:
+        device = self.proj.weight.device
+        # Tokenize node texts
+        # Use max_length=32 to keep it fast, nodes usually contain short snippets
+        inputs = self.tokenizer(node_texts, padding=True, truncation=True, max_length=32, return_tensors="pt")
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        
+        # Extract features
+        outputs = self.model(**inputs)
+        cls_emb = outputs.last_hidden_state[:, 0, :]
+        return self.proj(cls_emb)
+
+
 class GATLayer(nn.Module):
     """Single Graph Attention layer with edge-type-aware attention.
 
@@ -245,9 +271,14 @@ class GraphEncoder(nn.Module):
         num_heads: int = 8,
         num_edge_types: int = 5,
         dropout: float = 0.2,
+        use_graphcodebert: bool = False,
     ) -> None:
         super().__init__()
-        self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
+        self.use_graphcodebert = use_graphcodebert
+        if use_graphcodebert:
+            self.node_embedding = GraphCodeBERTNodeEmbedding(output_dim=node_feature_dim)
+        else:
+            self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
 
         # Input projection
         self.input_proj = nn.Linear(node_feature_dim, hidden_dim)
@@ -281,6 +312,7 @@ class GraphEncoder(nn.Module):
         edge_type: torch.Tensor,
         batch: Optional[torch.Tensor] = None,
         return_node_embeddings: bool = False,
+        node_texts: Optional[list[str]] = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Encode a batched heterogeneous program graph.
 
@@ -301,7 +333,12 @@ class GraphEncoder(nn.Module):
                 ``node_embeddings`` has shape ``(N, output_dim)``.
         """
         # Node type → embedding
-        x = self.node_embedding(node_types)   # (N, node_feature_dim)
+        if self.use_graphcodebert:
+            if node_texts is None:
+                node_texts = node_types
+            x = self.node_embedding(node_texts)  # (N, node_feature_dim)
+        else:
+            x = self.node_embedding(node_types)  # (N, node_feature_dim)
         x = self.input_proj(x)                # (N, hidden_dim)
 
         # Apply GAT layers

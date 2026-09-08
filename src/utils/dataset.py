@@ -303,10 +303,13 @@ class VulHunterDataset(Dataset):
             gdata = self.graph_data[sid]
             if "nodes" in gdata:
                 result["node_types"] = [n.get("type", "unknown") if isinstance(n, dict) else str(n) for n in gdata["nodes"]]
+                result["node_texts"] = [str(n.get("text") or n.get("label") or n.get("type") or "unknown") if isinstance(n, dict) else str(n) for n in gdata["nodes"]]
             elif "node_types" in gdata:
                 result["node_types"] = gdata["node_types"]
+                result["node_texts"] = gdata["node_types"]  # Fallback
             else:
                 result["node_types"] = ["unknown"]
+                result["node_texts"] = ["unknown"]
             edges = gdata.get("edges", [])
             if edges:
                 src = [e["source"] - 1 for e in edges]
@@ -319,6 +322,7 @@ class VulHunterDataset(Dataset):
                 result["edge_type"] = torch.zeros(0, dtype=torch.long)
         else:
             result["node_types"] = ["unknown"]
+            result["node_texts"] = ["unknown"]
             result["edge_index"] = torch.zeros(2, 0, dtype=torch.long)
             result["edge_type"] = torch.zeros(0, dtype=torch.long)
 
@@ -376,6 +380,7 @@ def collate_fn(batch: list[dict]) -> dict:
 
     if "node_types" in batch[0]:
         all_node_types: list[str] = []
+        all_node_texts: list[str] = []
         edge_indices: list[torch.Tensor] = []
         edge_types: list[torch.Tensor] = []
         graph_batch: list[int] = []
@@ -383,6 +388,8 @@ def collate_fn(batch: list[dict]) -> dict:
         for i, s in enumerate(batch):
             ntypes = s.get("node_types", [])
             all_node_types.extend(ntypes)
+            ntexts = s.get("node_texts", ntypes)
+            all_node_texts.extend(ntexts)
             num_nodes = len(ntypes)
             if "edge_index" in s and s["edge_index"].size(1) > 0:  # type: ignore[attr-defined]
                 edge_indices.append(s["edge_index"] + node_offset)  # type: ignore[attr-defined]
@@ -390,6 +397,7 @@ def collate_fn(batch: list[dict]) -> dict:
             graph_batch.extend([i] * num_nodes)
             node_offset += num_nodes
         result["node_types"] = all_node_types
+        result["node_texts"] = all_node_texts
         result["batch"] = torch.tensor(graph_batch, dtype=torch.long)
         if edge_indices:
             result["edge_index"] = torch.cat(edge_indices, dim=1)

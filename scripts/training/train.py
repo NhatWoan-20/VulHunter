@@ -190,6 +190,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
             kwargs["attention_mask"] = attention_mask
         if core.mode in ("fusion", "graph_only") and "node_types" in batch:
             kwargs["node_types"] = batch["node_types"]
+            kwargs["node_texts"] = batch.get("node_texts")
             kwargs["edge_index"] = batch["edge_index"].to(device)
             kwargs["edge_type"] = batch["edge_type"].to(device)
             kwargs["batch"] = batch["batch"].to(device)
@@ -268,6 +269,7 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
             kwargs["attention_mask"] = attention_mask
         if core.mode in ("fusion", "graph_only") and "node_types" in batch:
             kwargs["node_types"] = batch["node_types"]
+            kwargs["node_texts"] = batch.get("node_texts")
             kwargs["edge_index"] = batch["edge_index"].to(device)
             kwargs["edge_type"] = batch["edge_type"].to(device)
             kwargs["batch"] = batch["batch"].to(device)

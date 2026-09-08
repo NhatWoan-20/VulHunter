@@ -45,7 +45,7 @@ def main() -> None:
             for part in parts:
                 seen_types.add(part.get("graph_type"))
                 for n in part.get("nodes", []):
-                    nodes.append({"id": n.get("id"), "type": n.get("type"), "line": n.get("line"), "label": n.get("label")})
+                    nodes.append({"id": n.get("id"), "type": n.get("type"), "line": n.get("line"), "label": n.get("label"), "text": n.get("text")})
                 for e in part.get("edges", []):
                     edges.append({"source": e["source"] + offset, "target": e["target"] + offset, "type": e.get("type")})
                 offset += len(part.get("nodes", []))

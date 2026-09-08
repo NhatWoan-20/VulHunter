@@ -10,7 +10,7 @@ model:
     pooling: "mean"
     gradient_checkpointing: true
     use_fp16: true
-  graph:    {node_feature_dim: 128, hidden_dim: 256, output_dim: 256, num_layers: 4, num_heads: 8, num_edge_types: 5, dropout: 0.2}
+  graph:    {use_graphcodebert: true, node_feature_dim: 128, hidden_dim: 256, output_dim: 256, num_layers: 4, num_heads: 8, num_edge_types: 5, dropout: 0.2}
   fusion:   {hidden_dim: 256, num_heads: 8, num_layers: 2, dropout: 0.1, combine: "gated"}
   heads:
     binary:       {hidden_dim: 128, dropout: 0.3}
