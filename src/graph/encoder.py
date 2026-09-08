@@ -168,12 +168,13 @@ class GATLayer(nn.Module):
         k_src = K[src]    # (E, H, D)
         attn_scores = (q_dst * k_src).sum(dim=-1) / (D ** 0.5)  # (E, H)
 
-        # Add edge-type bias
-        e_bias = self.edge_bias(edge_type)  # (E, H)
+        # Add edge-type bias (ensure matching dtype under AMP)
+        e_bias = self.edge_bias(edge_type).to(attn_scores.dtype)
         attn_scores = attn_scores + e_bias
 
         # Softmax per destination node (sparse attention)
-        attn_weights = self._sparse_softmax(attn_scores, dst, N)  # (E, H)
+        # Compute in float32 for numerical stability under AMP FP16, then cast back to x.dtype
+        attn_weights = self._sparse_softmax(attn_scores.float(), dst, N).to(x.dtype)
         attn_weights = self.attn_dropout(attn_weights)
 
         # Weighted aggregation
@@ -182,7 +183,7 @@ class GATLayer(nn.Module):
 
         # Scatter-add to destination nodes
         out = torch.zeros(N, H, D, device=x.device, dtype=x.dtype)
-        out.scatter_add_(0, dst.unsqueeze(-1).unsqueeze(-1).expand(-1, H, D), weighted)
+        out.scatter_add_(0, dst.unsqueeze(-1).unsqueeze(-1).expand(-1, H, D), weighted.to(out.dtype))
 
         # Reshape and project
         out = out.view(N, H * D)  # (N, H*D)
@@ -315,7 +316,7 @@ class GraphEncoder(nn.Module):
             num_graphs = batch.max().item() + 1
             graph_out = torch.zeros(num_graphs, node_out.size(1), device=node_out.device, dtype=node_out.dtype)
             count = torch.zeros(num_graphs, 1, device=node_out.device, dtype=node_out.dtype)
-            graph_out.scatter_add_(0, batch.unsqueeze(-1).expand_as(node_out), node_out)
+            graph_out.scatter_add_(0, batch.unsqueeze(-1).expand_as(node_out), node_out.to(graph_out.dtype))
             count.scatter_add_(0, batch.unsqueeze(-1), torch.ones_like(batch, dtype=node_out.dtype).unsqueeze(-1))
             graph_out = graph_out / count.clamp(min=1)
         else:
