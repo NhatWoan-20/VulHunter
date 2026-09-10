@@ -220,7 +220,7 @@ class CrossModalFusion(nn.Module):
             semantic, graph = block(semantic, graph)
 
         # Align sequence lengths by pooling graph features and broadcasting them
-        # over semantic positions; this preserves token-level output for localization.
+        # over semantic positions.
         if semantic.size(1) != graph.size(1):
             graph = graph.mean(dim=1, keepdim=True).expand(-1, semantic.size(1), -1)
 

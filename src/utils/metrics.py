@@ -3,8 +3,7 @@
 Provides metric computation for:
     - Binary detection: Precision, Recall, F1, ROC-AUC
     - CWE classification: Macro/Micro F1, Per-class F1
-    - Line localization: Line-level Precision/Recall/F1, Top-k Accuracy
-    - Source/Sink: Per-class F1
+
 
 All metrics operate on numpy arrays for compatibility with scikit-learn.
 """
@@ -13,7 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-# pyrefly: ignore [missing-import]
 import numpy as np
 
 
@@ -134,60 +132,6 @@ def multiclass_metrics(
     )
 
 
-def localization_metrics(
-    y_true: list[list[int]],
-    y_pred: list[list[int]],
-    top_k: int = 5,
-) -> MetricResult:
-    """Compute line-level vulnerability localization metrics.
-
-    Evaluates how accurately the model identifies vulnerable lines.
-
-    Args:
-        y_true: List of ground truth line labels per sample.
-            Each inner list has values in {0, 1} where 1 = vulnerable.
-        y_pred: List of predicted line labels per sample.
-        top_k: K value for top-k accuracy computation.
-
-    Returns:
-        MetricResult with line-level precision, recall, F1, and top-k accuracy.
-    """
-    all_tp = all_fp = all_fn = 0
-    top_k_hits = 0
-    total_samples = 0
-
-    for true, pred in zip(y_true, y_pred):
-        min_len = min(len(true), len(pred))
-        true = true[:min_len]
-        pred = pred[:min_len]
-
-        true_set = {i for i, v in enumerate(true) if v == 1}
-        pred_set = {i for i, v in enumerate(pred) if v == 1}
-
-        all_tp += len(true_set & pred_set)
-        all_fp += len(pred_set - true_set)
-        all_fn += len(true_set - pred_set)
-
-        # Top-k: did any of the top-k predictions hit a true vulnerable line?
-        if true_set:
-            total_samples += 1
-            pred_top_k = sorted(range(len(pred)), key=lambda i: pred[i] if i < len(pred) else 0, reverse=True)[:top_k]
-            if any(i in true_set for i in pred_top_k):
-                top_k_hits += 1
-
-    precision = all_tp / (all_tp + all_fp) if (all_tp + all_fp) > 0 else 0.0
-    recall = all_tp / (all_tp + all_fn) if (all_tp + all_fn) > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-    top_k_acc = top_k_hits / total_samples if total_samples > 0 else 0.0
-
-    return MetricResult(
-        precision=precision,
-        recall=recall,
-        f1=f1,
-        accuracy=top_k_acc,
-        support=total_samples,
-    )
-
 
 def compute_all_metrics(
     binary_true: Optional[np.ndarray] = None,
@@ -205,7 +149,6 @@ def compute_all_metrics(
         binary_true/pred/prob: Binary detection arrays.
         cwe_true/pred: CWE classification arrays.
         cwe_names: CWE class name strings.
-        loc_true/pred: Line-level localization labels.
 
     Returns:
         Dictionary mapping task names to MetricResult objects.
@@ -217,8 +160,5 @@ def compute_all_metrics(
 
     if cwe_true is not None and cwe_pred is not None:
         results["cwe"] = multiclass_metrics(cwe_true, cwe_pred, cwe_names)
-
-    if loc_true is not None and loc_pred is not None:
-        results["localization"] = localization_metrics(loc_true, loc_pred)
 
     return results

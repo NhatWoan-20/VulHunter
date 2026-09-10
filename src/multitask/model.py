@@ -4,7 +4,7 @@ This is the main model class that integrates all components:
     1. Semantic Encoder (LLM backbone)
     2. Graph Encoder (GAT)
     3. Cross-Modal Fusion (Bidirectional Cross-Attention)
-    4. Multi-Task Heads (Binary, CWE, Localization, Source/Sink)
+    4. Multi-Task Heads (Binary, CWE, Severity)
 
 It supports three operating modes:
     - semantic_only: Only uses the semantic encoder
@@ -166,7 +166,7 @@ class VulHunterModel(nn.Module):
             edge_type: Edge type indices, shape ``(E,)``. Required for graph/fusion modes.
             batch: Graph batch vector, shape ``(N,)``. Required for graph/fusion modes.
             tasks: List of tasks to compute. Default: all tasks.
-                Options: "binary", "cwe", "localization", "source_sink".
+                Options: "binary", "cwe", "severity".
 
         Returns:
             ModelOutput containing logits for requested tasks.

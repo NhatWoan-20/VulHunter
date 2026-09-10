@@ -9,20 +9,13 @@ weights and, optionally, per-sample confidence (quality-aware sample weighting,
 Pillar 4): gold CVEFixes samples keep full weight, silver GHSA samples are
 down-weighted so noisy auto-derived diffs perturb gradients less.
 
-Extensions in v3.2:
-    - Localization now pools per-token logits -> per-line logits via max-pool
-      using ``token_line_ids`` (B, L) where -1 marks special/pad tokens.
-    - Source/Sink is a token-level 3-class CE with weak lexicon supervision.
 """
 from __future__ import annotations
 
 from typing import Optional
 
-# pyrefly: ignore [missing-import]
 import torch
-# pyrefly: ignore [missing-import]
 import torch.nn as nn
-# pyrefly: ignore [missing-import]
 import torch.nn.functional as F
 
 QUALITY_TIER_WEIGHTS = {
@@ -59,9 +52,6 @@ class FocalLoss(nn.Module):
 class MultiTaskLoss(nn.Module):
     """Combined multi-task loss with per-task weighting.
 
-    Extensions:
-        - ``localization`` now expects ``token_line_ids`` to pool tokens->lines.
-        - ``source_sink`` is a normal token-level CE (ignore_index=-1).
 
     Args:
         loss_weights: Dict mapping task names to their loss weights.
@@ -81,8 +71,6 @@ class MultiTaskLoss(nn.Module):
         self.loss_weights = loss_weights or {
             "binary": 1.0,
             "cwe": 0.5,
-            "localization": 0.4,
-            "source_sink": 0.15,
             "severity": 0.2,
         }
         self.binary_loss = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)

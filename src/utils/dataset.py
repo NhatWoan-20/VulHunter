@@ -4,9 +4,9 @@ Loads preprocessed JSONL data and converts it into tensors suitable for
 the multi-task model. Handles variable-length sequences and graph structures.
 
 Supports the three remaining tasks:
-    - Line-Level Localization via ``token_line_ids`` (offset_mapping → line index)
-    - Source/Sink via ``source_sink_labels`` (weak heuristic lexicon)
-    - Explanation is post-hoc and consumes the same fields
+    - Binary vulnerability detection
+    - CWE classification
+    - Severity prediction
 
 Usage:
     >>> dataset = VulHunterDataset("data/splits/train.jsonl")

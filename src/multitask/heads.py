@@ -7,8 +7,7 @@ that branch out from the shared backbone.
 Heads:
     - BinaryHead: Vulnerable vs. safe (binary classification)
     - CWEHead: Vulnerability type classification (multi-class)
-    - LocalizationHead: Line-level vulnerability prediction (sequence labeling)
-    - SourceSinkHead: Source/Propagation/Sink detection (token classification)
+    - SeverityHead: Severity tier prediction
 """
 from __future__ import annotations
 
