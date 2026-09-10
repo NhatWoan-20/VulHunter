@@ -1,6 +1,6 @@
-# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (2×T4)
+# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (1×P100)
 
-> **Mục tiêu:** Chạy mô hình **VulHunter v3.3 (6 tasks)** trên **Kaggle Notebook `GPU T4 ×2` + Internet ON** với **Qwen2.5-Coder-3B-Instruct LoRA**.
+> **Mục tiêu:** Chạy mô hình **VulHunter v4.0 (3 tasks)** trên **Kaggle Notebook `GPU P100` + Internet ON** với **Qwen2.5-Coder-1.5B-Instruct**.
 > **Lưu ý Cốt Lõi:** Toàn bộ quá trình Thu thập dữ liệu (Collection), Trích xuất (Extraction), Tiền xử lý (Preprocessing) và Tạo đồ thị (Graph Generation) **PHẢI ĐƯỢC CHẠY TRÊN MÁY LOCAL**. Kaggle chỉ được sử dụng cho bước cuối cùng là **Huấn luyện (Training)** và **Đánh giá (Evaluation)** nhằm tận dụng GPU.
 
 ---
@@ -11,7 +11,7 @@ Kaggle có giới hạn về thời gian chạy (12h/session), disk space, và k
 
 ### Bước 1.1: Chạy Full Pipeline Thu Thập & Xử Lý Dữ Liệu (Local)
 
-Chạy tuần tự các script theo đúng luồng của dự án trên terminal local của bạn (đọc thêm chi tiết tại các file README trong từng thư mục con):
+Chạy tuần tự các script theo đúng luồng của dự án trên terminal local của bạn:
 
 ```bash
 # 1. Thu thập dữ liệu (cần thiết lập biến môi trường GITHUB_TOKEN)
@@ -29,7 +29,6 @@ python scripts/preprocessing/strip_docstrings.py
 python scripts/preprocessing/build_samples.py
 python scripts/preprocessing/split.py
 python scripts/preprocessing/tokenize_qwen.py
-python scripts/preprocessing/generate_source_sink_labels.py
 
 # 4. Xây dựng đồ thị cấu trúc (AST, CFG, DFG, Call Graph)
 python scripts/graph/build_ast.py
@@ -48,7 +47,7 @@ Thay vì upload toàn bộ thư mục `data/` khổng lồ, chúng ta sử dụn
 python notebooks/prepare_kaggle_dataset.py --with-graphs
 ```
 
-Script này sẽ copy các file chia tách (`train.jsonl`, `validation.jsonl`, `test.jsonl`) và `master_graphs.jsonl` ra thư mục `dist/kaggle_dataset/`. Tổng dung lượng chuẩn bị upload sẽ rơi vào khoảng ~1.2GB.
+Script này sẽ copy các file chia tách (`train.jsonl`, `validation.jsonl`, `test.jsonl`) và `master_graphs.jsonl` ra thư mục `dist/kaggle_dataset/`.
 
 ---
 
@@ -75,7 +74,7 @@ kaggle datasets create -p dist/kaggle_dataset
 
 1. Mở Kaggle Notebook mới hoặc notebook có sẵn của bạn.
 2. Góc phải màn hình, mục **Settings**:
-   - **Accelerator**: Chọn **GPU T4 ×2**.
+   - **Accelerator**: Chọn **GPU P100**.
    - **Internet**: Bật **ON** (để mô hình tự động pull Qwen weights trực tiếp từ thư viện HuggingFace).
 3. Góc phải màn hình, mục **Input**:
    - Bấm **Add Input**.
@@ -83,23 +82,20 @@ kaggle datasets create -p dist/kaggle_dataset
 
 ### Bước 3.2: Chạy Code Huấn Luyện
 
-Upload file `notebooks/kaggle_pipeline.ipynb` lên môi trường Kaggle của bạn. Notebook này đã được gộp từ các bước riêng lẻ (thiết lập, huấn luyện, đánh giá, suy luận) để đảm bảo bạn chạy mượt mà từ đầu đến cuối mà không bị đứt đoạn session hay mất GPU allocation. Bạn chỉ cần mở notebook và chạy tuần tự các cell từ trên xuống dưới.
+Upload file `notebooks/train_fusion.ipynb` hoặc `notebooks/train_semantic_only.ipynb` lên môi trường Kaggle của bạn. Bạn chỉ cần mở notebook và chạy tuần tự các cell từ trên xuống dưới.
 
 ---
 
-## 4. Tại sao cấu hình 3B LoRA là tối ưu trên 2×T4?
+## 4. Tại sao cấu hình 1.5B Full Fine-Tune trên 1×P100?
 
 | Đặc điểm của Kaggle | Tối ưu của VulHunter |
 |---|---|
-| **2×T4 16GB VRAM** | Mô hình Qwen 3B Full sẽ tốn ~19GB/GPU → chắc chắn bị **OOM (Out Of Memory)**. Bằng cách dùng **3B LoRA r=32** kết hợp `fp16`, `gradient_checkpointing` và batch size 1, VRAM tiêu thụ thực tế chỉ tốn **~12GB/GPU**. `DataParallel` tự động chia micro-batch cho 2 GPU giúp tăng thông lượng lên ~1.8 lần. |
-| **Internet ON** | Không cần tốn dung lượng Kaggle Dataset để lưu trữ weight nguyên bản của mô hình. `transformers` sẽ tự động tải weights (~6GB) từ HuggingFace vào cache `/kaggle/working/hf_cache`. Chạy lần hai sẽ truy xuất tức thì. |
-| **12h/session limit** | 6 epochs train LoRA trên 2xT4 chỉ mất khoảng **1.5 - 2h**. Rất an toàn và nằm gọn trong giới hạn 12h của Kaggle. |
+| **1×P100 16GB VRAM** | Bằng cách chuyển sang Qwen2.5-Coder-1.5B-Instruct, mô hình có thể được Full Fine-Tune trực tiếp trên môi trường 1xP100 với `fp16`, `gradient_checkpointing` và batch size nhỏ. Không cần DataParallel hay LoRA phức tạp. |
+| **Internet ON** | Không cần tốn dung lượng Kaggle Dataset để lưu trữ weight nguyên bản của mô hình. `transformers` sẽ tự động tải weights từ HuggingFace vào cache. |
 
 ---
 
 ## 5. Troubleshooting & Lưu ý Quan Trọng
 
-- **Lưu Checkpoint**: Mô hình tốt nhất sẽ được lưu tại `/kaggle/working/models/checkpoints/best.pt` (nặng khoảng ~80MB vì chỉ chứa LoRA adapters, không chứa weights gốc). Bạn **PHẢI** bấm nút **Save Version** (hoặc Download) trên Kaggle UI trước khi tắt trình duyệt / hết session để không bị mất file checkpoint này!
-- **Chỉ nhận 1 GPU thay vì 2?**: Kaggle thi thoảng bị quá tải tài nguyên và chỉ cấp 1 GPU T4. Bạn có thể xóa session tạo lại notebook mới, hoặc cứ để chạy tiếp (sẽ chậm hơn khoảng 1.8 lần).
-- **Lỗi `CUDA OOM`**: Đừng bao giờ thử train mode `full` 3B trên Kaggle T4. Nếu sử dụng đúng cấu hình `kaggle_3b_lora` mà vẫn bị OOM (rất hiếm), hãy thử giới hạn lại context bằng cách sửa config `--max-length 1024` thay vì 2048.
+- **Lưu Checkpoint**: Mô hình tốt nhất sẽ được lưu tại `models/checkpoints/best.pt`. Bạn **PHẢI** bấm nút **Save Version** (hoặc Download) trên Kaggle UI trước khi tắt trình duyệt / hết session để không bị mất file checkpoint này!
 - **Lỗi `MISSING train.jsonl`**: Bạn quên chưa thực hiện bước Add Input dataset ở góc phải Notebook.

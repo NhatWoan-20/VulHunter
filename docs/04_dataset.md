@@ -1,12 +1,11 @@
-# 04 — Data Engineering & Splitting: The 5-Pillar Master Dataset Strategy
+# 04 — Data Engineering & Splitting: The Master Dataset Strategy
 
-> **Version: 3.3 (2026-08-30)** — Master 1-Stage, **6/6 Tasks, 2 new token fields**
+> **Version: 4.0** — Master 1-Stage, **3/3 Tasks**
 > **Authoritative Specification**
 
 This document defines the unified training corpus: a single **Master Dataset** built by
 merging the gold **CVEFixes** corpus with the silver **GHSA** corpus, expanded per-role,
-split repository-disjoint, and enriched in **v3.3** with `token_line_ids_qwen` (for
-line-level localization) and `source_sink_labels` (for weak taint supervision).
+and split repository-disjoint.
 
 ---
 
@@ -15,7 +14,7 @@ line-level localization) and `source_sink_labels` (for weak taint supervision).
 ### 1.1 GHSA optimal line-label generation
 
 `scripts/extraction/prepare_master.py` labels GHSA vulnerable lines robustly against
-**comment / whitespace-only** diffs:
+**comment / whitespace-only** diffs.
 
 1. **Normalize before diffing:** dedent, strip trailing whitespace, and remove `COMMENT`
    tokens via tokenizer-based strip (`_strip_comments_preserve_lines`) that **preserves line
@@ -59,9 +58,7 @@ Every Master pair uses one canonical schema and carries `quality_tier`:
   "safe_code": "...",
   "binary_label": 1,
   "severity": "MODERATE",
-  "cwe_ids": ["CWE-74"],
-  "line_labels": [0, 0, 1],
-  "vulnerable_lines": [3]
+  "cwe_ids": ["CWE-74"]
 }
 ```
 
@@ -71,37 +68,21 @@ Every Master pair uses one canonical schema and carries `quality_tier`:
 - `severity` `NAN` → `UNKNOWN` (masked, label `-1`).
 - `repository` canonicalized to lowercase `owner/name` for cross-source grouping.
 
-### 1.4 v3.3 token-level enrichment (post-split, in-place on `data/splits/*.jsonl`)
+### 1.4 Tokenization Enrichment (in-place on `data/splits/*.jsonl`)
 
-After `build_samples.py` + `split.py`, two preprocessing steps materialize new fields
-**in place** on every split file (and as a mirror `data/tokenized/sem_qwen.jsonl`):
+After `build_samples.py` + `split.py`, `scripts/preprocessing/tokenize_qwen.py` materializes semantic tokens.
 
-| Step | Script | New field(s) | How | Consumers |
-|---|---|---|---|---|
-| **Token→line alignment** | `scripts/preprocessing/tokenize_qwen.py` (v3.3) | `token_line_ids_qwen: int[]` (−1 = special/pad, else 0-indexed line id) + `offset_mapping_qwen: [int,int][]` + `tokens_qwen` | `return_offsets_mapping=True` on Qwen2.5-Coder; `token_line_ids = bisect(line_starts, offset_start)-1` per token (see `src/utils/dataset.py::_line_starts`) | `VulHunterDataset` → `collate_fn` pads to `(B, L)` → `MultiTaskLoss._pool_tokens_to_lines` (max-pool) → localization head |
-| **Weak taint labels** | `scripts/preprocessing/generate_source_sink_labels.py` (NEW v3.3) | `source_sink_labels: int[]` (len == sequence, values 0 Normal / 1 Source / 2 Sink / −1 ignore-special) | Lexicon `src/utils/taint.py` (`SOURCE_SUBSTRINGS` / `SINK_SUBSTRINGS`; Sink > Source > Normal; safe samples → all 0) + line→token propagation via `token_line_ids` | `VulHunterDataset` → `collate_fn` → `MultiTaskLoss` CE (λ=0.15) + `evaluate.py` per-class taint metrics |
-
-Example per-role record after v3.3:
+Example per-role record after tokenization:
 
 ```json
 {
   "sample_id": "ghsa:e0839...:vulnerable",
   "code": "def f(x):\n    q = \"select * where id='\"+x+\"'\"\n    cursor.execute(q)\n",
-  "line_labels": [0, 1, 1],
   "input_ids_qwen": [151643,  ...],
   "attention_mask_qwen": [1, 1, ...],
-  "token_line_ids_qwen": [-1, 0, 0, 1, 1, 1, 1, 2, 2, -1],
-  "offset_mapping_qwen": [[0,0],[0,3],[3,4], ...],
-  "source_sink_labels": [-1, 0, 1, 0, 0, 0, 2, 2, -1],
   "quality_tier": "silver"
 }
 ```
-
-**Idempotence & backward compat:** both scripts re-derive deterministically; re-running after any
-re-tokenization restores consistency. `VulHunterDataset` also **re-derives on the fly** if the
-fields are absent (from `offset_mapping_qwen` + lexicon), but localization/source_sink are then
-skipped for that sample (loss weight effectively 0) until re-tokenized — so old checkpoints and
-old splits remain loadable.
 
 ---
 
@@ -125,19 +106,17 @@ Binary labels are 50/50 within every split (per-role vulnerable+safe twins).
 
 ---
 
-## PILLAR 3 — Multi-Tier Benchmark (see `06_evaluation.md`)
+## PILLAR 3 — Multi-Tier Benchmark
 
-| Tier | Benchmark | Source | Goal | v3.3 extension |
-|---|---|---|---|---|
-| **Benchmark 1** | Unified In-Domain Test | 10% Master test (repo-disjoint) | Overall performance across contemporary Python vulns | + line localization & source/sink metrics |
-| **Benchmark 2** *(aux)* | Gold re-check | test restricted to `data_source=="cvefixes"` | Gold-only sanity | + localization on gold subset |
-| **Benchmark 3** | Held-Out OOD (Zero-Shot) | PyCode-Vul test & train CSVs | Generalization | binary/CWE only (no py graphs/labels) |
-
-External PyCode-Vul remains evaluation-only; it does not produce graphs or weak taint labels.
+| Tier | Benchmark | Source | Goal |
+|---|---|---|---|
+| **Benchmark 1** | Unified In-Domain Test | 10% Master test (repo-disjoint) | Overall performance across contemporary Python vulns |
+| **Benchmark 2** *(aux)* | Gold re-check | test restricted to `data_source=="cvefixes"` | Gold-only sanity |
+| **Benchmark 3** | Held-Out OOD (Zero-Shot) | PyCode-Vul test & train CSVs | Generalization |
 
 ---
 
-## 4. Master Pipeline (v3.3 path & artifact contract)
+## 4. Master Pipeline
 
 ```
 data/raw/python_cvefixes_methods.jsonl ─┐
@@ -150,16 +129,13 @@ build_samples.py                           (pair → vulnerable + safe role, per
   ▼ data/final/master_samples.jsonl        (30,454)
 split.py --cross-project --seed 42         (Pillar 2: repo-disjoint)
   ▼ data/splits/{train,validation,test}.jsonl   (20,638 / 6,404 / 3,412)
-tokenize_qwen.py  ★ v3.3                   (in-place input_ids_qwen + token_line_ids_qwen + offset_mapping_qwen)
-  │  mirror → data/tokenized/sem_qwen.jsonl + reports/preprocessing/tokenize_qwen.json
-generate_source_sink_labels.py  ★ NEW v3.3 (in-place source_sink_labels + reports/preprocessing/source_sink.json)
+tokenize_qwen.py                           (in-place input_ids_qwen)
   ▼
 build_{ast,cfg,dfg,call}.py → merge_graphs.py
   ▼ data/processed/master_graphs.jsonl     (30,427 heterogeneous graphs, keyed by sample_id)
 ```
 
 > Pipeline is fixed to `master` — just `python scripts/preprocessing/<script>.py`. Each script is hardcoded to `master_*` paths; to target a different dataset, edit the `INPUT`/`OUTPUT` constants at the top of the script directly.
-> **After upgrading to v3.3:** re-run `tokenize_qwen.py` then `generate_source_sink_labels.py` once — old splits stay loadable.
 
 ---
 
@@ -189,22 +165,12 @@ build_{ast,cfg,dfg,call}.py → merge_graphs.py
 | `gold` | CVEFixes | 1.00 |
 | `silver` | GHSA | 0.85 |
 
-### 5.4 Taint classes (`src/utils/taint.py`)
-
-| Idx | Tag | Meaning | Supervision |
-|---|---|---|---|
-| 0 | Normal | not on taint path | weak lexicon negative |
-| 1 | Source | untrusted entry (`request.args`, `input(`, `os.environ`, …) | `SOURCE_SUBSTRINGS` |
-| 2 | Sink | dangerous consumption (`cursor.execute`, `os.system`, `eval(`, `pickle.loads`, …) | `SINK_SUBSTRINGS` (priority over Source) |
-| −1 | Ignore | special/pad token | never scored |
-
 ---
 
 ## 6. Quality Assurance
 
 - Zero duplicated `sample_id` in `data/final/master_samples.jsonl` (30,454 unique, verified).
 - Strictly disjoint repo sets across splits (verified via `split.py` report).
-- 100% of samples carry `line_labels`; 100% carry `input_ids_qwen` after tokenize.
-- **v3.3:** 100% carry `token_line_ids_qwen` after `tokenize_qwen.py`; 100% carry `source_sink_labels` after `generate_source_sink_labels.py` (safe → all-Normal, vulnerable → lexicon-derived).
-- Graphs: 30,427 merged heterogeneous graphs; 0 missing types.
-- Render order: `prepare_master → preprocessing → build_samples → split → tokenize_qwen → generate_source_sink_labels → graphs`.
+- 100% of samples carry `input_ids_qwen` after tokenize.
+- Graphs: 30,427 merged heterogeneous graphs.
+- Render order: `prepare_master → preprocessing → build_samples → split → tokenize_qwen → graphs`.

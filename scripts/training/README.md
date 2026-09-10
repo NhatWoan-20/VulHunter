@@ -8,16 +8,14 @@ This directory contains the central training script for the project. It orchestr
 
 - **`train.py`**: The master training script. It handles:
   - **3 Operating Modes**: `semantic_only` (LLM only), `graph_only` (GAT only), and `fusion` (Cross-Attention between LLM and GAT).
-  - **Multi-Task Optimization**: Jointly optimizes 5 loss heads (Binary, CWE, Severity, Localization, Source/Sink) weighted by sample quality (gold/silver).
-  - **Hardware Acceleration**: Automatic DataParallel for Multi-GPU setups (like Kaggle 2xT4), Mixed Precision (AMP FP16), and Gradient Checkpointing.
-  - **LoRA Support**: Seamless integration with PEFT/LoRA to fine-tune massive backbones (like Qwen2.5-Coder-3B) efficiently on limited VRAM.
+  - **Multi-Task Optimization**: Jointly optimizes 3 loss heads (Binary, CWE, Severity) weighted by sample quality (gold/silver).
+  - **Hardware Acceleration**: Mixed Precision (AMP FP16), and Gradient Checkpointing, optimized for Kaggle P100 (16GB) single-GPU setups.
 
 ## Configuration
 
 Training behavior is heavily parameterized by YAML config files located in `configs/`:
-- `configs/model/default.yaml`: Defines architecture parameters (hidden dims, layers, heads).
-- `configs/train/default.yaml`: Defines optimization hyperparams (LR, epochs, loss weights).
-- `configs/kaggle/*`: Specialized configs for Kaggle T4 setups (e.g., LoRA configurations).
+- `configs/kaggle/model_kaggle.yaml`: Defines architecture parameters (hidden dims, layers, heads).
+- `configs/train/*.yaml`: Defines optimization hyperparams (LR, epochs, loss weights) for each mode.
 
 ## How to Run
 
@@ -29,8 +27,8 @@ Trains the full multi-modal architecture with cross-attention. Requires both tok
 ```bash
 python scripts/training/train.py \
     --mode fusion \
-    --model-config configs/kaggle/model_kaggle_3b_lora.yaml \
-    --config configs/kaggle/train_kaggle_3b_lora.yaml \
+    --model-config configs/kaggle/model_kaggle.yaml \
+    --config configs/train/fusion.yaml \
     --train-data /kaggle/input/vulhunter-pre-tokenized/train.jsonl \
     --val-data /kaggle/input/vulhunter-pre-tokenized/validation.jsonl \
     --graph-data data/processed/master_graphs.jsonl
@@ -42,8 +40,8 @@ Trains only the Qwen2.5-Coder semantic encoder. Does not require graph data.
 ```bash
 python scripts/training/train.py \
     --mode semantic_only \
-    --model-config configs/kaggle/model_kaggle_3b_lora.yaml \
-    --config configs/kaggle/train_kaggle_3b_lora.yaml \
+    --model-config configs/kaggle/model_kaggle.yaml \
+    --config configs/train/semantic.yaml \
     --train-data /kaggle/input/vulhunter-pre-tokenized/train.jsonl \
     --val-data /kaggle/input/vulhunter-pre-tokenized/validation.jsonl
 ```
@@ -54,6 +52,7 @@ Trains only the Graph Attention Network. Does not use the LLM backbone.
 ```bash
 python scripts/training/train.py \
     --mode graph_only \
+    --config configs/train/graph.yaml \
     --train-data data/splits/train.jsonl \
     --val-data data/splits/validation.jsonl \
     --graph-data data/processed/master_graphs.jsonl

@@ -6,12 +6,10 @@ This directory contains scripts to assess model performance across all tasks.
 
 ## Files Description
 
-- **`evaluate.py`**: The primary evaluation script for the in-domain Master Dataset test split. It loads a trained checkpoint (`best.pt`) and computes comprehensive metrics for all 5 tasks:
+- **`evaluate.py`**: The primary evaluation script for the in-domain Master Dataset test split. It loads a trained checkpoint (`best.pt`) and computes comprehensive metrics for all 3 tasks:
   - Binary Classification (F1, MCC, AUC, Accuracy)
   - CWE Classification (Macro-F1, Precision, Recall)
   - Severity Prediction (F1, Accuracy)
-  - Line-Level Localization (Token/Line F1, Precision, Recall)
-  - Source/Sink Detection (F1, Precision, Recall)
   It outputs a detailed JSON report to `outputs/metrics/evaluation_report.json`.
 
 - **`evaluate_external.py`**: Evaluates model generalization on a held-out, out-of-domain dataset (PyCode-Vul). Since PyCode-Vul lacks program graphs, this script only evaluates the semantic branch of the model (or `semantic_only` checkpoints). It tokenizes the raw source code on the fly using `Qwen2.5-Coder` and tests binary and CWE capabilities.

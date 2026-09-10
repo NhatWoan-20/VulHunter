@@ -1,6 +1,6 @@
 # Data Preprocessing Pipeline
 
-> **Objective:** Clean, format, split, and enrich the Master Dataset with LLM tokens and task-specific labels (localization, source/sink) before training.
+> **Objective:** Clean, format, split, and enrich the Master Dataset with LLM tokens before training.
 
 This directory contains a sequence of scripts that transform the raw Master Dataset (`master_methods.jsonl`) into the final tokenized data splits ready for model consumption.
 
@@ -17,8 +17,7 @@ flowchart TD
     E --> F[build_samples.py]
     F --> G[split.py]
     G --> H[tokenize_qwen.py]
-    H --> I[generate_source_sink_labels.py]
-    I --> J(data/splits/*.jsonl)
+    H --> I(data/splits/*.jsonl)
 ```
 
 ## Files Description
@@ -29,8 +28,7 @@ flowchart TD
 - **`strip_docstrings.py`**: Removes docstrings for similar reasons as above.
 - **`build_samples.py`**: Formats the cleaned code into structured samples, isolating the vulnerable code from the safe context.
 - **`split.py`**: Performs a **repository-disjoint** split (80% train, 10% validation, 10% test). This prevents data leakage where code from the same repository appears in both train and test sets.
-- **`tokenize_qwen.py`**: Tokenizes the code using the `Qwen2.5-Coder` tokenizer. Crucially, it maps LLM tokens back to the original source code lines (`token_line_ids_qwen`) to enable the line-level localization loss.
-- **`generate_source_sink_labels.py`**: Applies heuristic lexicon rules (defined in `src/utils/taint.py`) to automatically generate weak supervision labels (Source, Sink, Normal) for the taint analysis task.
+- **`tokenize_qwen.py`**: Tokenizes the code using the `Qwen2.5-Coder` tokenizer.
 
 ## Input / Output
 
@@ -52,7 +50,6 @@ python scripts/preprocessing/strip_docstrings.py
 python scripts/preprocessing/build_samples.py
 python scripts/preprocessing/split.py
 python scripts/preprocessing/tokenize_qwen.py
-python scripts/preprocessing/generate_source_sink_labels.py
 ```
 
 > [!NOTE]

@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyTorch-2.1%2B-red?logo=pytorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Transformers-4.36%2B-yellow?logo=huggingface&logoColor=white" alt="Transformers">
-  <img src="https://img.shields.io/badge/Kaggle-2xT4%20LoRA%20Ready-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
+  <img src="https://img.shields.io/badge/Kaggle-1xP100-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
   <img src="https://img.shields.io/badge/Tests-60%2F60%20Passed-brightgreen" alt="Tests">
   <a href="https://doi.org/10.5281/zenodo.13118970"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.13118970-blue" alt="DOI"></a>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
@@ -19,11 +19,10 @@
   <a href="#-quick-start--60s">Quick Start</a> •
   <a href="#-key-features">Key Features</a> •
   <a href="#-architecture">Architecture</a> •
-  <a href="#-dataset--5-pillar-contract">Dataset (5-Pillar)</a> •
-  <a href="#-run-on-kaggle-2xt4--3b-lora-">Kaggle 2×T4</a> •
+  <a href="#-dataset">Dataset</a> •
+  <a href="#-run-on-kaggle-1xp100">Kaggle 1×P100</a> •
   <a href="#-training-modes">Training</a> •
   <a href="#-benchmarks--evaluation">Evaluation</a> •
-  <a href="#-inference--explanation">Inference</a> •
   <a href="docs/README.md">Docs</a>
 </p>
 
@@ -31,7 +30,7 @@
 
 ## 📌 What is VulHunter?
 
-**VulHunter** is an end-to-end multi-modal deep learning system designed for detecting, classifying, localizing, and explaining security vulnerabilities in **Python function-level code**. 
+**VulHunter** is an end-to-end multi-modal deep learning system designed for detecting and classifying security vulnerabilities in **Python function-level code**. 
 
 Traditional software vulnerability detectors rely either purely on syntactic sequence representations (LLMs/Transformers) which can miss non-local data-flow constraints, or purely on graph structures (AST/CFG/GNNs) which discard rich identifier semantics and comments. **VulHunter bridges this gap** by fusing two complementary representations:
 
@@ -47,7 +46,7 @@ Traditional software vulnerability detectors rely either purely on syntactic seq
 - **3-in-1 Unified Intelligence**: Binary detection, CWE classification (10 categories), and Severity classification (4 tiers).
 - **MLOps Ready**: Includes a FastAPI deployment script for instant inference and containerization capabilities.
 - **Strict Leakage Prevention (Repo-Disjoint)**: 80/10/10 split grouped strictly by GitHub repository (`owner/repo`), preventing models from memorizing project-specific coding conventions.
-- **Resource Efficient**: Fine-tuning Qwen2.5-Coder-1.5B-Instruct fits comfortably within standard consumer GPUs (12GB VRAM).
+- **Resource Efficient**: Full fine-tuning of Qwen2.5-Coder-1.5B-Instruct fits comfortably within Kaggle's 1xP100 (16GB VRAM) environment.
 - **Reproducible Data Pipeline**: Linear, deterministic master pipeline combining gold-tier CVEFixes and silver-tier GitHub Security Advisories (GHSA).
 
 ---
@@ -71,7 +70,7 @@ Traditional software vulnerability detectors rely either purely on syntactic seq
                  ▼                                               ▼
        [Semantic Branch]                                [Structural Branch]
      Qwen2.5-Coder-1.5B-Instruct                  Heterogeneous Program Graph
-     (LoRA / Freeze / Grad Checkpoint)              (AST + CFG + DFG + Call)
+     (Full Fine-Tune / Freeze)                      (AST + CFG + DFG + Call)
                  │                                               │
    Per-token hidden representations                  GraphCodeBERT + 4-layer GAT
    & Masked-mean pooled sequence vector            Node & Graph representations
@@ -94,14 +93,14 @@ Configuration wiring is decoupled in `configs/model/default.yaml` and training s
 
 ---
 
-## 📦 Dataset (5-Pillar Contract)
+## 📦 Dataset
 
 VulHunter trains on a consolidated **Master Dataset** that combines reviewed gold-standard pairs with filtered real-world silver pairs:
 
 | Source Tier | Raw Samples | Cleaned Pairs | Role Samples | Quality Weight | Supervision Details |
 |:---|:---|:---:|:---:|:---:|:---|
-| **CVEFixes (Gold)** | Zenodo SQL dump | **2,985** | 5,958 | $w = 1.00$ | Human-curated git diff line labels |
-| **GHSA (Silver)** | GitHub Security Advisories | **12,366** | 24,496 | $w = 0.85$ | Automatic AST-validated diff labels |
+| **CVEFixes (Gold)** | Zenodo SQL dump | **2,985** | 5,958 | $w = 1.00$ | Human-curated git diff |
+| **GHSA (Silver)** | GitHub Security Advisories | **12,366** | 24,496 | $w = 0.85$ | Automatic AST-validated diff |
 | **Master (Unified)** | Gold + Silver | **15,351** | **30,454** | Quality-weighted | 80/10/10 strictly repo-disjoint split |
 | **PyCode-Vul** | External Benchmark | 14,248 / 3,563 | — | Out-of-Domain | Evaluation only (Zero-shot generalization) |
 
@@ -112,14 +111,12 @@ VulHunter trains on a consolidated **Master Dataset** that combines reviewed gol
   "binary_label": 1,
   "cwe_ids": ["CWE-89"],
   "severity": "HIGH",
-  "line_labels": [0, 1],
-  "token_line_ids_qwen": [-1, 0, 0, 1, 1, 1, ...],
-  "source_sink_labels": [-1, 0, 1, 0, 2, ...]
+  "input_ids_qwen": [13, 298, ...]
 }
 ```
 
 > [!TIP]
-> **Data Availability:** You don't need to rebuild everything from raw SQL. For training, you can directly use the pre-tokenized dataset releases (`dist/kaggle_dataset/` or Kaggle dataset input). To inspect how the raw ~51 GB SQLite database is obtained and converted, refer to the [Database Setup Guide](data/raw/databases/README.md).
+> **Data Availability:** You don't need to rebuild everything from raw SQL. For training, you can directly use the pre-tokenized dataset releases (`dist/kaggle_dataset/` or Kaggle dataset input). To inspect how the raw database is obtained and converted, refer to the [Database Setup Guide](data/raw/databases/README.md).
 
 ---
 
@@ -164,35 +161,11 @@ curl -X POST "http://localhost:8000/predict" \
      -d '{"code": "import os\ndef run():\n    os.system(user_input)"}'
 ```
 
-```python
-from src.explainability.generator import ExplanationGenerator
-
-generator = ExplanationGenerator()
-report = generator.explain_offline(
-    code="x = request.args['id']\ncursor.execute(f'SELECT * FROM users WHERE id={x}')",
-    binary_prob=0.96,
-    cwe_id="CWE-89",
-    severity="HIGH",
-    vulnerable_lines=[2],
-)
-print(report)
-```
-
 ---
 
-## ☁️ Run on Kaggle (2×T4 GPUs)
+## ☁️ Run on Kaggle (1×P100 GPU)
 
-VulHunter provides production-grade recipes optimized for dual **Nvidia T4 GPUs (16GB each)** with **Internet ON**.
-
-### Kaggle Training Profiles
-
-| Profile | Model Backbone | Strategy | VRAM / GPU | Time (2×T4) | Recommended Use Case |
-|:---|:---|:---|:---:|:---:|:---|
-| **`kaggle_3b_lora`** ⭐ | Qwen2.5-Coder-3B-Instruct | **LoRA ($r=32$, $\alpha=64$)** + FP16 + Grad Ckpt | ~12 GB | **~1.5–2.0h** | **Default / Best Overall** (High capacity, no OOM) |
-| **`kaggle`** | Qwen2.5-Coder-1.5B-Instruct | **Full Fine-Tuning** (Freeze 28) + FP16 | ~11 GB | ~1.5–2.5h | Direct non-LoRA baseline on 1.5B |
-
-> [!TIP]
-> **Why Qwen2.5-Coder-3B-Instruct LoRA on 2×T4?** Full fine-tuning of Qwen2.5-Coder-3B-Instruct requires ~19 GB/GPU $\rightarrow$ Out Of Memory (OOM) on T4 (16GB). LoRA $r=32$ trains ~1.2% (36M) parameters, consumes only ~12 GB/GPU, and delivers **+2% higher F1** than 1.5B full fine-tuning.
+VulHunter provides production-grade notebooks optimized for **Nvidia P100 GPUs (16GB)**.
 
 ### Kaggle Step-by-Step Workflow
 
@@ -202,26 +175,23 @@ VulHunter provides production-grade recipes optimized for dual **Nvidia T4 GPUs 
    # Generates dist/kaggle_dataset/ ready for Kaggle Datasets as 'vulhunter-pre-tokenized'
    ```
 2. **Launch Kaggle Notebook**:
-   - Accelerator: **GPU T4 × 2**
+   - Accelerator: **GPU P100**
    - Internet: **ON** | Persistence: **ON**
    - Add Input: `vulhunter-pre-tokenized`
 3. **Run Kaggle Pipeline**:
-   - Upload `notebooks/kaggle_pipeline.ipynb` to your Kaggle environment.
-   - This unified notebook combines the entire workflow (Setup, Training with LoRA, Evaluation, and Inference).
-   - Run the cells sequentially to train the model and generate vulnerability reports without worrying about session disconnections or losing GPU allocation.
+   - Upload `notebooks/train_fusion.ipynb` (or `train_semantic_only.ipynb`) to your Kaggle environment.
+   - Run the cells sequentially to train the model directly on Kaggle with FP16 without OOM issues.
 
 ---
 
-## 🚀 Training Modes & Hardware Scaling
+## 🚀 Training Modes
 
-VulHunter is engineered to scale seamlessly across hardware tiers: from single mid-range consumer GPUs up to dual-GPU and datacenter cards.
+VulHunter is engineered to scale seamlessly:
 
-### 1. Local Machine / Workstation Setup
-
-#### Scenario A: Qwen2.5-Coder-1.5B-Instruct Full-Model (12GB–16GB VRAM)
-*   **Hardware Requirements**: Single GPU with 12GB to 16GB VRAM (e.g., RTX 3060 12GB, RTX 3080/4070 12GB, RTX 4080 16GB, or Nvidia T4/V100).
+#### Scenario A: Semantic-Only (Qwen2.5-Coder-1.5B-Instruct)
+*   **Hardware Requirements**: Single GPU with 12GB to 16GB VRAM (e.g. RTX 3060, T4, P100).
 *   **Command**:
-    ```powershell
+    ```bash
     python scripts/training/train.py \
       --mode semantic_only \
       --config configs/train/semantic.yaml \
@@ -229,58 +199,24 @@ VulHunter is engineered to scale seamlessly across hardware tiers: from single m
       --use-amp
     ```
 
-#### Scenario B: Qwen2.5-Coder-3B-Instruct Full-Model (24GB+ VRAM or Multi-GPU)
-*   **Hardware Requirements**: 
-    *   **Single GPU**: 24GB+ VRAM (e.g., Nvidia RTX 3090, RTX 4090, RTX A5000/A6000, or A100 40GB/80GB).
-    *   **Multi-GPU**: Multi-GPU workstations (e.g., 2× RTX 3090/4090). `train.py` automatically detects all CUDA devices and engages PyTorch `DataParallel`.
-    *   **System RAM**: 32GB+ recommended.
-*   **Layer Freezing Configuration**:
-    *   In `configs/model/default.yaml`:
-        *   `freeze_layers: 0` $\rightarrow$ **100% Full Fine-Tuning** (trains all 36 transformer layers).
-        *   `freeze_layers: 28` $\rightarrow$ **Top-layer Fine-Tuning** (trains top 8 layers, faster and lower VRAM).
-*   **Command**:
-    ```powershell
-    # Train Qwen2.5-Coder-3B-Instruct Full Model:
-    python scripts/training/train.py \
-      --mode semantic_only \
-      --config configs/train/semantic.yaml \
-      --model-config configs/model/default.yaml \
-      --use-amp
-    ```
-
-#### Scenario C: Multi-Modal Fusion (Qwen2.5-Coder-3B-Instruct Semantic + GAT Graph Structure)
-*   Trains both the Qwen2.5-Coder-3B-Instruct backbone, 4-layer GAT, and gated bidirectional cross-attention across all 5 loss objectives:
-    ```powershell
-    python scripts/training/train.py \
-      --mode fusion \
-      --config configs/train/fusion.yaml \
-      --model-config configs/model/default.yaml \
-      --graph-data data/processed/master_graphs.jsonl \
-      --use-amp
-    ```
-
-#### Scenario D: Graph-Only Structural Baseline (CPU / Light GPU)
-*   ```powershell
+#### Scenario B: Graph-Only Structural Baseline
+*   ```bash
     python scripts/training/train.py \
       --mode graph_only \
       --config configs/train/graph.yaml \
       --graph-data data/processed/master_graphs.jsonl
     ```
 
----
-
-### 2. Key CLI Training Flags
-
-| Flag | Description | Default |
-|:---|:---|:---|
-| `--mode` | Architecture mode: `semantic_only`, `graph_only`, `fusion` | `semantic_only` |
-| `--config` | Path to training hyperparameter YAML schedule | `configs/train/fusion.yaml` |
-| `--model-config` | Path to model architecture YAML | `configs/model/default.yaml` |
-| `--train-data` / `--val-data` | Custom JSONL split paths (supports read-only Kaggle mounts) | `data/splits/*.jsonl` |
-| `--graph-data` | Pre-extracted graph JSONL path (required for `graph_only` and `fusion`) | `data/processed/master_graphs.jsonl` |
-| `--use-amp` / `--no-amp` | Toggle PyTorch Automatic Mixed Precision (FP16) | Config-driven |
-| `--epochs` | Quick override for total training epochs | Config-driven |
-| `--checkpoint-dir` | Directory where `best.pt` and `training_history.json` are stored | `models/checkpoints/` |
+#### Scenario C: Multi-Modal Fusion (Qwen + GAT)
+*   Trains both the Qwen backbone, 4-layer GAT, and gated bidirectional cross-attention:
+    ```bash
+    python scripts/training/train.py \
+      --mode fusion \
+      --config configs/train/fusion.yaml \
+      --model-config configs/kaggle/model_kaggle.yaml \
+      --graph-data data/processed/master_graphs.jsonl \
+      --use-amp
+    ```
 
 ---
 
@@ -288,30 +224,23 @@ VulHunter is engineered to scale seamlessly across hardware tiers: from single m
 
 Evaluation follows a strict multi-tier protocol:
 1. **Benchmark 1 (In-Domain)**: Held-out 10% test split from Master Dataset (repo-disjoint, 3,412 samples).
-2. **Benchmark 2 (Gold Re-Check)**: Evaluated exclusively on human-verified CVEFixes test samples.
-3. **Benchmark 3 (Out-of-Domain Generalization)**: Zero-shot evaluation on the external `PyCode-Vul` dataset.
+2. **Benchmark 2 (Out-of-Domain Generalization)**: Zero-shot evaluation on the external `PyCode-Vul` dataset.
 
-```powershell
-# Evaluate trained model on 5 in-domain tasks
+```bash
+# Evaluate trained model on 3 in-domain tasks
 python scripts/evaluation/evaluate.py --checkpoint models/checkpoints/best.pt
-
-# Evaluate out-of-domain generalization on PyCode-Vul
-python scripts/evaluation/evaluate_external.py --checkpoint models/checkpoints/best.pt --split test
 ```
 
 ### Benchmark Results
 
 > [!NOTE]
-> **Experimental Phase:** Official benchmark scores will be populated once model training is completed across all branches (`semantic_only`, `graph_only`, and `fusion`).
+> **Experimental Phase:** Official benchmark scores will be populated once model training is completed.
 
-| Model Variant | Binary F1 | Binary MCC | CWE Macro-F1 | Line Loc F1 | Source/Sink F1 | PyCode-Vul F1 (OOD) |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| `graph_only` (GAT) | *TBD* | *TBD* | *TBD* | — | — | *TBD* |
-| `semantic_only` (Qwen2.5-Coder-1.5B-Instruct) | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* |
-| `semantic_only` (Qwen2.5-Coder-3B-Instruct LoRA) | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* |
-| **`fusion` (Qwen2.5-Coder-3B-Instruct + GAT)** | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* | *TBD* |
-
-*(Ablation protocol, evaluation scripts, and statistical significance specs are detailed in [`docs/06_evaluation.md`](docs/06_evaluation.md). Reports will be exported to `outputs/metrics/evaluation_report.json`.)*
+| Model Variant | Binary F1 | Binary MCC | CWE Macro-F1 | PyCode-Vul F1 (OOD) |
+|:---|:---:|:---:|:---:|:---:|
+| `graph_only` (GAT) | *TBD* | *TBD* | *TBD* | *TBD* |
+| `semantic_only` (Qwen2.5-Coder-1.5B) | *TBD* | *TBD* | *TBD* | *TBD* |
+| **`fusion` (Qwen2.5-Coder-1.5B + GAT)** | *TBD* | *TBD* | *TBD* | *TBD* |
 
 ---
 
@@ -320,31 +249,31 @@ python scripts/evaluation/evaluate_external.py --checkpoint models/checkpoints/b
 ```text
 VulHunter/
 ├── configs/                     # Hyperparameter & architecture specifications
-│   ├── model/default.yaml       # Qwen2.5-Coder-3B-Instruct + 4-layer GAT + Gated Cross-Attention
+│   ├── model/default.yaml       # Qwen2.5 + 4-layer GAT + Gated Cross-Attention
 │   ├── train/                   # Training profiles for each mode (semantic.yaml, graph.yaml, fusion.yaml)
-│   └── kaggle/                  # Profiles: kaggle_3b_lora, kaggle_1.5b
+│   └── kaggle/                  # Kaggle profiles
 ├── data/
 │   ├── raw/databases/           # Instructions & scripts for CVEfixes database
 │   └── splits/                  # Repo-disjoint train / validation / test splits
-├── notebooks/                   # Step-by-step reproducible Kaggle / Colab notebooks
-│   ├── kaggle_pipeline.ipynb    # Unified pipeline for setup, training, and evaluation
-│   ├── prepare_kaggle_dataset.py# Local script to package pre-tokenized data
-│   └── kaggle_utils.py          # Helper functions for Kaggle environment
+├── notebooks/                   # Reproducible Kaggle notebooks
+│   ├── train_fusion.ipynb
+│   ├── train_semantic_only.ipynb
+│   └── prepare_kaggle_dataset.py# Local script to package pre-tokenized data
 ├── src/                         # Core VulHunter Library
-│   ├── semantic/encoder.py      # Qwen2.5 wrapper, LoRA, gradient checkpointing
+│   ├── semantic/encoder.py      # Qwen2.5 wrapper, gradient checkpointing
 │   ├── graph/encoder.py         # PyTorch GAT over heterogeneous program graphs
 │   ├── fusion/cross_attention.py# Gated bidirectional cross-attention
 │   ├── multitask/model.py       # VulHunterModel integrating all modalities
-│   ├── multitask/heads.py       # 5 trainable task heads
+│   ├── multitask/heads.py       # Trainable task heads
 │   ├── explainability/          # Markdown report generator & LLM prompter
 │   └── utils/                   # Datasets, collators, losses, and metrics
 ├── scripts/                     # Executable CLI Pipelines
 │   ├── extraction/              # Raw data aggregation & master dataset building
-│   ├── preprocessing/           # Tokenization, comment stripping, taint labels
+│   ├── preprocessing/           # Tokenization, comment stripping
 │   ├── graph/                   # AST, CFG, DFG extraction & graph merging
 │   ├── training/train.py        # Distributed / AMP training runner
 │   ├── evaluation/              # Benchmark & OOD evaluators
-│   └── explain.py               # Remediation explanation CLI
+│   └── api_deployment.py        # FastAPI server
 ├── tests/                       # Complete test suite (60 unit tests)
 └── docs/                        # Formal research methodology & specifications
 ```
@@ -353,7 +282,7 @@ VulHunter/
 
 ## 🧪 Testing & Verification
 
-VulHunter maintains a comprehensive test suite covering data collators, loss formulations, graph encoders, cross-attention fusion, and explanation generators:
+VulHunter maintains a comprehensive test suite covering data collators, loss formulations, graph encoders, and cross-attention fusion:
 
 ```bash
 # Run all unit tests
@@ -363,15 +292,13 @@ pytest tests -q
 pytest tests --cov=src --cov-report=term-missing
 ```
 
-All **60 unit tests** pass deterministically across Linux and Windows platforms.
-
 ---
 
 ## 🛠️ Tech Stack
 
-- **Deep Learning**: [PyTorch 2.1+](https://pytorch.org/), [HuggingFace Transformers](https://huggingface.co/docs/transformers/index), [PEFT (LoRA)](https://github.com/huggingface/peft), [Accelerate](https://github.com/huggingface/accelerate)
-- **Foundation Model**: [Qwen2.5-Coder](https://github.com/QwenLM/Qwen2.5-Coder) (Qwen2.5-Coder-3B-Instruct, Qwen2.5-Coder-1.5B-Instruct)
-- **Program Analysis**: Python `ast`, custom CFG/DFG visitor extraction, weak taint lexicon propagation
+- **Deep Learning**: [PyTorch 2.1+](https://pytorch.org/), [HuggingFace Transformers](https://huggingface.co/docs/transformers/index)
+- **Foundation Model**: [Qwen2.5-Coder](https://github.com/QwenLM/Qwen2.5-Coder) (Qwen2.5-Coder-1.5B-Instruct)
+- **Program Analysis**: Python `ast`, custom CFG/DFG visitor extraction
 - **Graph Neural Network**: Heterogeneous multi-edge Graph Attention Network (GAT)
 - **Evaluation & Metrics**: `scikit-learn`, `scipy`
 
