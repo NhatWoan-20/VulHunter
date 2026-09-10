@@ -146,11 +146,11 @@ def inspect_splits(data_root: Path | None = None) -> dict:
                 if i == 0:
                     s = json.loads(line)
                     keys = list(s.keys())[:18]
-                    has_tok = "input_ids" in s
+                    has_tok = "input_ids_qwen" in s
                 count += 1
         info["splits"][name] = {"exists": True, "rows": count, "size_mb": round(size_mb, 1),
-                                "has_input_ids": has_tok, "sample_keys": keys}
-    info["ready_for_training"] = all(v.get("has_input_ids")
+                                "has_input_ids_qwen": has_tok, "sample_keys": keys}
+    info["ready_for_training"] = all(v.get("has_input_ids_qwen")
                                      for v in info["splits"].values() if v.get("exists"))
     return info
 
@@ -161,7 +161,7 @@ def print_inspect(info: dict):
         if not v.get("exists"):
             print(f"  {name:12s} MISSING")
         else:
-            flag = "✅ READY" if v["has_input_ids"] else "⚠️ THIẾU field input_ids"
+            flag = "✅ READY" if v["has_input_ids_qwen"] else "⚠️ THIẾU field input_ids_qwen"
             print(f"  {name:12s} {v['rows']:5d} rows  {v['size_mb']:6.1f} MB  {flag}")
 
 # ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ def setup_kaggle_env():
         if info["ready_for_training"]:
             print("\n\u2705 Data đã pre-tokenized — SẴN SÀNG TRAIN (không cần preprocessing).")
         else:
-            print("\n[LỖI NGHIÊM TRỌNG] Data thiếu input_ids.")
+            print("\n[LỖI NGHIÊM TRỌNG] Data thiếu input_ids_qwen.")
             print("Theo quy định mới, TOÀN BỘ quá trình chuẩn bị dữ liệu (Preprocessing) PHẢI được chạy ở Local.")
             print("Vui lòng chạy `python notebooks/prepare_kaggle_dataset.py` ở máy cá nhân rồi upload lại dataset.")
     else:
