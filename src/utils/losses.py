@@ -27,7 +27,7 @@ QUALITY_TIER_WEIGHTS = {
 class FocalLoss(nn.Module):
     """Focal Loss for addressing class imbalance."""
 
-    def __init__(self, alpha: float = 0.25, gamma: float = 2.0, reduction: str = "mean") -> None:
+    def __init__(self, alpha: float = 0.5, gamma: float = 2.0, reduction: str = "mean") -> None:
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -63,7 +63,7 @@ class MultiTaskLoss(nn.Module):
     def __init__(
         self,
         loss_weights: Optional[dict[str, float]] = None,
-        focal_alpha: float = 0.25,
+        focal_alpha: float = 0.5,
         focal_gamma: float = 2.0,
         num_cwe_classes: int = 10,
     ) -> None:

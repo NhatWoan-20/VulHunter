@@ -160,7 +160,7 @@ def _build_loss_kwargs(output: ModelOutput, batch: dict, device: torch.device) -
     return kw
 
 
-def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, epoch=0, scaler=None, use_amp=False, is_parallel=False):
+def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, epoch=0, scaler=None, use_amp=False, is_parallel=False, scheduler=None):
     model.train()
     total: dict[str, float] = {}
     n_batches = 0
@@ -219,15 +219,19 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
             else:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
             optimizer.zero_grad(set_to_none=True)
 
         for k, v in losses.items():
             total[k] = total.get(k, 0.0) + v.item()
         n_batches += 1
         if (step + 1) in (1, 10, 25) or (step + 1) % 50 == 0:
-            logger.info("  Epoch %d | Step %d/%d | Loss: %.4f %s",
+            current_lr = optimizer.param_groups[0]["lr"]
+            logger.info("  Epoch %d | Step %d/%d | Loss: %.4f | LR: %.2e %s",
                         epoch + 1, step + 1, len(loader),
                         total.get("total", 0) / n_batches,
+                        current_lr,
                         "[FP16]" if use_amp else "")
     return {k: v / max(n_batches, 1) for k, v in total.items()}
 
@@ -524,17 +528,21 @@ def main() -> None:
     logger.info("Optimizer: %d backbone params (lr %.1e) + %d head params (lr %.1e)", len(backbone_params), backbone_lr, len(head_params), backbone_lr * 10)
 
     warmup_ratio = float(tcfg.get("warmup_ratio", 0.1))
-    total_steps = len(train_loader) * args.epochs // max(1, grad_accum)
+    steps_per_epoch = math.ceil(len(train_loader) / max(1, grad_accum))
+    total_steps = steps_per_epoch * args.epochs
     warmup_steps = int(total_steps * warmup_ratio)
 
     def _lr_lambda(step: int) -> float:
         if warmup_steps > 0 and step < warmup_steps:
-            return step / max(1, warmup_steps)
-        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
-        return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+            return float(step) / float(max(1, warmup_steps))
+        progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * min(1.0, max(0.0, progress)))))
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_lr_lambda)
-    criterion = MultiTaskLoss()
+    criterion = MultiTaskLoss(
+        focal_alpha=float(tcfg.get("focal_alpha", 0.5)),
+        focal_gamma=float(tcfg.get("focal_gamma", 2.0)),
+    )
     if tcfg.get("loss_weights"):
         criterion.update_weights(tcfg["loss_weights"])
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp and device.type == "cuda") if use_amp else None
@@ -603,8 +611,7 @@ def main() -> None:
         if is_ddp and train_sampler is not None:
             train_sampler.set_epoch(epoch)
         t0 = time.time()
-        train_losses = train_one_epoch(model, train_loader, criterion, optimizer, device, grad_accum, epoch, scaler, use_amp, is_parallel=(is_parallel or is_ddp))
-        scheduler.step()
+        train_losses = train_one_epoch(model, train_loader, criterion, optimizer, device, grad_accum, epoch, scaler, use_amp, is_parallel=(is_parallel or is_ddp), scheduler=scheduler)
         val_losses, val_metrics = evaluate(model, val_loader, criterion, device, is_parallel=(is_parallel or is_ddp), use_amp=use_amp)
         elapsed = time.time() - t0
         val_f1 = val_metrics.get("binary", {}).get("f1", 0.0)

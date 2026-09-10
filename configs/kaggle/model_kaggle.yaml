@@ -5,7 +5,7 @@ model:
   semantic:
     backbone: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
     output_dim: 256
-    freeze_layers: 28          # 1.5B có 28 layers — freeze base, train 0 top (grad_ckpt bù VRAM)
+    freeze_layers: 24          # Unfreeze 4 top layers (1.5B có 28 layers) để semantic thích ứng bài toán (VRAM còn dư 10GB)
     dropout: 0.1
     pooling: "mean"
     gradient_checkpointing: true
