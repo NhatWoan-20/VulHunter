@@ -22,6 +22,9 @@ import time
 from contextlib import nullcontext
 from pathlib import Path
 
+# Tránh phân mảnh bộ nhớ CUDA trên GPU 16GB (Kaggle T4)
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import numpy as np
 import torch
 import torch.nn as nn
