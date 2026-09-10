@@ -39,6 +39,11 @@ class ModelOutput:
     Attributes:
         binary_logits: Binary vulnerability logits of shape ``(B, 1)``.
         cwe_logits: CWE classification logits of shape ``(B, num_cwe_classes)``.
+        severity_logits: Severity logits of shape ``(B, 4)``.
+        fused_embedding: Output embedding from the encoder.
+    """
+    binary_logits: torch.Tensor | None = None
+    cwe_logits: torch.Tensor | None = None
     severity_logits: torch.Tensor | None = None
     fused_embedding: torch.Tensor | None = None
 
