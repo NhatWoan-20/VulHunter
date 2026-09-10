@@ -1,8 +1,8 @@
 <h1 align="center">🛡️ VulHunter</h1>
 
 <p align="center">
-  <strong>Hybrid Multi-Modal Vulnerability Detection for Python — 6 Tasks, One Unified Model</strong><br/>
-  <em>Qwen2.5-Coder (Semantic View) + GAT over AST/CFG/DFG/Call (Structural View) + Gated Bidirectional Cross-Attention (Fusion)</em>
+  <strong>Hybrid Multi-Modal Vulnerability Detection for Python — 3 Tasks, One Unified Model</strong><br/>
+  <em>Qwen2.5-Coder-1.5B (Semantic View) + GraphCodeBERT/GAT (Structural View) + Gated Bidirectional Cross-Attention (Fusion)</em>
 </p>
 
 <p align="center">
@@ -35,32 +35,30 @@
 
 Traditional software vulnerability detectors rely either purely on syntactic sequence representations (LLMs/Transformers) which can miss non-local data-flow constraints, or purely on graph structures (AST/CFG/GNNs) which discard rich identifier semantics and comments. **VulHunter bridges this gap** by fusing two complementary representations:
 
-1. **Semantic Perception**: Pretrained **Qwen2.5-Coder-3B-Instruct** sequence representations capturing token semantics and control keywords.
-2. **Structural Perception**: Custom **Graph Attention Network (GAT)** processing 5 heterogeneous program graph edge types (**AST**, **CFG**, **DFG**, and **Function Call**).
+1. **Semantic Perception**: Pretrained **Qwen2.5-Coder-1.5B-Instruct** sequence representations capturing token semantics and control keywords.
+2. **Structural Perception**: **GraphCodeBERT** + Custom **Graph Attention Network (GAT)** processing 5 heterogeneous program graph edge types.
 3. **Cross-Modal Fusion**: A **gated bidirectional cross-attention** mechanism that dynamically balances semantic and structural signals.
-4. **Multi-Task Supervision**: Simultaneously supervises **5 trainable heads** (Focal & Masked losses) plus a post-hoc natural language explanation engine.
+4. **Multi-Task Supervision**: Simultaneously supervises **3 trainable heads** (Binary, CWE, Severity).
 
 ---
 
 ## ⚡ Key Features
 
-- **6-in-1 Unified Intelligence**: Binary detection, CWE classification (10 categories), Severity classification (4 tiers), Line-level localization, Token-level Source/Sink taint detection, and Natural Language remediation reports.
+- **3-in-1 Unified Intelligence**: Binary detection, CWE classification (10 categories), and Severity classification (4 tiers).
+- **MLOps Ready**: Includes a FastAPI deployment script for instant inference and containerization capabilities.
 - **Strict Leakage Prevention (Repo-Disjoint)**: 80/10/10 split grouped strictly by GitHub repository (`owner/repo`), preventing models from memorizing project-specific coding conventions.
-- **Resource Efficient (Kaggle 2×T4 & Consumer GPUs)**: Native support for **LoRA (r=32 RsLoRA)**, **PyTorch AMP FP16**, **Gradient Checkpointing**, and **DataParallel** multi-GPU scaling. Fits Qwen2.5-Coder-3B-Instruct training within ~12 GB VRAM per GPU.
+- **Resource Efficient**: Fine-tuning Qwen2.5-Coder-1.5B-Instruct fits comfortably within standard consumer GPUs (12GB VRAM).
 - **Reproducible Data Pipeline**: Linear, deterministic master pipeline combining gold-tier CVEFixes and silver-tier GitHub Security Advisories (GHSA).
 
 ---
 
-## 🎯 6 Tasks Overview
+## 🎯 3 Tasks Overview
 
-| # | Task | Target Output | Loss Function & Weight | Operational Role |
-|:---:|:---|:---|:---|:---:|
-| **1** | **Binary Vulnerability Detection** *(Primary)* | $P(\text{vulnerable}) \in [0, 1]$ | Focal Loss ($\alpha=0.25, \gamma=2.0, \lambda=1.0$) | ✅ Active |
-| **2** | **CWE Classification** | 10 classes (8 common + `none` + `Other`) | Cross-Entropy with Label Smoothing ($0.1, \lambda=0.5$) | ✅ Active |
-| **3** | **Severity Classification** | LOW / MODERATE / HIGH / CRITICAL | Masked Cross-Entropy ($\lambda=0.2$) | ✅ Active |
-| **4** | **Line-Level Localization** | Per-line $P(\text{vuln})$ via token-to-line max-pool | Focal Loss ($\alpha=0.5, \gamma=2.0, \lambda=0.4$) | ✅ Active |
-| **5** | **Source / Sink Detection** | Per-token {Normal, Source, Sink} | Masked Cross-Entropy ($\text{ignore}=-1, \lambda=0.15$) | ✅ Active |
-| **6** | **Natural Language Explanation** | Markdown remediation report + patch suggestions | Post-hoc (Offline Knowledge Base + Optional LLM) | ✅ Active |
+| # | Task | Target Output | Loss Function & Weight |
+|:---:|:---|:---|:---|
+| **1** | **Binary Vulnerability Detection** *(Primary)* | $P(\text{vulnerable}) \in [0, 1]$ | Focal Loss ($\alpha=0.25, \gamma=2.0, \lambda=1.0$) |
+| **2** | **CWE Classification** | 10 classes (8 common + `none` + `Other`) | Cross-Entropy with Label Smoothing ($0.1, \lambda=0.5$) |
+| **3** | **Severity Classification** | LOW / MODERATE / HIGH / CRITICAL | Masked Cross-Entropy ($\lambda=0.2$) |
 
 ---
 
@@ -72,11 +70,11 @@ Traditional software vulnerability detectors rely either purely on syntactic seq
                  ┌───────────────────────┴───────────────────────┐
                  ▼                                               ▼
        [Semantic Branch]                                [Structural Branch]
-     Qwen2.5-Coder-3B-Instruct / 1.5B-Instruct    Heterogeneous Program Graph
+     Qwen2.5-Coder-1.5B-Instruct                  Heterogeneous Program Graph
      (LoRA / Freeze / Grad Checkpoint)              (AST + CFG + DFG + Call)
                  │                                               │
-   Per-token hidden representations                     Custom 4-layer GAT
-   & Masked-mean pooled sequence vector               Node & Graph representations
+   Per-token hidden representations                  GraphCodeBERT + 4-layer GAT
+   & Masked-mean pooled sequence vector            Node & Graph representations
                  │                                               │
                  └───────────────────────┬───────────────────────┘
                                          ▼
@@ -85,14 +83,14 @@ Traditional software vulnerability detectors rely either purely on syntactic seq
                                          │
                                          ▼
                               Unified Multi-Task Head
-      ┌──────────────┬──────────────┬──────────────┬──────────────┬──────────────┐
-      ▼              ▼              ▼              ▼              ▼              ▼
-   Binary           CWE         Severity     Line-Level    Source/Sink     Explanation
-  Detection     Classifier     Classifier   Localization    Taint Head       Engine
- (Focal Loss)  (Smoothed CE)  (Masked CE)   (Token-to-Line)  (Token CE)    (Post-hoc / LLM)
+                      ┌──────────────────┼──────────────────┐
+                      ▼                  ▼                  ▼
+                   Binary               CWE              Severity
+                  Detection         Classifier          Classifier
+                 (Focal Loss)      (Smoothed CE)        (Masked CE)
 ```
 
-Configuration wiring is decoupled in `configs/model/default.yaml` and training schedules in `configs/train/default.yaml`.
+Configuration wiring is decoupled in `configs/model/default.yaml` and training schedules in `configs/train/` (`semantic.yaml`, `graph.yaml`, `fusion.yaml`).
 
 ---
 
@@ -149,19 +147,22 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Instant Inference & Explanation (No GPU Training Required)
+### 2. MLOps: FastAPI Deployment
 
-Analyze any Python snippet and generate a formatted Markdown security remediation report:
+Serve the model instantly via a REST API:
 
 ```bash
-# Direct code string audit
-python scripts/explain.py --code "import os\ndef ping(ip): os.system('ping ' + ip)" --cwe CWE-78 --severity HIGH
-
-# Audit Python file
-python scripts/explain.py --code-file app.py --cwe CWE-89 --severity HIGH --output report.md
+# Start the FastAPI server
+uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
 ```
 
-### 3. Programmatic Python API
+Test the API via cURL:
+
+```bash
+curl -X POST "http://localhost:8000/predict" \
+     -H "Content-Type: application/json" \
+     -d '{"code": "import os\ndef run():\n    os.system(user_input)"}'
+```
 
 ```python
 from src.explainability.generator import ExplanationGenerator
@@ -223,7 +224,7 @@ VulHunter is engineered to scale seamlessly across hardware tiers: from single m
     ```powershell
     python scripts/training/train.py \
       --mode semantic_only \
-      --config configs/train/default.yaml \
+      --config configs/train/semantic.yaml \
       --model-config configs/kaggle/model_kaggle.yaml \
       --use-amp
     ```
@@ -242,7 +243,7 @@ VulHunter is engineered to scale seamlessly across hardware tiers: from single m
     # Train Qwen2.5-Coder-3B-Instruct Full Model:
     python scripts/training/train.py \
       --mode semantic_only \
-      --config configs/train/default.yaml \
+      --config configs/train/semantic.yaml \
       --model-config configs/model/default.yaml \
       --use-amp
     ```
@@ -252,7 +253,7 @@ VulHunter is engineered to scale seamlessly across hardware tiers: from single m
     ```powershell
     python scripts/training/train.py \
       --mode fusion \
-      --config configs/train/default.yaml \
+      --config configs/train/fusion.yaml \
       --model-config configs/model/default.yaml \
       --graph-data data/processed/master_graphs.jsonl \
       --use-amp
@@ -262,7 +263,7 @@ VulHunter is engineered to scale seamlessly across hardware tiers: from single m
 *   ```powershell
     python scripts/training/train.py \
       --mode graph_only \
-      --config configs/train/default.yaml \
+      --config configs/train/graph.yaml \
       --graph-data data/processed/master_graphs.jsonl
     ```
 
@@ -273,7 +274,7 @@ VulHunter is engineered to scale seamlessly across hardware tiers: from single m
 | Flag | Description | Default |
 |:---|:---|:---|
 | `--mode` | Architecture mode: `semantic_only`, `graph_only`, `fusion` | `semantic_only` |
-| `--config` | Path to training hyperparameter YAML schedule | `configs/train/default.yaml` |
+| `--config` | Path to training hyperparameter YAML schedule | `configs/train/fusion.yaml` |
 | `--model-config` | Path to model architecture YAML | `configs/model/default.yaml` |
 | `--train-data` / `--val-data` | Custom JSONL split paths (supports read-only Kaggle mounts) | `data/splits/*.jsonl` |
 | `--graph-data` | Pre-extracted graph JSONL path (required for `graph_only` and `fusion`) | `data/processed/master_graphs.jsonl` |
@@ -320,7 +321,7 @@ python scripts/evaluation/evaluate_external.py --checkpoint models/checkpoints/b
 VulHunter/
 ├── configs/                     # Hyperparameter & architecture specifications
 │   ├── model/default.yaml       # Qwen2.5-Coder-3B-Instruct + 4-layer GAT + Gated Cross-Attention
-│   ├── train/default.yaml       # 20 epochs, tiered LR, multi-loss weights
+│   ├── train/                   # Training profiles for each mode (semantic.yaml, graph.yaml, fusion.yaml)
 │   └── kaggle/                  # Profiles: kaggle_3b_lora, kaggle_1.5b
 ├── data/
 │   ├── raw/databases/           # Instructions & scripts for CVEfixes database

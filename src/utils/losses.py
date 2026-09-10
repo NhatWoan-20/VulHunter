@@ -87,58 +87,11 @@ class MultiTaskLoss(nn.Module):
         }
         self.binary_loss = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
         self.cwe_loss = nn.CrossEntropyLoss(ignore_index=-1, label_smoothing=0.1)
-        self.localization_loss = FocalLoss(alpha=0.5, gamma=2.0)
-        self.source_sink_loss = nn.CrossEntropyLoss(ignore_index=-1)
 
     def update_weights(self, weights: dict[str, float]) -> None:
         self.loss_weights.update(weights)
 
-    @staticmethod
-    def _pool_tokens_to_lines(
-        token_logits: torch.Tensor,
-        token_line_ids: torch.Tensor,
-        line_targets: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Pool per-token logits to per-line logits via max.
 
-        Args:
-            token_logits: (B, L) float
-            token_line_ids: (B, L) long, -1 for special/pad
-            line_targets: (B, max_lines) long, -1 for pad lines
-
-        Returns:
-            flat_line_logits (N_lines,), flat_line_targets (N_lines,), flat_sample_idx (N_lines,)
-            where N_lines is total valid aligned lines across batch.
-        """
-        B = token_logits.size(0)
-        line_logits: list[torch.Tensor] = []
-        line_targets_flat: list[torch.Tensor] = []
-        sample_idx_flat: list[torch.Tensor] = []
-        for b in range(B):
-            tl = token_line_ids[b]
-            lt = line_targets[b]
-            valid_mask = lt != -1
-            if not valid_mask.any():
-                continue
-            for line_id in torch.where(valid_mask)[0].tolist():
-                tok_mask = tl == line_id
-                if not tok_mask.any():
-                    continue
-                logit = token_logits[b][tok_mask].max()
-                line_logits.append(logit.unsqueeze(0))
-                line_targets_flat.append(lt[line_id].float().unsqueeze(0))
-                sample_idx_flat.append(torch.tensor([b], device=token_logits.device))
-        if not line_logits:
-            return (
-                torch.empty(0, device=token_logits.device),
-                torch.empty(0, device=token_logits.device),
-                torch.empty(0, dtype=torch.long, device=token_logits.device),
-            )
-        return (
-            torch.cat(line_logits, dim=0),
-            torch.cat(line_targets_flat, dim=0),
-            torch.cat(sample_idx_flat, dim=0),
-        )
 
     def forward(
         self,
@@ -146,14 +99,9 @@ class MultiTaskLoss(nn.Module):
         binary_targets: Optional[torch.Tensor] = None,
         cwe_logits: Optional[torch.Tensor] = None,
         cwe_targets: Optional[torch.Tensor] = None,
-        localization_logits: Optional[torch.Tensor] = None,
-        localization_targets: Optional[torch.Tensor] = None,
-        source_sink_logits: Optional[torch.Tensor] = None,
-        source_sink_targets: Optional[torch.Tensor] = None,
         severity_logits: Optional[torch.Tensor] = None,
         severity_targets: Optional[torch.Tensor] = None,
         sample_weights: Optional[torch.Tensor] = None,
-        token_line_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         losses: dict[str, torch.Tensor] = {}
@@ -198,57 +146,7 @@ class MultiTaskLoss(nn.Module):
             if not computed_cwe:
                 losses["cwe"] = (cwe_logits * 0.0).sum()
 
-        # Localization: pool tokens -> lines
-        if localization_logits is not None:
-            device = localization_logits.device
-            tok_logits = localization_logits.squeeze(-1)  # (B, L)
-            computed_loc = False
-            if (
-                localization_targets is not None
-                and self.loss_weights.get("localization", 0) > 0
-                and token_line_ids is not None
-            ):
-                min_L = min(tok_logits.size(1), token_line_ids.size(1))
-                tok_logits_s = tok_logits[:, :min_L]
-                tl = token_line_ids[:, :min_L]
-                flat_logits, flat_targets, flat_sample = self._pool_tokens_to_lines(
-                    tok_logits_s, tl, localization_targets
-                )
-                if flat_logits.numel() > 0:
-                    if sample_weights is not None:
-                        w = sample_weights[flat_sample]
-                        ce = F.binary_cross_entropy_with_logits(flat_logits, flat_targets, reduction="none")
-                        probs = torch.sigmoid(flat_logits)
-                        p_t = probs * flat_targets + (1 - probs) * (1 - flat_targets)
-                        focal_w = (1 - p_t) ** 2.0
-                        alpha_t = 0.5 * flat_targets + 0.5 * (1 - flat_targets)
-                        loss_elem = alpha_t * focal_w * ce
-                        losses["localization"] = (loss_elem * w).sum() / w.sum().clamp(min=1e-6)
-                    else:
-                        losses["localization"] = self.localization_loss(flat_logits, flat_targets)
-                    computed_loc = True
-            if not computed_loc:
-                losses["localization"] = (tok_logits * 0.0).sum()
 
-        if source_sink_logits is not None:
-            device = source_sink_logits.device
-            computed_ss = False
-            if source_sink_targets is not None and self.loss_weights.get("source_sink", 0) > 0:
-                B, L, C = source_sink_logits.shape
-                min_L = min(L, source_sink_targets.size(1))
-                logits_s = source_sink_logits[:, :min_L, :].reshape(B * min_L, C)
-                targets_s = source_sink_targets[:, :min_L].reshape(B * min_L)
-                valid = targets_s != -1
-                if valid.any():
-                    ce = F.cross_entropy(logits_s[valid], targets_s[valid], reduction="none")
-                    if sample_weights is not None:
-                        w_tok = sample_weights.unsqueeze(1).expand(B, min_L).reshape(B * min_L)[valid]
-                        losses["source_sink"] = (ce * w_tok).sum() / w_tok.sum().clamp(min=1e-6)
-                    else:
-                        losses["source_sink"] = ce.mean()
-                    computed_ss = True
-            if not computed_ss:
-                losses["source_sink"] = (source_sink_logits * 0.0).sum()
 
         if severity_logits is not None:
             device = severity_logits.device

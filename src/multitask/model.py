@@ -31,7 +31,7 @@ from src.fusion.cross_attention import CrossModalFusion
 # pyrefly: ignore [missing-import]
 from src.graph.encoder import GraphEncoder
 # pyrefly: ignore [missing-import]
-from src.multitask.heads import BinaryHead, CWEHead, LocalizationHead, SeverityHead, SourceSinkHead
+from src.multitask.heads import BinaryHead, CWEHead, SeverityHead
 # pyrefly: ignore [missing-import]
 from src.semantic.encoder import SemanticEncoder
 
@@ -45,14 +45,6 @@ class ModelOutput:
     Attributes:
         binary_logits: Binary vulnerability logits of shape ``(B, 1)``.
         cwe_logits: CWE classification logits of shape ``(B, num_cwe_classes)``.
-        localization_logits: Line-level vulnerability logits of shape ``(B, L, 1)``.
-        source_sink_logits: Source/sink/normal logits of shape ``(B, L, 3)``.
-        fused_embedding: Fused representation of shape ``(B, D)``.
-    """
-    binary_logits: torch.Tensor | None = None
-    cwe_logits: torch.Tensor | None = None
-    localization_logits: torch.Tensor | None = None
-    source_sink_logits: torch.Tensor | None = None
     severity_logits: torch.Tensor | None = None
     fused_embedding: torch.Tensor | None = None
 
@@ -60,8 +52,6 @@ class ModelOutput:
         return iter((
             self.binary_logits,
             self.cwe_logits,
-            self.localization_logits,
-            self.source_sink_logits,
             self.severity_logits,
             self.fused_embedding,
         ))
@@ -128,19 +118,13 @@ class VulHunterModel(nn.Module):
         # Multi-task prediction heads
         binary_cfg = head_config.get("binary", {})
         cwe_cfg = head_config.get("cwe", {})
-        loc_cfg = head_config.get("localization", {})
-        ss_cfg = head_config.get("source_sink", {})
         severity_cfg = head_config.get("severity", {})
 
-        # Pop num_classes so they do not collide with the explicit kwargs below.
         cwe_num = cwe_cfg.pop("num_classes", None) or num_cwe_classes
         severity_num = severity_cfg.pop("num_classes", 4)
-        ss_num = ss_cfg.pop("num_classes", 3)
 
         self.binary_head = BinaryHead(input_dim=output_dim, **binary_cfg)
         self.cwe_head = CWEHead(input_dim=output_dim, num_classes=cwe_num, **cwe_cfg)
-        self.localization_head = LocalizationHead(input_dim=output_dim, **loc_cfg)
-        self.source_sink_head = SourceSinkHead(input_dim=output_dim, num_classes=ss_num, **ss_cfg)
         self.severity_head = SeverityHead(input_dim=output_dim, num_classes=severity_num, **severity_cfg)
 
         # Ensure all trainable parameters (LoRA adapters, projection, heads) are in float32
@@ -188,7 +172,7 @@ class VulHunterModel(nn.Module):
             ModelOutput containing logits for requested tasks.
         """
         if tasks is None:
-            tasks = ["binary", "cwe", "localization", "source_sink", "severity"]
+            tasks = ["binary", "cwe", "severity"]
 
         output = ModelOutput()
 
@@ -227,11 +211,7 @@ class VulHunterModel(nn.Module):
         if "cwe" in tasks:
             output.cwe_logits = self.cwe_head(fused_pooled)
 
-        if "localization" in tasks:
-            output.localization_logits = self.localization_head(fused_seq)
 
-        if "source_sink" in tasks:
-            output.source_sink_logits = self.source_sink_head(fused_seq)
 
         if "severity" in tasks:
             output.severity_logits = self.severity_head(fused_pooled)

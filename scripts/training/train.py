@@ -659,10 +659,6 @@ def main() -> None:
 
     logger.info("Bắt đầu train ... (Internet ON — tokenizer pull từ HF, data read-only từ /kaggle/input)")
     for epoch in range(start_epoch, args.epochs):
-        if epoch == 5:
-            logger.info("🚀 Chuyển sang Stage 2 (Epoch %d): Bật lại auxiliary losses với trọng số thấp.", epoch + 1)
-            criterion.update_weights({'binary': 1.0, 'cwe': 0.3, 'severity': 0.1, 'localization': 0.2, 'source_sink': 0.1})
-        
         if is_ddp and train_sampler is not None:
             train_sampler.set_epoch(epoch)
         t0 = time.time()
