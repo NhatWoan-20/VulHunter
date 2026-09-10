@@ -16,11 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-# pyrefly: ignore [missing-import]
 import torch
-# pyrefly: ignore [missing-import]
 import torch.nn as nn
-# pyrefly: ignore [missing-import]
 import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)

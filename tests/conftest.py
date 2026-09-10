@@ -5,7 +5,6 @@ import json
 import sys
 from pathlib import Path
 
-# pyrefly: ignore [missing-import]
 import pytest
 
 # Add project root to path

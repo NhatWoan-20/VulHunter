@@ -16,21 +16,15 @@ import sys
 import time
 from pathlib import Path
 
-# pyrefly: ignore [missing-import]
 import numpy as np
-# pyrefly: ignore [missing-import]
 import torch
-# pyrefly: ignore [missing-import]
 from torch.utils.data import DataLoader
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-# pyrefly: ignore [missing-import]
 from src.multitask.model import VulHunterModel
-# pyrefly: ignore [missing-import]
 from src.utils.dataset import VulHunterDataset, collate_fn
-# pyrefly: ignore [missing-import]
 from src.utils.metrics import binary_metrics, compute_all_metrics
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

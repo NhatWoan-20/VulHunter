@@ -5,19 +5,14 @@ import json
 import sys
 from pathlib import Path
 
-# pyrefly: ignore [missing-import]
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# pyrefly: ignore [missing-import]
 from scripts.preprocessing.clean_comments import remove_comments
-# pyrefly: ignore [missing-import]
 from scripts.preprocessing.normalize import normalize
-# pyrefly: ignore [missing-import]
 from scripts.preprocessing.strip_docstrings import strip_docstrings
-# pyrefly: ignore [missing-import]
 from scripts.preprocessing.split import split_by_project
 
 

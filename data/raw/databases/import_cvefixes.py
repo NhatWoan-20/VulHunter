@@ -62,14 +62,12 @@ def stream_gz_to_sqlite(gz_path: Path, db_path: Path) -> None:
                 chunk = f_in.read(chunk_size)
                 if not chunk:
                     break
-                # pyrefly: ignore [missing-attribute]
                 proc.stdin.write(chunk)
                 bytes_read += len(chunk)
                 if bytes_read % (chunk_size * 20) == 0:
                     mb = bytes_read / (1024 * 1024)
                     print(f"    -> Đã nạp khoảng {mb:.0f} MB SQL uncompressed...", end="\r", flush=True)
 
-        # pyrefly: ignore [missing-attribute]
         proc.stdin.close()
         proc.wait()
     except Exception as e:
@@ -77,7 +75,6 @@ def stream_gz_to_sqlite(gz_path: Path, db_path: Path) -> None:
         raise e
 
     if proc.returncode != 0:
-        # pyrefly: ignore [missing-attribute]
         err = proc.stderr.read().decode("utf-8", errors="replace")
         print(f"\n[!] Có lỗi khi nạp vào SQLite: {err}")
     else:

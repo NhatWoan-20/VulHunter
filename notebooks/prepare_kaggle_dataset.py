@@ -136,7 +136,6 @@ def get_kaggle_username() -> str | None:
     kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
     if kaggle_json.exists():
         try:
-            # pyrefly: ignore [no-any-return-implicit]
             return json.loads(kaggle_json.read_text(encoding="utf-8")).get("username")
         except Exception:
             pass

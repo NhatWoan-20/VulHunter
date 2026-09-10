@@ -207,7 +207,6 @@ class GitHubClient:
 
         payload = {"query": query}
         if variables:
-            # pyrefly: ignore [bad-assignment]
             payload["variables"] = variables
 
         for attempt in range(1, max_retries + 1):
@@ -224,7 +223,6 @@ class GitHubClient:
                     data = res.json()
                     if "errors" in data and not data.get("data"):
                         raise RuntimeError(f"GraphQL Errors: {data['errors']}")
-                    # pyrefly: ignore [no-any-return-explicit]
                     return data
 
                 if res.status_code in {500, 502, 503, 504}:

@@ -20,14 +20,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-# pyrefly: ignore [missing-import]
 import torch
-# pyrefly: ignore [missing-import]
 from torch.utils.data import Dataset
 
-# pyrefly: ignore [missing-import]
 from src.graph.encoder import EDGE_TYPE_MAP
-# pyrefly: ignore [missing-import]
 from src.utils.losses import QUALITY_TIER_WEIGHTS
 
 
@@ -191,7 +187,6 @@ class VulHunterDataset(Dataset):
     @property
     def tokenizer(self):
         if self._tokenizer is None and self._tokenizer_name:
-            # pyrefly: ignore [missing-import]
             from transformers import AutoTokenizer
             self._tokenizer = AutoTokenizer.from_pretrained(self._tokenizer_name, trust_remote_code=True)
         return self._tokenizer

@@ -29,7 +29,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# pyrefly: ignore [missing-import]
 from scripts.collection.utils import (
     GitHubClient,
     extract_functions_from_source,

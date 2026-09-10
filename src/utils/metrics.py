@@ -41,7 +41,6 @@ class MetricResult:
         if self.auc > 0:
             d["auc"] = round(self.auc, 4)
         if self.per_class:
-            # pyrefly: ignore [bad-assignment]
             d["per_class"] = self.per_class
         return d
 
@@ -79,9 +78,7 @@ def binary_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optional[np.n
     # ROC-AUC
     if y_prob is not None and len(np.unique(y_true)) > 1:
         try:
-            # pyrefly: ignore [missing-source-for-stubs]
             from sklearn.metrics import roc_auc_score
-            # pyrefly: ignore [bad-assignment]
             result.auc = roc_auc_score(y_true, y_prob)
         except (ImportError, ValueError):
             pass

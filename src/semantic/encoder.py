@@ -55,7 +55,6 @@ class SemanticEncoder(nn.Module):
             "low_cpu_mem_usage": False,
         }
         if dtype is not None:
-            # pyrefly: ignore [bad-assignment]
             kwargs["torch_dtype"] = dtype
             kwargs["dtype"] = dtype
 

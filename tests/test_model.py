@@ -4,25 +4,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# pyrefly: ignore [missing-import]
 import numpy as np
-# pyrefly: ignore [missing-import]
 import pytest
-# pyrefly: ignore [missing-import]
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# pyrefly: ignore [missing-import]
 from src.graph.encoder import GraphEncoder, NodeTypeEmbedding, GATLayer, EDGE_TYPE_MAP
-# pyrefly: ignore [missing-import]
 from src.fusion.cross_attention import CrossModalFusion, CrossAttentionBlock
-# pyrefly: ignore [missing-import]
 from src.multitask.heads import BinaryHead, CWEHead, LocalizationHead, SourceSinkHead
-# pyrefly: ignore [missing-import]
 from src.utils.losses import FocalLoss, MultiTaskLoss
-# pyrefly: ignore [missing-import]
 from src.utils.metrics import binary_metrics, multiclass_metrics, localization_metrics
 
 

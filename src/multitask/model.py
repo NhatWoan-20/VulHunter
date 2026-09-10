@@ -21,18 +21,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
-# pyrefly: ignore [missing-import]
 import torch
-# pyrefly: ignore [missing-import]
 import torch.nn as nn
 
-# pyrefly: ignore [missing-import]
 from src.fusion.cross_attention import CrossModalFusion
-# pyrefly: ignore [missing-import]
 from src.graph.encoder import GraphEncoder
-# pyrefly: ignore [missing-import]
 from src.multitask.heads import BinaryHead, CWEHead, SeverityHead
-# pyrefly: ignore [missing-import]
 from src.semantic.encoder import SemanticEncoder
 
 logger = logging.getLogger(__name__)

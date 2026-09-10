@@ -4,19 +4,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# pyrefly: ignore [missing-import]
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# pyrefly: ignore [missing-import]
 from scripts.graph.build_ast import ASTGraphBuilder
-# pyrefly: ignore [missing-import]
 from scripts.graph.build_cfg import CFGBuilder
-# pyrefly: ignore [missing-import]
 from scripts.graph.build_dfg import DFGBuilder
-# pyrefly: ignore [missing-import]
 from scripts.graph.build_call import CallGraphBuilder
 
 

@@ -246,7 +246,6 @@ def resolve_splits() -> dict[str, Path]:
         print("\n[WARN] Thiếu splits — Add Input 'vulhunter-pre-tokenized'.")
     else:
         info = inspect_splits(data_root)
-        # pyrefly: ignore [invalid-syntax]
         print(f"  Pre-tokenized: {'YES \u2705' if info['ready_for_training'] else 'NO'}")
     return out
 

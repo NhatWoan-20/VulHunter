@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SPLITS = [ROOT / "data" / "splits" / f"{name}.jsonl" for name in ("train", "validation", "test")]
 OUTPUT = ROOT / "data" / "tokenized" / "sem_qwen.jsonl"
 REPORT = ROOT / "reports" / "preprocessing" / "tokenize_qwen.json"
-MODEL_NAME = os.getenv("QWEN_TOKENIZER_NAME", "Qwen/Qwen2.5-Coder-3B-Instruct")
+MODEL_NAME = os.getenv("QWEN_TOKENIZER_NAME", "Qwen/Qwen2.5-Coder-1.5B-Instruct")
 MAX_LENGTH = int(os.getenv("QWEN_TOKENIZER_MAX_LENGTH", "2048"))
 
 

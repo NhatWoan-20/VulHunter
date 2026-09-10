@@ -21,7 +21,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# pyrefly: ignore [missing-import]
 from scripts.collection.utils import (
     compute_line_labels,
     extract_functions_from_source,
@@ -166,11 +165,8 @@ def test_schema_compatibility_and_50_samples() -> None:
         assert not missing_keys, f"Sample {i} is missing required CVEFixes keys: {missing_keys}"
 
         # Verify code validity
-        # pyrefly: ignore [bad-argument-type]
         assert len(rec["code"]) > 0
-        # pyrefly: ignore [bad-argument-type]
         assert len(rec["safe_code"]) > 0
-        # pyrefly: ignore [bad-argument-type, missing-attribute]
         assert len(rec["line_labels"]) == len(rec["code"].splitlines()), f"Mismatch in sample {i}"
 
         simulated_ghsa_records.append(rec)

@@ -18,11 +18,8 @@ Example:
 """
 from __future__ import annotations
 
-# pyrefly: ignore [missing-import]
 import torch
-# pyrefly: ignore [missing-import]
 import torch.nn as nn
-# pyrefly: ignore [missing-import]
 import torch.nn.functional as F
 
 

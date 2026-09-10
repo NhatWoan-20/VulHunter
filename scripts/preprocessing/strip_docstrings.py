@@ -11,21 +11,18 @@ REPORT = ROOT / "reports" / "preprocessing" / "master_strip_docstrings.json"
 class DocstringStripper(ast.NodeTransformer):
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self.generic_visit(node)
-        # pyrefly: ignore [missing-attribute]
         if node.body and isinstance(node.body[0], ast.Expr) and isinstance(getattr(node.body[0], "value", None), ast.Constant) and isinstance(node.body[0].value.value, str):
             node.body = node.body[1:]
         return node
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
         self.generic_visit(node)
-        # pyrefly: ignore [missing-attribute]
         if node.body and isinstance(node.body[0], ast.Expr) and isinstance(getattr(node.body[0], "value", None), ast.Constant) and isinstance(node.body[0].value.value, str):
             node.body = node.body[1:]
         return node
 
     def visit_ClassDef(self, node: ast.ClassDef):
         self.generic_visit(node)
-        # pyrefly: ignore [missing-attribute]
         if node.body and isinstance(node.body[0], ast.Expr) and isinstance(getattr(node.body[0], "value", None), ast.Constant) and isinstance(node.body[0].value.value, str):
             node.body = node.body[1:]
         return node
