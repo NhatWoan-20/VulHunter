@@ -1,9 +1,6 @@
 """Build the unified Master Dataset (gold CVEFixes + silver GHSA) for 1-Stage End-to-End training.
 
 Implements (docs/04_dataset.md § Pillar 1-3):
-    - GHSA diff line-label generation robust to comment/whitespace-only changes (tokenize-based
-      comment strip preserves line count, then difflib.SequenceMatcher(autojunk=False) on
-      dedented+rstripped lines; insert-only fixes mark the adjacent previous line).
     - Strict noise / test-code cleansing: drop methods whose file path indicates tests, mock,
       or config scaffolding (tests/, test_, testing/, mocks/, conftest.py, setup.py, ...).
     - Schema unification to a single canonical pair-level record with a quality_tier attribute
@@ -17,13 +14,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import difflib
-import io
-import json
-import logging
-import textwrap
-import token as token_module
-import tokenize
 from collections import Counter
 from pathlib import Path
 
@@ -70,7 +60,6 @@ def is_noise_path(file_path: str) -> bool:
     """Return True if a file path looks like test/mock/config scaffolding (Pillar 1.2)."""
     if not file_path:
         return False
-    # pyrefly: ignore [unnecessary-type-conversion]
     p = str(file_path).replace("\\", "/").lower()
     path_stem = p.rsplit("/", 1)[-1]
     if any(sub in p for sub in NOISE_SUBSTRINGS):
@@ -81,84 +70,6 @@ def is_noise_path(file_path: str) -> bool:
         return True
     return False
 
-
-def _strip_comments_preserve_lines(code: str) -> str:
-    """Remove comment tokens while preserving the line count of the source.
-
-    Falls back to dropping full-line comments when the tokenizer fails.
-    """
-    code = code.replace("\r\n", "\n").replace("\r", "\n")
-    if not code.strip():
-        return ""
-    try:
-        rows: dict[int, list[str]] = {}
-        max_row = 1
-        for tok in tokenize.generate_tokens(io.StringIO(code + "\n").readline):
-            typ, txt, (srow, _), (erow, _), _ = tok
-            rows.setdefault(srow, [])
-            if typ in (tokenize.COMMENT, token_module.NEWLINE, token_module.NL,
-                       token_module.INDENT, token_module.ENDMARKER, tokenize.ENCODING):
-                continue
-            if txt == "":
-                continue
-            if erow > srow:
-                txt = "\n" * (erow - srow) + txt.split("\n")[-1]
-            rows[srow].append(txt)
-            max_row = max(max_row, erow)
-        lines = []
-        for r in range(1, max_row + 1):
-            lines.append("".join(rows.get(r, [])).rstrip())
-        return "\n".join(lines).rstrip("\n")
-    except (tokenize.TokenError, IndentationError, TabError, SyntaxError, ValueError):
-        return "\n".join(line for line in code.splitlines() if not line.lstrip().startswith("#")).rstrip("\n")
-
-
-def _norm_lines(code: str) -> list[str]:
-    """Dedented + comment-stripped + rstripped lines, preserving line count."""
-    stripped = _strip_comments_preserve_lines(code or "")
-    stripped = textwrap.dedent(stripped)
-    return stripped.split("\n")
-
-
-def ghsa_line_labels(code: str, safe_code: str) -> list[int]:
-    """Generate diff-derived line labels for a GHSA (vulnerable, safe) pair.
-
-    Rules (Pillar 1.1):
-        - delete / replace opcodes over the vulnerable lines => label 1.
-        - equal lines => label 0.
-        - if the fix only inserted new lines (no delete/replace), label the line before the
-          first insertion to mark the activation context.
-    """
-    a = _norm_lines(code)
-    b = _norm_lines(safe_code)
-    n = len(code.splitlines())
-    if not a or n <= 0:
-        return []
-    if len(a) != n:  # Comment-strip changed the line count; fall back to a naive diff.
-        a = [l.strip() for l in code.splitlines()] if code else []
-
-    out = [0] * len(a)
-    matcher = difflib.SequenceMatcher(a=a, b=b, autojunk=False)
-    changed = False
-    for tag, i1, i2, _, _ in matcher.get_opcodes():
-        if tag in ("replace", "delete"):
-            for i in range(i1, i2):
-                if 0 <= i < len(out):
-                    out[i] = 1
-            changed = True
-
-    if not changed:
-        # Insert-only fix: mark the line immediately before the inserted block.
-        for tag, i1, i2, _, _ in matcher.get_opcodes():
-            if tag == "insert":
-                idx = i1 - 1
-                if 0 <= idx < len(out):
-                    out[idx] = 1
-                elif 0 < len(out):
-                    out[0] = 1
-                break
-
-    return out
 
 
 def _cvefixes_record(raw: dict) -> dict | None:
@@ -186,8 +97,6 @@ def _cvefixes_record(raw: dict) -> dict | None:
         "binary_label": int(raw.get("binary_label", 1)),
         "severity": severity,
         "cwe_ids": raw.get("cwe_ids", []),
-        "line_labels": raw.get("line_labels", []),
-        "vulnerable_lines": raw.get("vulnerable_lines", []),
     }
 
 
@@ -201,7 +110,7 @@ def _ghsa_record(raw: dict) -> dict | None:
     if not code or not safe_code:
         return None
 
-    line_labels = ghsa_line_labels(code, safe_code)
+
     severity = str(raw.get("severity") or "UNKNOWN").strip().upper()
     repo = canonical_repo(raw.get("repository"))
 
@@ -222,12 +131,9 @@ def _ghsa_record(raw: dict) -> dict | None:
         "signature": raw.get("signature"),
         "code": code,
         "safe_code": safe_code,
-        # pyrefly: ignore [bad-argument-type]
         "binary_label": int(raw.get("label", raw.get("binary_label", 1))),
         "severity": severity,
         "cwe_ids": raw.get("cwe_ids", []),
-        "line_labels": line_labels,
-        "vulnerable_lines": [i + 1 for i, x in enumerate(line_labels) if x],
     }
 
 
@@ -294,15 +200,10 @@ def main() -> None:
             fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     # Stats
-    # pyrefly: ignore [missing-attribute]
     tiers = Counter(x.get("quality_tier") for x in out_rows)
-    # pyrefly: ignore [missing-attribute]
     labels = Counter(x.get("binary_label") for x in out_rows)
-    # pyrefly: ignore [missing-attribute]
     sevs = Counter(x.get("severity") for x in out_rows)
-    # pyrefly: ignore [missing-attribute]
-    with_labels = sum(1 for x in out_rows if x.get("line_labels"))
-    # pyrefly: ignore [missing-attribute]
+
     cwe_count = sum(1 for x in out_rows if x.get("cwe_ids"))
 
     report = {
@@ -312,7 +213,6 @@ def main() -> None:
         "tiers": dict(tiers),
         "binary_labels": dict(labels),
         "severity": dict(sevs),
-        "pairs_with_line_labels": with_labels,
         "pairs_with_cwe": cwe_count,
         "cross_dataset_shared_repos": len(shared_repos),
         "shared_repos_sample": sorted(shared_repos)[:10],

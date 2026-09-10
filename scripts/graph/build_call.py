@@ -69,7 +69,7 @@ def main() -> None:
                 skipped += 1
                 continue
             out = {k: row.get(k) for k in ["sample_id", "pair_id", "role", "cve_id", "repository", "file_path", "function_name", "signature", "binary_label"]}
-            out.update({"cwe_ids": row.get("cwe_ids", []), "line_labels": row.get("line_labels", []), "vulnerable_lines": row.get("vulnerable_lines", []), "graph_type": "call", "nodes": graph["nodes"], "edges": graph["edges"]})
+            out.update({"cwe_ids": row.get("cwe_ids", []), "graph_type": "call", "nodes": graph["nodes"], "edges": graph["edges"]})
             fout.write(json.dumps(out, ensure_ascii=False) + "\n")
             rows += 1
 

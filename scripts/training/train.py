@@ -45,14 +45,10 @@ try:
 except Exception:
     pass
 
-# pyrefly: ignore [missing-import]
 from src.multitask.model import VulHunterModel, ModelOutput  # noqa: E402
-# pyrefly: ignore [missing-import]
 from src.utils.dataset import VulHunterDataset, collate_fn  # noqa: E402
-# pyrefly: ignore [missing-import]
 from src.utils.losses import MultiTaskLoss  # noqa: E402
-# pyrefly: ignore [missing-import]
-from src.utils.metrics import binary_metrics, localization_metrics  # noqa: E402
+from src.utils.metrics import binary_metrics  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 logger = logging.getLogger("train")
@@ -158,18 +154,7 @@ def _build_loss_kwargs(output: ModelOutput, batch: dict, device: torch.device) -
         kw["severity_logits"] = output.severity_logits
         if "severity_labels" in batch:
             kw["severity_targets"] = batch["severity_labels"].to(device)
-    if output.localization_logits is not None:
-        kw["localization_logits"] = output.localization_logits
-        if "line_labels" in batch:
-            kw["localization_targets"] = batch["line_labels"].to(device)
-        if "token_line_ids" in batch:
-            kw["token_line_ids"] = batch["token_line_ids"].to(device)
-        if "attention_mask" in batch:
-            kw["attention_mask"] = batch["attention_mask"].to(device)
-    if output.source_sink_logits is not None:
-        kw["source_sink_logits"] = output.source_sink_logits
-        if "source_sink_labels" in batch:
-            kw["source_sink_targets"] = batch["source_sink_labels"].to(device)
+
     if "sample_weights" in batch:
         kw["sample_weights"] = batch["sample_weights"].to(device)
     return kw
@@ -240,11 +225,9 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
             total[k] = total.get(k, 0.0) + v.item()
         n_batches += 1
         if (step + 1) in (1, 10, 25) or (step + 1) % 50 == 0:
-            logger.info("  Epoch %d | Step %d/%d | Loss: %.4f (loc %.4f ss %.4f) %s",
+            logger.info("  Epoch %d | Step %d/%d | Loss: %.4f %s",
                         epoch + 1, step + 1, len(loader),
                         total.get("total", 0) / n_batches,
-                        total.get("localization", 0) / n_batches,
-                        total.get("source_sink", 0) / n_batches,
                         "[FP16]" if use_amp else "")
     return {k: v / max(n_batches, 1) for k, v in total.items()}
 
@@ -257,8 +240,7 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
     all_true: list[int] = []
     all_pred: list[int] = []
     all_prob: list[float] = []
-    all_loc_t: list[list[int]] = []
-    all_loc_p: list[list[int]] = []
+
     core = model.module if hasattr(model, "module") else model
     for batch in loader:
         input_ids = batch.get("input_ids", torch.zeros(1, 1, dtype=torch.long)).to(device)
@@ -289,43 +271,7 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
             all_true.extend(batch["binary_labels"].tolist())
             all_pred.extend(preds.cpu().tolist())
             all_prob.extend(probs.cpu().tolist())
-        if (
-            core.mode != "graph_only"
-            and output.localization_logits is not None
-            and "line_labels" in batch
-            and "token_line_ids" in batch
-        ):
-            tok_probs = torch.sigmoid(output.localization_logits.squeeze(-1)).cpu()
-            tl = batch["token_line_ids"].cpu()
-            am = batch.get("attention_mask", torch.ones_like(tl)).cpu()
-            line_labels = batch["line_labels"].cpu()
-            min_L = min(tok_probs.size(1), tl.size(1))
-            if min_L > 1:
-                tok_probs = tok_probs[:, :min_L]
-                tl = tl[:, :min_L]
-                am = am[:, :min_L]
-                B = tok_probs.size(0)
-                for b in range(B):
-                    valid_tok = (am[b] == 1) & (tl[b] != -1)
-                    if not valid_tok.any():
-                        continue
-                    targets = line_labels[b]
-                    valid_lines = targets != -1
-                    if not valid_lines.any():
-                        continue
-                    pl: list[int] = []
-                    tl_list: list[int] = []
-                    for lid in torch.where(valid_lines)[0].tolist():
-                        mask = tl[b] == lid
-                        mask = mask & valid_tok
-                        if not mask.any():
-                            continue
-                        p = float(tok_probs[b][mask].max().item())
-                        pl.append(1 if p > 0.5 else 0)
-                        tl_list.append(int(targets[lid].item()))
-                    if tl_list:
-                        all_loc_p.append(pl)
-                        all_loc_t.append(tl_list)
+
     if dist.is_available() and dist.is_initialized():
         # Thu thập kết quả từ toàn bộ các GPU (ranks) về để tính metrics trên 100% tập dữ liệu validation
         world_size = dist.get_world_size()
@@ -336,8 +282,7 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
             "all_true": all_true,
             "all_pred": all_pred,
             "all_prob": all_prob,
-            "all_loc_t": all_loc_t,
-            "all_loc_p": all_loc_p,
+
         }
         dist.all_gather_object(gathered, local_eval)
 
@@ -346,8 +291,7 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
         m_true: list[int] = []
         m_pred: list[int] = []
         m_prob: list[float] = []
-        m_loc_t: list[list[int]] = []
-        m_loc_p: list[list[int]] = []
+
         for d in gathered:
             if d is None:
                 continue
@@ -357,16 +301,14 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
             m_true.extend(d.get("all_true", []))
             m_pred.extend(d.get("all_pred", []))
             m_prob.extend(d.get("all_prob", []))
-            m_loc_t.extend(d.get("all_loc_t", []))
-            m_loc_p.extend(d.get("all_loc_p", []))
+
 
         total = m_total
         n_batches = m_batches
         all_true = m_true
         all_pred = m_pred
         all_prob = m_prob
-        all_loc_t = m_loc_t
-        all_loc_p = m_loc_p
+
 
     avg = {k: v / max(n_batches, 1) for k, v in total.items()}
     metrics: dict = {}
@@ -378,8 +320,7 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
             if len(probs) > 0:
                 logger.info(f"Binary probs: min={probs.min():.4f} max={probs.max():.4f} mean={probs.mean():.4f} std={probs.std():.4f}")
                 logger.info(f"Predictions: {preds.sum()}/{len(preds)} positive")
-    if all_loc_t:
-        metrics["localization"] = localization_metrics(all_loc_t, all_loc_p).to_dict()
+
     return avg, metrics
 
 
@@ -667,7 +608,7 @@ def main() -> None:
         val_losses, val_metrics = evaluate(model, val_loader, criterion, device, is_parallel=(is_parallel or is_ddp), use_amp=use_amp)
         elapsed = time.time() - t0
         val_f1 = val_metrics.get("binary", {}).get("f1", 0.0)
-        loc_f1 = val_metrics.get("localization", {}).get("f1", 0.0)
+
         bin_m = val_metrics.get("binary", {})
         val_acc = bin_m.get("accuracy", 0.0)
         val_p = bin_m.get("precision", 0.0)
@@ -683,10 +624,10 @@ def main() -> None:
             except Exception:
                 pass
         if rank == 0:
-            logger.info("Epoch %d/%d (%.1fs%s) | Train %.4f | Val %.4f | Acc %.4f | P %.4f | R %.4f | Val F1 %.4f | AUC %.4f | Loc F1 %.4f",
+            logger.info("Epoch %d/%d (%.1fs%s) | Train %.4f | Val %.4f | Acc %.4f | P %.4f | R %.4f | Val F1 %.4f | AUC %.4f",
                         epoch + 1, args.epochs, elapsed, vram_str,
                         train_losses.get("total", 0.0), val_losses.get("total", 0.0),
-                        val_acc, val_p, val_r, val_f1, val_auc, loc_f1)
+                        val_acc, val_p, val_r, val_f1, val_auc)
             history.append({"epoch": epoch + 1, "train_loss": train_losses, "val_loss": val_losses, "val_metrics": val_metrics})
             # unwrap state_dict khi DataParallel hoặc DDP
             state_dict = model.module.state_dict() if hasattr(model, "module") else model.state_dict()

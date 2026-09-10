@@ -19,22 +19,6 @@ def norm(code: str | None) -> str:
     return "\n".join(line.rstrip() for line in code.replace("\r\n", "\n").replace("\r", "\n").split("\n")).strip("\n")
 
 
-def labels(vuln: str, safe: str) -> list[int]:
-    vuln_lines = norm(vuln).split("\n") if norm(vuln) else []
-    safe_lines = norm(safe).split("\n") if norm(safe) else []
-    if not vuln_lines:
-        return []
-
-    out = [0] * len(vuln_lines)
-    for tag, a1, a2, _, _ in difflib.SequenceMatcher(a=vuln_lines, b=safe_lines, autojunk=False).get_opcodes():
-        if tag in {"replace", "delete"}:
-            for i in range(a1, a2):
-                out[i] = 1
-
-    if not any(out):
-        out[0] = 1
-    return out
-
 
 def sample_id(*parts: str) -> str:
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
@@ -106,8 +90,6 @@ def main() -> None:
             safe = norm(r["safe_code"])
             if not vuln or not safe:
                 continue
-
-            line_labels = labels(vuln, safe)
             severity = "UNKNOWN"
             rec = {
                 "sample_id": sample_id(r["file_change_id"], r["method_name"], r["cve_id"] or ""),
@@ -125,8 +107,6 @@ def main() -> None:
                 "safe_code": safe,
                 "binary_label": 1,
                 "cwe_ids": [cwe.strip() for cwe in r["cwe_ids"].split(",") if cwe.strip()] if r["cwe_ids"] else [],
-                "line_labels": line_labels,
-                "vulnerable_lines": [i + 1 for i, x in enumerate(line_labels) if x],
             }
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             rows += 1

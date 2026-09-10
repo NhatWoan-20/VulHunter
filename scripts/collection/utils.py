@@ -65,21 +65,6 @@ def norm(code: str | None) -> str:
     ).strip("\n")
 
 
-def compute_line_labels(vuln: str, safe: str) -> list[int]:
-    """Compute line-level vulnerability binary labels using difflib sequence matching."""
-    v = norm(vuln).split("\n") if norm(vuln) else []
-    s = norm(safe).split("\n") if norm(safe) else []
-    if not v:
-        return []
-    out = [0] * len(v)
-    for tag, a1, a2, _, _ in difflib.SequenceMatcher(a=v, b=s, autojunk=False).get_opcodes():
-        if tag in {"replace", "delete"}:
-            for i in range(a1, a2):
-                out[i] = 1
-    if not any(out):
-        out[0] = 1
-    return out
-
 
 def sample_id(*parts: Any) -> str:
     """Generate deterministic 16-character SHA-1 ID from sample parts."""

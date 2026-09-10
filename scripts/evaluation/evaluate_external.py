@@ -69,8 +69,6 @@ def convert_external_csv(path: Path, output: Path) -> int:
                 "label": int(label_value),
                 "cwe_ids": [],
                 "is_cwe_reliable": False,
-                "line_labels": [],
-                "vulnerable_lines": [],
             }
             target.write(json.dumps(record, ensure_ascii=False) + "\n")
             count += 1
