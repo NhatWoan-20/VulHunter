@@ -97,14 +97,22 @@ class GraphCodeBERTNodeEmbedding(nn.Module):
 
     def forward(self, node_texts: list[str]) -> torch.Tensor:
         device = self.proj.weight.device
-        # Tokenize node texts
-        # Use max_length=32 to keep it fast, nodes usually contain short snippets
-        inputs = self.tokenizer(node_texts, padding=True, truncation=True, max_length=32, return_tensors="pt")
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        chunk_size = 512
+        cls_embs = []
         
-        # Extract features
-        outputs = self.model(**inputs)
-        cls_emb = outputs.last_hidden_state[:, 0, :]
+        # Process in chunks to prevent CUDA OOM on large batches of graphs
+        for i in range(0, len(node_texts), chunk_size):
+            chunk = node_texts[i:i + chunk_size]
+            # Use max_length=32 to keep it fast, nodes usually contain short snippets
+            inputs = self.tokenizer(chunk, padding=True, truncation=True, max_length=32, return_tensors="pt")
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                cls_emb_chunk = outputs.last_hidden_state[:, 0, :]
+                cls_embs.append(cls_emb_chunk)
+                
+        cls_emb = torch.cat(cls_embs, dim=0)
         return self.proj(cls_emb)
 
 
