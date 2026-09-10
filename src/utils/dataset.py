@@ -30,11 +30,7 @@ from src.graph.encoder import EDGE_TYPE_MAP
 # pyrefly: ignore [missing-import]
 from src.utils.losses import QUALITY_TIER_WEIGHTS
 
-# pyrefly: ignore [no-untyped-import]
-try:
-    from src.utils.taint import infer_token_labels as _infer_token_labels  # type: ignore[import]
-except Exception:  # pragma: no cover
-    _infer_token_labels = None  # type: ignore[assignment]
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +51,7 @@ CWE_CLASSES = {
 SEVERITY_CLASSES = {"UNKNOWN": -1, "LOW": 0, "MODERATE": 1, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 
 
-def _line_starts(text: str) -> list[int]:
-    starts = [0]
-    for i, ch in enumerate(text):
-        if ch == "\n" and i + 1 < len(text):
-            starts.append(i + 1)
-    return starts
+
 
 
 class _LazySampleList:
@@ -212,50 +203,12 @@ class VulHunterDataset(Dataset):
         sample = self.samples[idx]
         result: dict = {"sample_id": sample.get("sample_id", str(idx))}
 
-        # ── Semantic features + token↔line alignment ──
+        # ── Semantic features ──
         if "input_ids_qwen" in sample:
             ids = sample["input_ids_qwen"][: self.max_length]
             mask = sample.get("attention_mask_qwen", [1] * len(ids))[: self.max_length]
             result["input_ids"] = torch.tensor(ids, dtype=torch.long)
             result["attention_mask"] = torch.tensor(mask, dtype=torch.long)
-            # token_line_ids may have been produced by tokenize_qwen.py
-            tlids = sample.get("token_line_ids_qwen")
-            if tlids is None:
-                # Re-derive on the fly from offset_mapping_qwen if present
-                offsets = sample.get("offset_mapping_qwen")
-                if offsets is not None:
-                    code = sample.get("code", "").replace("\r\n", "\n").replace("\r", "\n").strip()
-                    starts = _line_starts(code)
-                    mapped: list[int] = []
-                    for s, e in offsets[: self.max_length]:
-                        if s == 0 and e == 0:
-                            mapped.append(-1)
-                        else:
-                            mapped.append(max(0, bisect.bisect_right(starts, s) - 1))
-                    result["token_line_ids"] = torch.tensor(mapped, dtype=torch.long)
-                else:
-                    # No alignment info: all -1 (localization will be skipped for this sample)
-                    result["token_line_ids"] = torch.full((len(ids),), -1, dtype=torch.long)
-            else:
-                tlids = tlids[: self.max_length]
-                # pad handling if truncated ids shorter than original tlids (should not happen)
-                result["token_line_ids"] = torch.tensor(tlids, dtype=torch.long)
-            # source/sink weak labels
-            ssl = sample.get("source_sink_labels")
-            if ssl is not None:
-                ssl = ssl[: self.max_length]
-                # ensure -1 for special tokens where token_line_ids == -1
-                result["source_sink_labels"] = torch.tensor(ssl, dtype=torch.long)
-            elif _infer_token_labels is not None:
-                # generate on the fly (handles safe vs vulnerable)
-                code = sample.get("code", "")
-                seq_len = len(ids)
-                tl = result["token_line_ids"].tolist() if "token_line_ids" in result else None
-                b = int(sample.get("binary_label", 0))
-                inferred = _infer_token_labels(code, tl, seq_len, b)
-                result["source_sink_labels"] = torch.tensor(inferred, dtype=torch.long)
-            else:
-                result["source_sink_labels"] = torch.full((len(ids),), -1, dtype=torch.long)
 
         elif self.tokenizer and "code" in sample:
             encoded = self.tokenizer(
@@ -267,21 +220,6 @@ class VulHunterDataset(Dataset):
             )
             result["input_ids"] = encoded["input_ids"].squeeze(0)
             result["attention_mask"] = encoded["attention_mask"].squeeze(0)
-            # derive token_line_ids from offsets
-            offsets = encoded.get("offset_mapping", torch.zeros(1, 0, 2)).squeeze(0).tolist()  # type: ignore[attr-defined]
-            code = sample.get("code", "").replace("\r\n", "\n").replace("\r", "\n").strip()
-            starts = _line_starts(code)
-            tlids = []
-            for s, e in offsets:
-                if s == 0 and e == 0:
-                    tlids.append(-1)
-                else:
-                    tlids.append(max(0, bisect.bisect_right(starts, int(s)) - 1))
-            result["token_line_ids"] = torch.tensor(tlids, dtype=torch.long)
-            if _infer_token_labels is not None:
-                b = int(sample.get("binary_label", 0))
-                inferred = _infer_token_labels(code, tlids, len(tlids), b)
-                result["source_sink_labels"] = torch.tensor(inferred, dtype=torch.long)
 
         # ── Labels ──
         result["binary_label"] = sample.get("binary_label", 0)
@@ -337,22 +275,12 @@ def collate_fn(batch: list[dict]) -> dict:
         max_len = max(s["input_ids"].size(0) for s in batch)
         input_ids = torch.zeros(len(batch), max_len, dtype=torch.long)
         attention_mask = torch.zeros(len(batch), max_len, dtype=torch.long)
-        token_line_ids = torch.full((len(batch), max_len), -1, dtype=torch.long)
-        source_sink_labels = torch.full((len(batch), max_len), -1, dtype=torch.long)
         for i, s in enumerate(batch):
             L = s["input_ids"].size(0)
             input_ids[i, :L] = s["input_ids"]
             attention_mask[i, :L] = s["attention_mask"]
-            if "token_line_ids" in s:
-                tl = s["token_line_ids"]
-                token_line_ids[i, : tl.size(0)] = tl
-            if "source_sink_labels" in s:
-                ss = s["source_sink_labels"]
-                source_sink_labels[i, : ss.size(0)] = ss
         result["input_ids"] = input_ids
         result["attention_mask"] = attention_mask
-        result["token_line_ids"] = token_line_ids
-        result["source_sink_labels"] = source_sink_labels
 
     result["binary_labels"] = torch.tensor([s["binary_label"] for s in batch], dtype=torch.long)
     result["cwe_labels"] = torch.tensor([s["cwe_label"] for s in batch], dtype=torch.long)

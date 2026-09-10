@@ -5,7 +5,6 @@ prepare_kaggle_dataset.py — Đóng gói data/splits đã chia sẵn để uplo
 Mục tiêu: tiết kiệm 15-20 phút tokenize + 1-2 phút taint trên Kaggle.
 Luồng:
   local data/splits/{train,validation,test}.jsonl (có thể chưa tokenize)
-    -> chạy tokenize_qwen.py + generate_source_sink_labels.py (nếu thiếu)
     -> copy ra dist/kaggle_dataset/ (chỉ 3 file đã pre-tokenized, sẵn sàng train)
     -> sinh dataset-metadata.json để `kaggle datasets create -p dist/kaggle_dataset`
 
@@ -43,14 +42,9 @@ def parse_args():
 def need_tokenize(path: Path) -> bool:
     with open(path, encoding="utf-8") as f:
         s = json.loads(next(f))
-    # pyrefly: ignore [no-any-return-implicit]
-    return "token_line_ids_qwen" not in s or "offset_mapping_qwen" not in s
+    return "input_ids_qwen" not in s
 
-def need_ss(path: Path) -> bool:
-    with open(path, encoding="utf-8") as f:
-        s = json.loads(next(f))
-    # pyrefly: ignore [no-any-return-implicit]
-    return "source_sink_labels" not in s
+
 
 def main():
     args = parse_args()
@@ -65,8 +59,6 @@ def main():
     # 1. Kiểm tra có cần tokenize không
     train_file = splits_dir / "train.jsonl"
     do_tok = args.force_retokenize or need_tokenize(train_file)
-    do_ss = need_ss(train_file) or do_tok  # nếu tokenize lại thì ss cũng phải sinh lại
-
     if do_tok:
         print(f"[STEP 1/3] Tokenize Qwen cho {splits_dir} (mất 15-20 phút, cần Internet lần đầu)...")
         result = subprocess.run([sys.executable, "scripts/preprocessing/tokenize_qwen.py"], cwd=str(ROOT))
@@ -76,14 +68,7 @@ def main():
     else:
         print("[SKIP] train.jsonl đã có token_line_ids_qwen — bỏ qua tokenize")
 
-    if do_ss:
-        print(f"[STEP 2/3] Sinh source_sink_labels (1-2 phút)...")
-        result = subprocess.run([sys.executable, "scripts/preprocessing/generate_source_sink_labels.py"], cwd=str(ROOT))
-        if result.returncode != 0:
-            print("[ERROR] generate_source_sink_labels.py thất bại")
-            sys.exit(result.returncode)
-    else:
-        print("[SKIP] đã có source_sink_labels — bỏ qua")
+
 
     # 2. Copy ra out (chỉ 3 file splits, không kèm raw/graphs mặc định để nhẹ)
     out.mkdir(parents=True, exist_ok=True)
@@ -110,8 +95,8 @@ def main():
         "title": "VulHunter Pre-tokenized Splits (v3.3)",
         "id": f"{get_kaggle_username()}/{args.dataset_slug}" if get_kaggle_username() else f"your-username/{args.dataset_slug}",
         "licenses": [{"name": "mit"}],
-        "resources": [{"path": f.name, "description": f"{f.name} — VulHunter v3.3 pre-tokenized (token_line_ids_qwen + source_sink_labels)"} for f in out.glob("*.jsonl")],
-        "description": "VulHunter v3.3 master splits đã tokenize sẵn (Qwen2.5-Coder, token_line_ids_qwen, offset_mapping_qwen, source_sink_labels). Upload trực tiếp lên Kaggle Notebook để train ngay không cần preprocessing (tiết kiệm 15-20 phút). Tạo bởi notebooks/prepare_kaggle_dataset.py"
+        "resources": [{"path": f.name, "description": f"{f.name} — VulHunter v3.3 pre-tokenized (input_ids_qwen)"} for f in out.glob("*.jsonl")],
+        "description": "VulHunter v3.3 master splits đã tokenize sẵn (Qwen2.5-Coder, input_ids_qwen). Upload trực tiếp lên Kaggle Notebook để train ngay không cần preprocessing (tiết kiệm 15-20 phút). Tạo bởi notebooks/prepare_kaggle_dataset.py"
     }
     # Nếu chưa có username thì để placeholder
     meta_path = out / "dataset-metadata.json"

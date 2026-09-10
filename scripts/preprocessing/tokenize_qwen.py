@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import bisect
 import json
 import os
 from pathlib import Path
@@ -21,85 +20,27 @@ def load_tokenizer():
     return AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 
 
-def _line_starts(text: str) -> list[int]:
-    """Return sorted list of char offsets where each line starts (0-indexed)."""
-    starts = [0]
-    for i, ch in enumerate(text):
-        if ch == "\n":
-            # next line starts after the newline char, if not at EOF
-            if i + 1 < len(text):
-                starts.append(i + 1)
-            else:
-                starts.append(len(text))
-    return starts
-
-
 def encode(tokenizer, code: str) -> dict:
     text = code.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not text:
-        # Edge: empty function body
-        encoded = tokenizer(
-            text,
-            add_special_tokens=True,
-            truncation=True,
-            max_length=MAX_LENGTH,
-            return_attention_mask=True,
-            return_offsets_mapping=True,
-        )
-        token_ids = encoded["input_ids"]
-        attention_mask = encoded["attention_mask"]
-        tokens = tokenizer.convert_ids_to_tokens(token_ids)
-        offsets = encoded.get("offset_mapping", [(0, 0)] * len(token_ids))
-        token_line_ids = [-1] * len(token_ids)
-        return {
-            "input_ids": token_ids,
-            "attention_mask": attention_mask,
-            "tokens": tokens,
-            "token_count": len(token_ids),
-            "truncated": len(token_ids) >= MAX_LENGTH,
-            "offset_mapping": offsets,
-            "token_line_ids": token_line_ids,
-        }
-
-    line_starts = _line_starts(text)
     encoded = tokenizer(
         text,
         add_special_tokens=True,
         truncation=True,
         max_length=MAX_LENGTH,
         return_attention_mask=True,
-        return_offsets_mapping=True,
+        # Không cần return_offsets_mapping nữa vì đã bỏ 6-task
     )
     token_ids = encoded["input_ids"]
     attention_mask = encoded["attention_mask"]
-    tokens = tokenizer.convert_ids_to_tokens(token_ids)
-    offsets = encoded.get("offset_mapping", [(0, 0)] * len(token_ids))
-    # offsets may be list of lists after JSON — normalize to tuples
-    # Build token -> line index via bisect on start offset
-    token_line_ids: list[int] = []
-    for s, e in offsets:
-        if s == 0 and e == 0:
-            # special token (CLS, EOS, PAD)
-            token_line_ids.append(-1)
-        else:
-            line_id = bisect.bisect_right(line_starts, s) - 1
-            if line_id < 0:
-                line_id = 0
-            # clamp to last line
-            if line_id >= len(text.splitlines()):
-                line_id = len(text.splitlines()) - 1
-            token_line_ids.append(line_id)
-
-    # Truncation sanity: offsets/token_line_ids length == token_ids length due to HF truncation
-    assert len(token_line_ids) == len(token_ids)
+    
+    # Không cần tokens string nữa vì chỉ làm nặng file jsonl
+    # tokens = tokenizer.convert_ids_to_tokens(token_ids)
+    
     return {
         "input_ids": token_ids,
         "attention_mask": attention_mask,
-        "tokens": tokens,
         "token_count": len(token_ids),
         "truncated": len(token_ids) >= MAX_LENGTH,
-        "offset_mapping": offsets,
-        "token_line_ids": token_line_ids,
     }
 
 
@@ -122,15 +63,13 @@ def tokenize_file(tokenizer, path: Path, out: object) -> tuple[int, int]:
                 "source": "qwen2.5-coder",
                 "tokenizer": MODEL_NAME,
                 "max_length": MAX_LENGTH,
-                "code": code_pack,
+                # Bỏ code_pack lồng nhau, chỉ lưu meta
             }
             row["tokenizer_name"] = MODEL_NAME
             row["tokenizer_family"] = "Qwen2.5-Coder"
-            row["tokens_qwen"] = code_pack["tokens"]
             row["input_ids_qwen"] = code_pack["input_ids"]
             row["attention_mask_qwen"] = code_pack["attention_mask"]
-            row["token_line_ids_qwen"] = code_pack["token_line_ids"]
-            row["offset_mapping_qwen"] = code_pack["offset_mapping"]
+            # Đã bỏ token_line_ids_qwen và offset_mapping_qwen
 
             if code_pack["truncated"]:
                 truncated += 1
