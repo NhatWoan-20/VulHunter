@@ -1,4 +1,4 @@
-<h1 align="center">🛡️ VulHunter</h1>
+﻿<h1 align="center">🛡️ VulHunter</h1>
 
 <p align="center">
   <strong>Hybrid Multi-Modal Vulnerability Detection for Python — 3 Tasks, One Unified Model</strong><br/>
@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyTorch-2.1%2B-red?logo=pytorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Transformers-4.36%2B-yellow?logo=huggingface&logoColor=white" alt="Transformers">
-  <img src="https://img.shields.io/badge/Kaggle-1xP100-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
+  <img src="https://img.shields.io/badge/Kaggle-2xT4-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
   <img src="https://img.shields.io/badge/Tests-60%2F60%20Passed-brightgreen" alt="Tests">
   <a href="https://doi.org/10.5281/zenodo.13118970"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.13118970-blue" alt="DOI"></a>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
@@ -20,7 +20,7 @@
   <a href="#-key-features">Key Features</a> •
   <a href="#-architecture">Architecture</a> •
   <a href="#-dataset">Dataset</a> •
-  <a href="#-run-on-kaggle-1xp100">Kaggle 1×P100</a> •
+  <a href="#-run-on-kaggle-1xp100">Kaggle 2x T4</a> •
   <a href="#-training-modes">Training</a> •
   <a href="#-benchmarks--evaluation">Evaluation</a> •
   <a href="docs/README.md">Docs</a>
@@ -46,7 +46,7 @@ Traditional software vulnerability detectors rely either purely on syntactic seq
 - **3-in-1 Unified Intelligence**: Binary detection, CWE classification (10 categories), and Severity classification (4 tiers).
 - **MLOps Ready**: Includes a FastAPI deployment script for instant inference and containerization capabilities.
 - **Strict Leakage Prevention (Repo-Disjoint)**: 80/10/10 split grouped strictly by GitHub repository (`owner/repo`), preventing models from memorizing project-specific coding conventions.
-- **Resource Efficient**: Full fine-tuning of Qwen2.5-Coder-1.5B-Instruct fits comfortably within Kaggle's 1xP100 (16GB VRAM) environment.
+- **Resource Efficient**: Full fine-tuning of Qwen2.5-Coder-1.5B-Instruct fits comfortably within Kaggle's 2x T4 (16GB VRAM) environment.
 - **Reproducible Data Pipeline**: Linear, deterministic master pipeline combining gold-tier CVEFixes and silver-tier GitHub Security Advisories (GHSA).
 
 ---
@@ -163,9 +163,9 @@ curl -X POST "http://localhost:8000/predict" \
 
 ---
 
-## ☁️ Run on Kaggle (1×P100 GPU)
+## ☁️ Run on Kaggle (2x T4 GPUs)
 
-VulHunter provides production-grade notebooks optimized for **Nvidia P100 GPUs (16GB)**.
+VulHunter provides production-grade notebooks optimized for **Nvidia T4 GPUs (16GB)**.
 
 ### Kaggle Step-by-Step Workflow
 
@@ -175,7 +175,7 @@ VulHunter provides production-grade notebooks optimized for **Nvidia P100 GPUs (
    # Generates dist/kaggle_dataset/ ready for Kaggle Datasets as 'vulhunter-pre-tokenized'
    ```
 2. **Launch Kaggle Notebook**:
-   - Accelerator: **GPU P100**
+   - Accelerator: **GPU T4 x2**
    - Internet: **ON** | Persistence: **ON**
    - Add Input: `vulhunter-pre-tokenized`
 3. **Run Kaggle Pipeline**:
@@ -189,7 +189,7 @@ VulHunter provides production-grade notebooks optimized for **Nvidia P100 GPUs (
 VulHunter is engineered to scale seamlessly:
 
 #### Scenario A: Semantic-Only (Qwen2.5-Coder-1.5B-Instruct)
-*   **Hardware Requirements**: Single GPU with 12GB to 16GB VRAM (e.g. RTX 3060, T4, P100).
+*   **Hardware Requirements**: Single GPU with 12GB to 16GB VRAM (e.g. RTX 3060, T4).
 *   **Command**:
     ```bash
     python scripts/training/train.py \
@@ -314,3 +314,4 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more informa
 - **CVEFixes**: [secureIT-project/CVEfixes](https://github.com/secureIT-project/CVEfixes) (Zenodo DOI: `10.5281/zenodo.13118970`)
 - **GitHub Security Advisories (GHSA)**: [GitHub Advisory Database](https://github.com/advisories)
 - **Qwen2.5-Coder**: Qwen Team, Alibaba Cloud
+

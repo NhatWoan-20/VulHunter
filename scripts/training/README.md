@@ -9,7 +9,7 @@ This directory contains the central training script for the project. It orchestr
 - **`train.py`**: The master training script. It handles:
   - **3 Operating Modes**: `semantic_only` (LLM only), `graph_only` (GAT only), and `fusion` (Cross-Attention between LLM and GAT).
   - **Multi-Task Optimization**: Jointly optimizes 3 loss heads (Binary, CWE, Severity) weighted by sample quality (gold/silver).
-  - **Hardware Acceleration**: Mixed Precision (AMP FP16), and Gradient Checkpointing, optimized for Kaggle P100 (16GB) single-GPU setups.
+  - **Hardware Acceleration**: Mixed Precision (AMP FP16), and Gradient Checkpointing, optimized for Kaggle 2x T4 (16GB) DataParallel setups.
 
 ## Configuration
 

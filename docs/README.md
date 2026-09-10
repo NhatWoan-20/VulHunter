@@ -1,4 +1,4 @@
-# VulHunter Research Specification & Documentation
+﻿# VulHunter Research Specification & Documentation
 
 > **Authoritative methodology — Master 1-Stage, 3 Tasks Active**
 
@@ -54,11 +54,11 @@ VulHunter is a hybrid multi-modal vulnerability detection framework for Python s
 | **Splitting** | ✅ Implemented + verified | `split.py` — cross-dataset repo-disjoint |
 | **Tokenization** | ✅ Active | `tokenize_qwen.py` |
 | **Graph build + merge** | ✅ Implemented | `scripts/graph/*` + `merge_graphs.py` → `master_graphs.jsonl` |
-| **Training** | ✅ Active | `train.py` wires 3 losses via Kaggle P100 environments |
+| **Training** | ✅ Active | `train.py` wires 3 losses via Kaggle 2x T4 environments |
 | **In-Domain Evaluation** | ✅ Active | `scripts/evaluation/evaluate.py` reports binary/CWE/severity |
 | **External Evaluation** | ✅ Implemented | `scripts/evaluation/evaluate_external.py` |
 
-*Full `semantic_only`/`fusion` training runs on Kaggle P100 (16GB).*
+*Full `semantic_only`/`fusion` training runs on Kaggle 2x T4 (16GB).*
 
 ---
 
@@ -144,3 +144,4 @@ To target a different dataset, edit the `INPUT`/`OUTPUT` constants at the top of
 5. **Pipeline is fixed to `master`.** All preprocessing/graph scripts are hardcoded to `master_*` paths; to target a different dataset, edit the `INPUT`/`OUTPUT` constants in the script header.
 6. **Checkpoint selection is on validation binary F1 only.**
 7. **Explanation is post-hoc (deprecated for primary training).** Never let the explanation LLM influence training or checkpoint selection.
+

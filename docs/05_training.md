@@ -1,4 +1,4 @@
-# 05 — Training & Optimization (1-Stage on the Master Dataset)
+﻿# 05 — Training & Optimization (1-Stage on the Master Dataset)
 
 > **Version: 4.0** — **3 trainable heads**
 > **Authoritative Specification**
@@ -64,7 +64,7 @@ $$\mathcal{L}_{\text{sample}} = w_{\text{tier}}\cdot\Big[\lambda_{\text{bin}}\ma
 
 ## 4. Pillar 4 — Optimization Hyperparameters
 
-- **Full-finetune (Kaggle 1xP100):** backbone `2e-5`; graph / cross-attention / heads `2e-4` (**10×**).
+- **Full-finetune (Kaggle 2x T4):** backbone `2e-5`; graph / cross-attention / heads `2e-4` (**10×**).
 - **Schedule:** linear warmup **10%** steps → cosine decay (`LambdaLR`).
 - **Effective batch:** local `batch_size=8` × `grad_accum=4` → **32**.
 - **Gradient clipping:** max norm 1.0.
@@ -85,3 +85,4 @@ on the Master Dataset (GHSA included directly with quality down-weight).
 
 - Seed 42 everywhere; fixed repo-disjoint splits; deterministic checkpointing.
 - All three branches via `scripts/training/train.py --config configs/train/<mode>.yaml [--graph-data …]`.
+

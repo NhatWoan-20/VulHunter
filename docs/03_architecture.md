@@ -1,4 +1,4 @@
-# 03 — System Architecture
+﻿# 03 — System Architecture
 
 > **Version: 4.0** — **3/3 Tasks Active**
 > **Authoritative Specification**
@@ -45,7 +45,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **3 trai
 
 ### 2.1 Semantic Encoder (`src/semantic/encoder.py`)
 
-- **Backbone:** `Qwen/Qwen2.5-Coder-1.5B-Instruct` for Kaggle P100 environment.
+- **Backbone:** `Qwen/Qwen2.5-Coder-1.5B-Instruct` for Kaggle 2x T4 environment.
 - **Context:** 2,048 tokens.
 - **Layer Freezing:** embedding + first `freeze_layers` (default 28/36) frozen; top layers fine-tuned.
 - **Outputs:** masked **mean-pooled** `h_sem ∈ ℝ^D` for classification heads.
@@ -71,3 +71,4 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **3 trai
 | **Severity** | `h_fused` | logits ŷ_sev ∈ ℝ⁴ (masked if UNKNOWN=-1) | CE label_smooth 0.05, λ=0.2 |
 
 > **Alignment:** per-role `sample_id = "{source}:{pair_id}:{role}"` links semantic tokens (`input_ids_qwen`), graph nodes, and all 3 label vectors. `quality_tier` (gold/silver) → `sample_weights` scales every trainable loss.
+

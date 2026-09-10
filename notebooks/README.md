@@ -1,6 +1,6 @@
-# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (1×P100)
+# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (2x T4)
 
-> **Mục tiêu:** Chạy mô hình **VulHunter v4.0 (3 tasks)** trên **Kaggle Notebook `GPU P100` + Internet ON** với **Qwen2.5-Coder-1.5B-Instruct**.
+> **Mục tiêu:** Chạy mô hình **VulHunter v4.0 (3 tasks)** trên **Kaggle Notebook `GPU T4 x2` + Internet ON** với **Qwen2.5-Coder-1.5B-Instruct**.
 > **Lưu ý Cốt Lõi:** Toàn bộ quá trình Thu thập dữ liệu (Collection), Trích xuất (Extraction), Tiền xử lý (Preprocessing) và Tạo đồ thị (Graph Generation) **PHẢI ĐƯỢC CHẠY TRÊN MÁY LOCAL**. Kaggle chỉ được sử dụng cho bước cuối cùng là **Huấn luyện (Training)** và **Đánh giá (Evaluation)** nhằm tận dụng GPU.
 
 ---
@@ -74,7 +74,7 @@ kaggle datasets create -p dist/kaggle_dataset
 
 1. Mở Kaggle Notebook mới hoặc notebook có sẵn của bạn.
 2. Góc phải màn hình, mục **Settings**:
-   - **Accelerator**: Chọn **GPU P100**.
+   - **Accelerator**: Chọn **GPU T4 x2**.
    - **Internet**: Bật **ON** (để mô hình tự động pull Qwen weights trực tiếp từ thư viện HuggingFace).
 3. Góc phải màn hình, mục **Input**:
    - Bấm **Add Input**.
@@ -86,11 +86,11 @@ Upload file `notebooks/train_fusion.ipynb` hoặc `notebooks/train_semantic_only
 
 ---
 
-## 4. Tại sao cấu hình 1.5B Full Fine-Tune trên 1×P100?
+## 4. Tại sao cấu hình 1.5B Full Fine-Tune trên 2x T4?
 
 | Đặc điểm của Kaggle | Tối ưu của VulHunter |
 |---|---|
-| **1×P100 16GB VRAM** | Bằng cách chuyển sang Qwen2.5-Coder-1.5B-Instruct, mô hình có thể được Full Fine-Tune trực tiếp trên môi trường 1xP100 với `fp16`, `gradient_checkpointing` và batch size nhỏ. Không cần DataParallel hay LoRA phức tạp. |
+| **2x T4 16GB VRAM** | Bằng cách chuyển sang Qwen2.5-Coder-1.5B-Instruct, mô hình có thể được Full Fine-Tune trực tiếp với `fp16`, `gradient_checkpointing` và batch size nhỏ. Không cần LoRA phức tạp. (T4 hỗ trợ FP16 tốt hơn P100 rất nhiều và không gặp lỗi "no kernel image"). |
 | **Internet ON** | Không cần tốn dung lượng Kaggle Dataset để lưu trữ weight nguyên bản của mô hình. `transformers` sẽ tự động tải weights từ HuggingFace vào cache. |
 
 ---

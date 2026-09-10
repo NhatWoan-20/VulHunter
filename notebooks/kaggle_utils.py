@@ -1,9 +1,9 @@
 """
-kaggle_utils.py — Helper cho Kaggle (Internet ON, 1x P100, 1.5B Full Fine-Tune).
+kaggle_utils.py — Helper cho Kaggle (Internet ON, 2x T4, 1.5B Full Fine-Tune).
 
 Giả định Kaggle:
   - Internet luôn bật  -> pull tokenizer/model trực tiếp từ HF, không cần snapshot
-  - 1x P100 16GB        -> Qwen-1.5B full fine-tune vừa vặn 16GB.
+  - 2x T4 16GB        -> Qwen-1.5B full fine-tune vừa vặn 16GB.
   - Data đã chia sẵn  -> /kaggle/input/<dataset>/train.jsonl (pre-tokenized) mount read-only,
                         dùng thẳng không cần copy 370MB hay re-tokenize.
 """
@@ -83,7 +83,7 @@ def get_model_cache_dir() -> Path:
     return Path("/tmp/hf_cache") if is_kaggle() else get_project_root() / "models" / "hf_cache"
 
 # ---------------------------------------------------------------------------
-# 2. GPU — 1x P100 (1.5B Full Fine-Tune)
+# 2. GPU — 2x T4 (1.5B Full Fine-Tune)
 # ---------------------------------------------------------------------------
 def print_gpu_info():
     try:
@@ -96,7 +96,7 @@ def print_gpu_info():
                 print(f"  GPU {i}: {p.name} — {p.total_memory/1e9:.1f} GB  CC {p.major}.{p.minor}")
             g = torch.cuda.device_count()
             if g >= 2:
-                print(f"  ✅ Phát hiện {g} GPUs.")
+                print(f"  ✅ Phát hiện {g} GPUs — train.py tự động kích hoạt DataParallel.")
             elif g == 1:
                 print("  ✅ 1 GPU sẵn sàng.")
             try:
@@ -106,14 +106,14 @@ def print_gpu_info():
             except Exception:
                 print("  \U0001f310 Internet: OFF/CLOSED — nếu pull HF lỗi, bật Internet trong Settings.")
         else:
-            print("  \u274c No GPU — Bật Accelerator > GPU P100 trong Settings rồi Restart.")
+            print("  \u274c No GPU — Bật Accelerator > GPU T4 x2 trong Settings rồi Restart.")
     except ImportError:
         print("torch chưa cài — chạy pip install -r requirements.txt trước.")
 
 def estimate_vram(backbone: str, dual: bool = True) -> str:
     # DataParallel vẫn replicate model mỗi GPU nên per-GPU VRAM không giảm
     t = {
-        "Qwen/Qwen2.5-Coder-1.5B-Instruct": "1.5B: ~11GB/GPU fp16+ckpt bs2 — vừa 16GB P100",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct": "1.5B: ~11GB/GPU fp16+ckpt bs2 — vừa 16GB T4",
     }
     return t.get(backbone, "—")
 
@@ -169,7 +169,7 @@ def print_inspect(info: dict):
 # ---------------------------------------------------------------------------
 def setup_kaggle_env():
     print("=" * 60)
-    print(f" VulHunter Kaggle Setup {'[KAGGLE 1xP100 1.5B Internet ON]' if is_kaggle() else '[LOCAL]'}")
+    print(f" VulHunter Kaggle Setup {'[KAGGLE 2xT4 1.5B Internet ON]' if is_kaggle() else '[LOCAL]'}")
     print("=" * 60)
     root = get_project_root()
     data_root = get_data_root()

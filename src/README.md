@@ -7,7 +7,7 @@ This directory houses the foundational library code. It is designed to be highly
 ## Sub-Modules
 
 ### 1. `semantic/`
-Contains the **Semantic Encoder** (`encoder.py`). This module wraps a pre-trained Code LLM (specifically `Qwen2.5-Coder-1.5B-Instruct`) to extract semantic token representations from raw source code. It includes integrated support for Gradient Checkpointing and FP16 support to enable efficient fine-tuning of large models on constrained hardware (like Kaggle P100s).
+Contains the **Semantic Encoder** (`encoder.py`). This module wraps a pre-trained Code LLM (specifically `Qwen2.5-Coder-1.5B-Instruct`) to extract semantic token representations from raw source code. It includes integrated support for Gradient Checkpointing and FP16 support to enable efficient fine-tuning of large models on constrained hardware (like Kaggle 2x T4s).
 
 ### 2. `graph/`
 Contains the **Graph Encoder** (`encoder.py`). This implements a custom **Graph Attention Network (GAT)** designed to process heterogeneous program graphs (AST, CFG, DFG, Call Graph). It features edge-type-aware attention, allowing the network to distinguish between syntactic hierarchy and data-flow dependencies when aggregating neighborhood information.
