@@ -515,6 +515,8 @@ def main() -> None:
             continue
         if "semantic_encoder.backbone" in name:
             backbone_params.append(param)
+        elif args.mode == "graph_only" and "graph_encoder" in name:
+            backbone_params.append(param)
         else:
             head_params.append(param)
     backbone_lr = float(tcfg.get("learning_rate", args.lr))
