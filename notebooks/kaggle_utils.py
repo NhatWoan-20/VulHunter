@@ -1,9 +1,9 @@
 """
-kaggle_utils.py — Helper cho Kaggle (Internet ON, 2x T4, 3B LoRA).
+kaggle_utils.py — Helper cho Kaggle (Internet ON, 1x P100, 1.5B Full Fine-Tune).
 
 Giả định Kaggle:
   - Internet luôn bật  -> pull tokenizer/model trực tiếp từ HF, không cần snapshot
-  - 2x T4 16GB        -> Qwen-3B full ~19GB/GPU OOM, 3B LoRA r32 fp16+ckpt bs1 len2048 ~12GB -> FIT + DataParallel + AMP
+  - 1x P100 16GB        -> Qwen-1.5B full fine-tune vừa vặn 16GB.
   - Data đã chia sẵn  -> /kaggle/input/<dataset>/train.jsonl (pre-tokenized) mount read-only,
                         dùng thẳng không cần copy 370MB hay re-tokenize.
 """
@@ -83,7 +83,7 @@ def get_model_cache_dir() -> Path:
     return Path("/tmp/hf_cache") if is_kaggle() else get_project_root() / "models" / "hf_cache"
 
 # ---------------------------------------------------------------------------
-# 2. GPU — 2x T4 (3B LoRA)
+# 2. GPU — 1x P100 (1.5B Full Fine-Tune)
 # ---------------------------------------------------------------------------
 def print_gpu_info():
     try:
@@ -96,10 +96,9 @@ def print_gpu_info():
                 print(f"  GPU {i}: {p.name} — {p.total_memory/1e9:.1f} GB  CC {p.major}.{p.minor}")
             g = torch.cuda.device_count()
             if g >= 2:
-                print(f"  ✅ Phát hiện {g} GPUs — train.py tối ưu chạy trên GPU chính kết hợp gradient checkpointing + AMP FP16 (triệt tiêu hoàn toàn deadlock của DataParallel).")
-                print(f"     Batch: batch_size=1, accum=32 => eff batch = 32 (~9.5GB VRAM, vừa vặn 16GB).")
+                print(f"  ✅ Phát hiện {g} GPUs.")
             elif g == 1:
-                print("  ✅ 1 GPU sẵn sàng — batch_size=1, accum=32 => eff batch = 32 (~9.5GB VRAM).")
+                print("  ✅ 1 GPU sẵn sàng.")
             try:
                 import socket
                 socket.create_connection(("8.8.8.8", 53), timeout=3).close()
@@ -107,30 +106,18 @@ def print_gpu_info():
             except Exception:
                 print("  \U0001f310 Internet: OFF/CLOSED — nếu pull HF lỗi, bật Internet trong Settings.")
         else:
-            print("  \u274c No GPU — Bật Accelerator > GPU T4 x2 trong Settings rồi Restart.")
+            print("  \u274c No GPU — Bật Accelerator > GPU P100 trong Settings rồi Restart.")
     except ImportError:
         print("torch chưa cài — chạy pip install -r requirements.txt trước.")
 
 def estimate_vram(backbone: str, dual: bool = True) -> str:
     # DataParallel vẫn replicate model mỗi GPU nên per-GPU VRAM không giảm
     t = {
-        "Qwen/Qwen2.5-Coder-1.5B-Instruct": "1.5B: ~11GB/GPU fp16+ckpt bs2 — vừa 16GB",
-        "Qwen/Qwen2.5-Coder-3B-Instruct": "3B full: ~19GB/GPU — OOM trên T4 | 3B LoRA r32 fp16+ckpt bs1 len2048: ~12GB/GPU ⭐ FIT, tốt nhất",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct": "1.5B: ~11GB/GPU fp16+ckpt bs2 — vừa 16GB P100",
     }
     return t.get(backbone, "—")
 
-def kaggle_best_config_for_vram() -> str:
-    try:
-        import torch
-        n = torch.cuda.device_count() if torch.cuda.is_available() else 0
-        if n >= 2:
-            return "configs/kaggle/model_kaggle_3b_lora.yaml (3B LoRA) + train_kaggle_3b_lora.yaml — 3B LoRA 2×T4 DataParallel fp16, ~1.5-2h ⭐"
-        vram = torch.cuda.get_device_properties(0).total_memory if torch.cuda.is_available() else 0
-        if vram < 20e9:
-            return "configs/kaggle/model_kaggle.yaml (1.5B) + train_kaggle.yaml"
-        return "configs/kaggle/model_kaggle_3b_lora.yaml (3B LoRA) + train_kaggle_3b_lora.yaml"
-    except Exception:
-        return "configs/kaggle/model_kaggle_3b_lora.yaml (3B LoRA) + train_kaggle_3b_lora.yaml — 2×T4"
+    return "configs/kaggle/model_kaggle.yaml + train_kaggle.yaml"
 
 def check_dual_gpu_ready() -> bool:
     try:
@@ -159,12 +146,11 @@ def inspect_splits(data_root: Path | None = None) -> dict:
                 if i == 0:
                     s = json.loads(line)
                     keys = list(s.keys())[:18]
-                    has_tok = "token_line_ids_qwen" in s
-                    has_ss = "source_sink_labels" in s
+                    has_tok = "input_ids" in s
                 count += 1
         info["splits"][name] = {"exists": True, "rows": count, "size_mb": round(size_mb, 1),
-                                "has_token_line_ids": has_tok, "has_source_sink": has_ss, "sample_keys": keys}
-    info["ready_for_training"] = all(v.get("has_token_line_ids") and v.get("has_source_sink")
+                                "has_input_ids": has_tok, "sample_keys": keys}
+    info["ready_for_training"] = all(v.get("has_input_ids")
                                      for v in info["splits"].values() if v.get("exists"))
     return info
 
@@ -175,15 +161,15 @@ def print_inspect(info: dict):
         if not v.get("exists"):
             print(f"  {name:12s} MISSING")
         else:
-            flag = "\u2705 READY" if (v["has_token_line_ids"] and v["has_source_sink"]) else "\u26a0\ufe0f THIẾU field"
-            print(f"  {name:12s} {v['rows']:5d} rows  {v['size_mb']:6.1f} MB  tok={v['has_token_line_ids']} ss={v['has_source_sink']}  {flag}")
+            flag = "✅ READY" if v["has_input_ids"] else "⚠️ THIẾU field input_ids"
+            print(f"  {name:12s} {v['rows']:5d} rows  {v['size_mb']:6.1f} MB  {flag}")
 
 # ---------------------------------------------------------------------------
 # 4. Setup
 # ---------------------------------------------------------------------------
 def setup_kaggle_env():
     print("=" * 60)
-    print(f" VulHunter Kaggle Setup {'[KAGGLE 2xT4 3B LoRA Internet ON]' if is_kaggle() else '[LOCAL]'}")
+    print(f" VulHunter Kaggle Setup {'[KAGGLE 1xP100 1.5B Internet ON]' if is_kaggle() else '[LOCAL]'}")
     print("=" * 60)
     root = get_project_root()
     data_root = get_data_root()
@@ -209,17 +195,7 @@ def setup_kaggle_env():
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
     os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
-    # Triệt tiêu bug peft trên Kaggle: is_torchao_available ném ImportError khi torchao < 0.16
-    try:
-        import peft.import_utils
-        peft.import_utils.is_torchao_available = lambda: False
-    except Exception:
-        pass
-    try:
-        import peft.tuners.lora.torchao
-        peft.tuners.lora.torchao.is_torchao_available = lambda: False
-    except Exception:
-        pass
+
 
     # Dọn dẹp các file lock hoặc incomplete bị kẹt từ các lần chạy trước bị crash
     cache_dir = Path(os.environ["HF_HOME"])
@@ -251,7 +227,7 @@ def setup_kaggle_env():
         if info["ready_for_training"]:
             print("\n\u2705 Data đã pre-tokenized — SẴN SÀNG TRAIN (không cần preprocessing).")
         else:
-            print("\n[LỖI NGHIÊM TRỌNG] Data thiếu token_line_ids/source_sink.")
+            print("\n[LỖI NGHIÊM TRỌNG] Data thiếu input_ids.")
             print("Theo quy định mới, TOÀN BỘ quá trình chuẩn bị dữ liệu (Preprocessing) PHẢI được chạy ở Local.")
             print("Vui lòng chạy `python notebooks/prepare_kaggle_dataset.py` ở máy cá nhân rồi upload lại dataset.")
     else:

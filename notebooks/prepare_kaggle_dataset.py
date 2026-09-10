@@ -34,7 +34,7 @@ def parse_args():
     p.add_argument("--splits-dir", type=Path, default=ROOT / "data" / "splits", help="Thư mục chứa train/validation/test.jsonl local")
     p.add_argument("--out", type=Path, default=ROOT / "dist" / "kaggle_dataset", help="Thư mục output sẽ upload lên Kaggle")
     p.add_argument("--with-graphs", action="store_true", help="Kèm master_graphs.jsonl (cần cho fusion/graph_only)")
-    p.add_argument("--force-retokenize", action="store_true", help="Ép chạy lại tokenize dù đã có token_line_ids_qwen")
+    p.add_argument("--force-retokenize", action="store_true", help="Ép chạy lại tokenize dù đã có input_ids")
     p.add_argument("--zip", action="store_true", help="Nén output thành .zip sau khi xong")
     p.add_argument("--dataset-slug", type=str, default="vulhunter-pre-tokenized", help="Slug cho dataset-metadata.json")
     return p.parse_args()
@@ -66,7 +66,7 @@ def main():
             print("[ERROR] tokenize_qwen.py thất bại")
             sys.exit(result.returncode)
     else:
-        print("[SKIP] train.jsonl đã có token_line_ids_qwen — bỏ qua tokenize")
+        print("[SKIP] train.jsonl đã có input_ids — bỏ qua tokenize")
 
 
 
