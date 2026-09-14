@@ -280,6 +280,7 @@ class GraphEncoder(nn.Module):
         num_edge_types: int = 5,
         dropout: float = 0.2,
         use_graphcodebert: bool = False,
+        unfreeze_top_n: int = 0,  # Số layer cuối của GraphCodeBERT được unfreeze
     ) -> None:
         super().__init__()
         self.use_graphcodebert = use_graphcodebert
@@ -312,6 +313,10 @@ class GraphEncoder(nn.Module):
             nn.GELU(),
             nn.Dropout(dropout),
         )
+
+        # Unfreeze top-N GraphCodeBERT layers nếu được cấu hình
+        if use_graphcodebert and unfreeze_top_n > 0:
+            self.unfreeze_top_layers(unfreeze_top_n)
 
     def forward(
         self,

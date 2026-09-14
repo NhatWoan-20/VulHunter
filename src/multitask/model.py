@@ -95,12 +95,8 @@ class VulHunterModel(nn.Module):
         if mode in ("fusion", "graph_only"):
             graph_config.setdefault("output_dim", output_dim)
             self.graph_encoder = GraphEncoder(**graph_config)
-            # KEY FIX: Unfreeze top-N layers của GraphCodeBERT nếu được cấu hình.
-            # Default 0 → giữ behavior cũ. Project khuyến nghị 6.
-            unfreeze_top_n = graph_config.get("unfreeze_top_n", 0)
-            if unfreeze_top_n > 0 and hasattr(self.graph_encoder, "unfreeze_top_layers"):
-                self.graph_encoder.unfreeze_top_layers(unfreeze_top_n)
-            logger.info("Khởi tạo GraphEncoder")
+            logger.info("Khởi tạo GraphEncoder (unfreeze_top_n=%d)",
+                        graph_config.get("unfreeze_top_n", 0))
 
         # Fusion module (chỉ cho fusion mode)
         if mode == "fusion":
