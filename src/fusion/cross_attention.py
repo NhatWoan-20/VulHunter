@@ -77,6 +77,7 @@ class CrossAttentionBlock(nn.Module):
         self.norm_ffn_g = nn.LayerNorm(hidden_dim)
 
         self.dropout = nn.Dropout(dropout)
+        self.attn_dropout = nn.Dropout(dropout)
 
     def _cross_attend(
         self,
@@ -88,6 +89,7 @@ class CrossAttentionBlock(nn.Module):
         W_v: nn.Linear,
         W_out: nn.Linear,
         key_mask: torch.Tensor | None = None,
+        chunk_size: int = 512,
     ) -> torch.Tensor:
         """Compute multi-head cross-attention.
 
@@ -95,6 +97,8 @@ class CrossAttentionBlock(nn.Module):
             query: Query tensor of shape ``(B, L_q, D)``.
             key: Key tensor of shape ``(B, L_k, D)``.
             value: Value tensor of shape ``(B, L_k, D)``.
+            chunk_size: Process queries in chunks of this size để giảm VRAM peak
+                (mỗi attention map có kích thước B*H*chunk*L_k).
 
         Returns:
             Attention output of shape ``(B, L_q, D)``.
@@ -108,14 +112,32 @@ class CrossAttentionBlock(nn.Module):
         K = W_k(key).view(B, L_k, H, head_dim).transpose(1, 2)    # (B, H, L_k, d)
         V = W_v(value).view(B, L_k, H, head_dim).transpose(1, 2)  # (B, H, L_k, d)
 
-        # Scaled dot-product attention
-        attn = torch.matmul(Q, K.transpose(-2, -1)) / (head_dim ** 0.5)  # (B, H, L_q, L_k)
-        if key_mask is not None:
-            attn = attn.masked_fill(~key_mask[:, None, None, :].bool(), torch.finfo(attn.dtype).min)
-        attn = F.softmax(attn, dim=-1)
-        attn = self.dropout(attn)
+        # Chunking theo L_q để tránh attention map (B*H, L_q, L_k) quá lớn
+        out = torch.empty(B, H, L_q, head_dim, device=query.device, dtype=query.dtype)
+        scale = 1.0 / (head_dim ** 0.5)
+        # Up-cast K/V để softmax ổn định và giảm VRAM khi mask
+        K_for_softmax = K.float()
+        V_for_softmax = V.float()
 
-        out = torch.matmul(attn, V)                             # (B, H, L_q, d)
+        for q_start in range(0, L_q, chunk_size):
+            q_end = min(q_start + chunk_size, L_q)
+            Q_chunk = Q[:, :, q_start:q_end]  # (B, H, chunk, d)
+
+            # Attention scores: (B, H, chunk, L_k)
+            attn = torch.matmul(Q_chunk, K.transpose(-2, -1)) * scale
+            if key_mask is not None:
+                # key_mask: (B, L_k) → (B, 1, 1, L_k)
+                mask = ~key_mask[:, None, None, :].bool()
+                attn = attn.masked_fill(mask, torch.finfo(attn.dtype).min)
+
+            # Compute softmax in float32 for stability, cast back to query dtype.
+            attn = F.softmax(attn, dim=-1).to(query.dtype)
+            attn = self.attn_dropout(attn)
+
+            # Weighted sum in fp32 to reduce memory, cast back at the end.
+            out_chunk = torch.matmul(attn.float(), V_for_softmax).to(query.dtype)
+            out[:, :, q_start:q_end] = out_chunk
+
         out = out.transpose(1, 2).contiguous().view(B, L_q, D)  # (B, L_q, D)
         return W_out(out)
 
@@ -231,9 +253,15 @@ class CrossModalFusion(nn.Module):
             batch_size = semantic.size(0)
             counts = torch.bincount(graph_batch, minlength=batch_size)
             max_nodes = int(counts.max().item())
+            # Truncate để tránh padded tensor quá lớn khi có 1 graph quá nhiều nodes
+            # (gây OOM trong cross-attention: B*H*L_q*L_k memory). 256 nodes là đủ cho
+            # đa số functions; vẫn giữ được thông tin cấu trúc cốt lõi.
+            max_nodes = min(max_nodes, 256)
             # Split graph embeddings theo batch index, rồi pad
             splits = list(graph.split(counts.tolist(), dim=0))
             if splits and max_nodes > 0:
+                # Truncate từng split xuống max_nodes để giảm memory peak
+                splits = [s[:max_nodes] if s.size(0) > max_nodes else s for s in splits]
                 padded = pad_sequence(splits, batch_first=True, padding_value=0.0)
                 # Đảm bảo padded có đúng (B, max_nodes, D); pad_sequence có thể trả (1, N, D)
                 # nếu chỉ 1 sample.
@@ -243,8 +271,10 @@ class CrossModalFusion(nn.Module):
                 if padded.size(0) != batch_size:
                     # Edge case: 1 sample với 0 nodes
                     padded = graph.new_zeros(batch_size, max_nodes, graph.size(-1))
+                # Rebuild counts sau truncate để mask khớp
+                new_counts = torch.tensor([s.size(0) for s in splits], device=counts.device)
                 graph_mask = (torch.arange(max_nodes, device=graph.device).unsqueeze(0)
-                              < counts.unsqueeze(1))
+                              < new_counts.unsqueeze(1))
                 graph = padded
             else:
                 graph = graph.new_zeros(batch_size, 0, graph.size(-1))

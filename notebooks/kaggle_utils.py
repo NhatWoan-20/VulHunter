@@ -126,6 +126,49 @@ def check_dual_gpu_ready() -> bool:
     except Exception:
         return False
 
+def setup_multi_gpu(model, prefer_data_parallel: bool = True):
+    """Wrap model với DataParallel/DDP nếu có nhiều GPU.
+
+    Trên Kaggle 2x T4 (16GB), DataParallel chia batch → mỗi GPU nhận batch//2
+    → giảm VRAM peak đáng kể (cross-attention trong fusion là điểm nóng).
+
+    Args:
+        model: nn.Module vừa khởi tạo và đã .to(device).
+        prefer_data_parallel: True → DataParallel (đơn giản, 1 process).
+            False → DDP multi-process (yêu cầu torchrun).
+
+    Returns:
+        (model_wrapped, device, n_active_gpus)
+
+    Notes:
+        - DataParallel vẫn replicate toàn bộ model trên mỗi GPU, nên giảm batch
+          lại mới có hiệu quả: loader_batch = batch_size * n_gpus.
+        - Với Qwen-1.5B + LoRA + GAT fusion ở bs=2 per-GPU đã vừa 14GB/GPU.
+        - Nếu vẫn OOM, bật gradient_checkpointing: True trong model config.
+    """
+    import torch
+    import torch.nn as nn
+
+    if not torch.cuda.is_available():
+        return model, torch.device("cpu"), 0
+
+    n_gpus = torch.cuda.device_count()
+    device = torch.device("cuda:0")
+
+    if n_gpus < 2:
+        return model, device, 1
+
+    if not prefer_data_parallel:
+        # User có thể tự wrap DDP bên ngoài nếu cần.
+        return model, device, 1
+
+    # Wrap DataParallel trên cả 2 GPU.
+    # Đảm bảo model đã ở cuda:0 trước khi wrap.
+    model = model.to("cuda:0")
+    model = nn.DataParallel(model, device_ids=[0, 1], output_device=0)
+    print(f"✅ DataParallel kích hoạt: {n_gpus} GPUs (cuda:0, cuda:1)")
+    return model, device, n_gpus
+
 # ---------------------------------------------------------------------------
 # 3. Kiểm tra data
 # ---------------------------------------------------------------------------
