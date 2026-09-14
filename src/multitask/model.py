@@ -158,6 +158,11 @@ class VulHunterModel(nn.Module):
             fused_pooled = pooled
 
         elif self.mode == "graph_only":
+            # Fix: DataParallel splits edge_index (2,E) along dim-0 → (1,E) per GPU.
+            if edge_index is not None and edge_index.dim() == 1:
+                edge_index = edge_index.new_zeros(2, 0)
+            elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
+                edge_index = edge_index.view(2, -1)
             graph_pooled = self.graph_encoder(
                 node_types, edge_index, edge_type, batch, node_texts=node_texts,
             )
@@ -167,6 +172,14 @@ class VulHunterModel(nn.Module):
             # Semantic branch
             sem_pooled, sem_seq = self.semantic_encoder(input_ids, attention_mask, return_sequence=True)
             # Graph branch
+            # Fix: DataParallel splits edge_index (2,E) along dim-0 → (1,E) per GPU.
+            # Reconstruct to (2, E//2) so the GAT layer sees the correct COO format.
+            if edge_index is not None and edge_index.dim() == 1:
+                # edge_index was squeezed to 1-D somehow — treat as no edges
+                edge_index = edge_index.new_zeros(2, 0)
+            elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
+                # DataParallel gave us (1, E) — reshape to (2, E//2)
+                edge_index = edge_index.view(2, -1)
             graph_pooled, node_emb = self.graph_encoder(
                 node_types, edge_index, edge_type, batch,
                 return_node_embeddings=True, node_texts=node_texts,

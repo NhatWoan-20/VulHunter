@@ -195,6 +195,23 @@ class GATLayer(nn.Module):
         K = self.W_k(x).view(N, H, D)
         V = self.W_v(x).view(N, H, D)
 
+        # Guard: edge_index must be (2, E). DataParallel splits tensors on dim-0,
+        # so a (2, E) edge_index becomes (1, E) on each GPU → index-out-of-bounds.
+        # Also handles empty-edge graphs (E=0). In either case skip message passing.
+        no_edges = (
+            edge_index.dim() != 2
+            or edge_index.size(0) != 2
+            or edge_index.size(-1) == 0
+        )
+        if no_edges:
+            # No message passing: project identity through W_o then residual/norm
+            out_empty = torch.zeros(N, H * D, device=x.device, dtype=x.dtype)
+            out_empty = self.W_o(out_empty)
+            if self.residual:
+                residual = self.res_proj(x) if self.res_proj is not None else x
+                out_empty = residual + self.dropout(out_empty)
+            return self.norm(out_empty)
+
         src, dst = edge_index[0], edge_index[1]  # src → dst edges
 
         # Compute attention scores
