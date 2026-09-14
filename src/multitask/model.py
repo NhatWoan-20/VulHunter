@@ -1,32 +1,31 @@
-"""VulHunter Model — Unified multi-modal, multi-task vulnerability detection model.
+"""VulHunter Model — Binary vulnerability detection.
 
-This is the main model class that integrates all components:
-    1. Semantic Encoder (LLM backbone)
-    2. Graph Encoder (GAT)
+Main model class tích hợp:
+    1. Semantic Encoder (LLM backbone, vd: Qwen2.5-Coder)
+    2. Graph Encoder (GraphCodeBERT + GAT)
     3. Cross-Modal Fusion (Bidirectional Cross-Attention)
-    4. Multi-Task Heads (Binary, CWE, Severity)
+    4. Binary prediction head
 
-It supports three operating modes:
-    - semantic_only: Only uses the semantic encoder
-    - graph_only: Only uses the graph encoder
-    - fusion: Combines both (default, proposed approach)
+Hỗ trợ 3 modes:
+    - semantic_only: Chỉ dùng semantic encoder
+    - graph_only: Chỉ dùng graph encoder
+    - fusion: Kết hợp cả hai (đề xuất chính)
 
-Example:
+Ví dụ:
     >>> model = VulHunterModel(mode="fusion", config=model_config)
     >>> outputs = model(input_ids, attention_mask, node_types, edge_index, edge_type, batch)
 """
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
 
 from src.fusion.cross_attention import CrossModalFusion
 from src.graph.encoder import GraphEncoder
-from src.multitask.heads import BinaryHead, CWEHead, SeverityHead
+from src.multitask.heads import BinaryHead
 from src.semantic.encoder import SemanticEncoder
 
 logger = logging.getLogger(__name__)
@@ -34,45 +33,36 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelOutput:
-    """Container for multi-task model outputs.
+    """Container cho VulHunterModel outputs.
 
     Attributes:
-        binary_logits: Binary vulnerability logits of shape ``(B, 1)``.
-        cwe_logits: CWE classification logits of shape ``(B, num_cwe_classes)``.
-        severity_logits: Severity logits of shape ``(B, 4)``.
-        fused_embedding: Output embedding from the encoder.
+        binary_logits: Binary vulnerability logits shape ``(B, 1)``.
+        fused_embedding: Pooled fused representation shape ``(B, output_dim)``.
     """
     binary_logits: torch.Tensor | None = None
-    cwe_logits: torch.Tensor | None = None
-    severity_logits: torch.Tensor | None = None
     fused_embedding: torch.Tensor | None = None
 
     def __iter__(self):
-        return iter((
-            self.binary_logits,
-            self.cwe_logits,
-            self.severity_logits,
-            self.fused_embedding,
-        ))
+        return iter((self.binary_logits, self.fused_embedding))
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str):
         if hasattr(self, key):
             return getattr(self, key)
         raise KeyError(key)
 
 
 class VulHunterModel(nn.Module):
-    """Hybrid multi-modal vulnerability detection model.
+    """Hybrid multi-modal vulnerability detection model (binary classification).
 
-    Combines semantic and graph understanding with multi-task prediction.
+    Combines semantic và graph understanding qua cross-modal fusion để
+    dự đoán vulnerable (1) vs safe (0).
 
     Args:
-        mode: Operating mode. One of "fusion", "semantic_only", "graph_only".
-        semantic_config: Configuration dict for the SemanticEncoder.
-        graph_config: Configuration dict for the GraphEncoder.
-        fusion_config: Configuration dict for the CrossModalFusion.
-        head_config: Configuration dict for prediction heads.
-        num_cwe_classes: Number of CWE categories.
+        mode: Operating mode. Một trong "fusion", "semantic_only", "graph_only".
+        semantic_config: Configuration dict cho SemanticEncoder.
+        graph_config: Configuration dict cho GraphEncoder.
+        fusion_config: Configuration dict cho CrossModalFusion.
+        head_config: Configuration dict cho BinaryHead.
     """
 
     VALID_MODES = ("fusion", "semantic_only", "graph_only")
@@ -84,11 +74,10 @@ class VulHunterModel(nn.Module):
         graph_config: dict | None = None,
         fusion_config: dict | None = None,
         head_config: dict | None = None,
-        num_cwe_classes: int = 10,
     ) -> None:
         super().__init__()
         if mode not in self.VALID_MODES:
-            raise ValueError(f"mode must be one of {self.VALID_MODES}, got '{mode}'")
+            raise ValueError(f"mode phải là một trong {self.VALID_MODES}, got '{mode}'")
         self.mode = mode
 
         semantic_config = semantic_config or {}
@@ -98,36 +87,35 @@ class VulHunterModel(nn.Module):
 
         output_dim = semantic_config.get("output_dim", 256)
 
-        # Initialize encoders based on mode
+        # Khởi tạo encoders theo mode
         if mode in ("fusion", "semantic_only"):
             self.semantic_encoder = SemanticEncoder(**semantic_config)
-            logger.info("Initialized SemanticEncoder")
+            logger.info("Khởi tạo SemanticEncoder")
 
         if mode in ("fusion", "graph_only"):
             graph_config.setdefault("output_dim", output_dim)
             self.graph_encoder = GraphEncoder(**graph_config)
-            logger.info("Initialized GraphEncoder")
+            # KEY FIX: Unfreeze top-N layers của GraphCodeBERT nếu được cấu hình.
+            # Default 0 → giữ behavior cũ. Project khuyến nghị 6.
+            unfreeze_top_n = graph_config.get("unfreeze_top_n", 0)
+            if unfreeze_top_n > 0 and hasattr(self.graph_encoder, "unfreeze_top_layers"):
+                self.graph_encoder.unfreeze_top_layers(unfreeze_top_n)
+            logger.info("Khởi tạo GraphEncoder")
 
-        # Fusion module (only for fusion mode)
+        # Fusion module (chỉ cho fusion mode)
         if mode == "fusion":
             fusion_config.setdefault("hidden_dim", output_dim)
             self.fusion = CrossModalFusion(**fusion_config)
-            logger.info("Initialized CrossModalFusion")
+            # Lưu residual_alpha từ config
+            self._fusion_residual_alpha = float(fusion_config.get("residual_alpha", 0.3))
+            logger.info("Khởi tạo CrossModalFusion (residual_alpha=%.2f)", self._fusion_residual_alpha)
 
-        # Multi-task prediction heads
+        # Binary prediction head (task chính)
         binary_cfg = head_config.get("binary", {})
-        cwe_cfg = head_config.get("cwe", {})
-        severity_cfg = head_config.get("severity", {})
-
-        cwe_num = cwe_cfg.pop("num_classes", None) or num_cwe_classes
-        severity_num = severity_cfg.pop("num_classes", 4)
-
         self.binary_head = BinaryHead(input_dim=output_dim, **binary_cfg)
-        self.cwe_head = CWEHead(input_dim=output_dim, num_classes=cwe_num, **cwe_cfg)
-        self.severity_head = SeverityHead(input_dim=output_dim, num_classes=severity_num, **severity_cfg)
 
-        # Ensure all trainable parameters (LoRA adapters, projection, heads) are in float32
-        # for PyTorch AMP GradScaler compatibility while frozen backbone stays in FP16
+        # Đảm bảo trainable params (LoRA adapters, projection, heads) đều ở float32
+        # cho PyTorch AMP GradScaler compatibility (frozen backbone giữ ở FP16)
         for p in self.parameters():
             if p.requires_grad and p.dtype != torch.float32:
                 p.data = p.data.float()
@@ -143,86 +131,72 @@ class VulHunterModel(nn.Module):
     def forward(
         self,
         # Semantic inputs
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         # Graph inputs
-        node_types: Optional[list[str]] = None,
-        node_texts: Optional[list[str]] = None,
-        edge_index: Optional[torch.Tensor] = None,
-        edge_type: Optional[torch.Tensor] = None,
-        batch: Optional[torch.Tensor] = None,
-        # Task control
-        tasks: Optional[list[str]] = None,
+        node_types: list[str] | None = None,
+        node_texts: list[str] | None = None,
+        edge_index: torch.Tensor | None = None,
+        edge_type: torch.Tensor | None = None,
+        batch: torch.Tensor | None = None,
     ) -> ModelOutput:
-        """Forward pass through the full model.
+        """Forward pass.
 
         Args:
-            input_ids: Tokenized code, shape ``(B, L)``. Required for semantic/fusion modes.
-            attention_mask: Attention mask, shape ``(B, L)``. Required for semantic/fusion modes.
-            node_types: List of node type strings for graph. Required for graph/fusion modes.
-            node_texts: List of node text strings for graph. Required for graph/fusion modes.
-            edge_index: Edge indices, shape ``(2, E)``. Required for graph/fusion modes.
-            edge_type: Edge type indices, shape ``(E,)``. Required for graph/fusion modes.
-            batch: Graph batch vector, shape ``(N,)``. Required for graph/fusion modes.
-            tasks: List of tasks to compute. Default: all tasks.
-                Options: "binary", "cwe", "severity".
+            input_ids: Tokenized code, shape ``(B, L)``. Cần cho semantic/fusion.
+            attention_mask: Attention mask, shape ``(B, L)``. Cần cho semantic/fusion.
+            node_types: List node type strings. Cần cho graph/fusion.
+            node_texts: List node text strings. Cần cho graph/fusion.
+            edge_index: Edge indices, shape ``(2, E)``. Cần cho graph/fusion.
+            edge_type: Edge type indices, shape ``(E,)``. Cần cho graph/fusion.
+            batch: Graph batch vector, shape ``(N,)``. Cần cho graph/fusion.
 
         Returns:
-            ModelOutput containing logits for requested tasks.
+            ModelOutput chứa binary_logits và fused_embedding.
         """
-        if tasks is None:
-            tasks = ["binary", "cwe", "severity"]
-
         output = ModelOutput()
 
         # ──── Encode ────
         if self.mode == "semantic_only":
-            pooled, seq = self.semantic_encoder(input_ids, attention_mask, return_sequence=True)
+            pooled, _ = self.semantic_encoder(input_ids, attention_mask, return_sequence=False)
             fused_pooled = pooled
-            fused_seq = seq
 
         elif self.mode == "graph_only":
-            graph_pooled, node_emb = self.graph_encoder(
-                node_types, edge_index, edge_type, batch, return_node_embeddings=True, node_texts=node_texts,
+            graph_pooled = self.graph_encoder(
+                node_types, edge_index, edge_type, batch, node_texts=node_texts,
             )
             fused_pooled = graph_pooled
-            # For sequence-level tasks, expand graph pooled to fake sequence dim
-            fused_seq = graph_pooled.unsqueeze(1)
 
         elif self.mode == "fusion":
             # Semantic branch
             sem_pooled, sem_seq = self.semantic_encoder(input_ids, attention_mask, return_sequence=True)
             # Graph branch
             graph_pooled, node_emb = self.graph_encoder(
-                node_types, edge_index, edge_type, batch, return_node_embeddings=True, node_texts=node_texts,
+                node_types, edge_index, edge_type, batch,
+                return_node_embeddings=True, node_texts=node_texts,
             )
-            # Fuse at pooled level
-            fused_pooled = self.fusion(sem_pooled, graph_pooled)
-            # For sequence-level tasks, use the semantic sequence
-            fused_seq = sem_seq
+            # Cross-attend code tokens to graph nodes
+            # residual_alpha giữ semantic signal khi graph rỗng/noisy.
+            fused_seq = self.fusion(
+                sem_seq, node_emb, attention_mask, batch,
+                residual_alpha=self._fusion_residual_alpha,
+            )
+            mask = attention_mask.unsqueeze(-1).to(fused_seq.dtype)
+            fused_pooled = (fused_seq * mask).sum(1) / mask.sum(1).clamp(min=1)
 
         output.fused_embedding = fused_pooled
 
         # ──── Predict ────
-        if "binary" in tasks:
-            output.binary_logits = self.binary_head(fused_pooled)
-
-        if "cwe" in tasks:
-            output.cwe_logits = self.cwe_head(fused_pooled)
-
-
-
-        if "severity" in tasks:
-            output.severity_logits = self.severity_head(fused_pooled)
+        output.binary_logits = self.binary_head(fused_pooled)
 
         return output
 
     @classmethod
     def from_config(cls, config: dict) -> "VulHunterModel":
-        """Create a model from a nested configuration dictionary.
+        """Tạo model từ nested configuration dict.
 
         Args:
-            config: Configuration dict with keys matching __init__ parameters.
+            config: Dict với keys matching __init__ parameters.
 
         Returns:
             Initialized VulHunterModel.
@@ -234,5 +208,4 @@ class VulHunterModel(nn.Module):
             graph_config=model_cfg.get("graph", {}),
             fusion_config=model_cfg.get("fusion", {}),
             head_config=model_cfg.get("heads", {}),
-            num_cwe_classes=model_cfg.get("heads", {}).get("cwe", {}).get("num_classes", 10),
         )

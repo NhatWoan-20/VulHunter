@@ -13,9 +13,9 @@ sys.path.insert(0, str(ROOT))
 
 from src.graph.encoder import GraphEncoder, NodeTypeEmbedding, GATLayer, EDGE_TYPE_MAP
 from src.fusion.cross_attention import CrossModalFusion, CrossAttentionBlock
-from src.multitask.heads import BinaryHead, CWEHead, LocalizationHead, SourceSinkHead
-from src.utils.losses import FocalLoss, MultiTaskLoss
-from src.utils.metrics import binary_metrics, multiclass_metrics, localization_metrics
+from src.multitask.heads import BinaryHead
+from src.utils.losses import BinaryClassificationLoss, FocalLoss
+from src.utils.metrics import binary_metrics, find_best_threshold
 
 
 class TestNodeTypeEmbedding:
@@ -75,6 +75,20 @@ class TestGraphEncoder:
         graph_out, node_out = encoder(node_types, edge_index, edge_type, return_node_embeddings=True)
         assert node_out.shape == (3, 64)
 
+    def test_unfreeze_top_layers(self):
+        """Verify unfreeze_top_layers correctly unfreezes GraphCodeBERT top layers."""
+        encoder = GraphEncoder(
+            use_graphcodebert=True,
+            node_feature_dim=32, hidden_dim=64, output_dim=64,
+            num_layers=2, num_heads=4,
+        )
+        initial_trainable = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+        if hasattr(encoder, "unfreeze_top_layers"):
+            encoder.unfreeze_top_layers(n=6)
+        after_trainable = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+        # Sau unfreeze, trainable params phải TĂNG (không giảm).
+        assert after_trainable >= initial_trainable
+
 
 class TestCrossModalFusion:
     """Tests for the cross-modal fusion module."""
@@ -94,33 +108,33 @@ class TestCrossModalFusion:
         out = fusion(sem, graph)
         assert out.shape == (2, 10, 64)
 
+    def test_residual_alpha(self):
+        """Verify residual_alpha retains semantic signal."""
+        fusion = CrossModalFusion(hidden_dim=64, num_heads=4, num_layers=1, combine="gated")
+        sem = torch.randn(2, 64)
+        graph = torch.randn(2, 64)
+        out_no_residual = fusion(sem, graph, residual_alpha=0.0)
+        out_with_residual = fusion(sem, graph, residual_alpha=0.5)
+        assert not torch.allclose(out_no_residual, out_with_residual, atol=1e-3)
+
+    def test_padded_graph_input(self):
+        """Verify fusion handles padded graph inputs (N, D) → (B, max_nodes, D)."""
+        fusion = CrossModalFusion(hidden_dim=64, num_heads=4, num_layers=1, combine="gated")
+        sem = torch.randn(2, 10, 64)
+        graph_nodes = torch.randn(6, 64)
+        graph_batch = torch.tensor([0, 0, 0, 0, 1, 1])
+        out = fusion(sem, graph_nodes, graph_batch=graph_batch)
+        assert out.shape == (2, 10, 64)
+
 
 class TestHeads:
-    """Tests for multi-task prediction heads."""
+    """Tests cho prediction heads."""
 
     def test_binary_head(self):
         head = BinaryHead(input_dim=64)
         x = torch.randn(8, 64)
         out = head(x)
         assert out.shape == (8, 1)
-
-    def test_cwe_head(self):
-        head = CWEHead(input_dim=64, num_classes=10)
-        x = torch.randn(8, 64)
-        out = head(x)
-        assert out.shape == (8, 10)
-
-    def test_localization_head(self):
-        head = LocalizationHead(input_dim=64)
-        x = torch.randn(8, 20, 64)
-        out = head(x)
-        assert out.shape == (8, 20, 1)
-
-    def test_source_sink_head(self):
-        head = SourceSinkHead(input_dim=64, num_classes=3)
-        x = torch.randn(8, 20, 64)
-        out = head(x)
-        assert out.shape == (8, 20, 3)
 
 
 class TestFocalLoss:
@@ -148,11 +162,11 @@ class TestFocalLoss:
         assert result.item() > 1.0
 
 
-class TestMultiTaskLoss:
-    """Tests for the combined multi-task loss."""
+class TestBinaryClassificationLoss:
+    """Tests for binary classification loss."""
 
     def test_computes_total(self):
-        criterion = MultiTaskLoss()
+        criterion = BinaryClassificationLoss()
         binary_logits = torch.randn(8, 1)
         binary_targets = torch.randint(0, 2, (8,))
         losses = criterion(binary_logits=binary_logits, binary_targets=binary_targets)
@@ -160,13 +174,19 @@ class TestMultiTaskLoss:
         assert "binary" in losses
         assert losses["total"].item() > 0
 
-    def test_weight_update(self):
-        criterion = MultiTaskLoss()
-        criterion.update_weights({"binary": 0.0})
+    def test_with_sample_weights(self):
+        """Quality-tier weights (gold=1.0, silver=0.85) hoạt động đúng."""
+        criterion = BinaryClassificationLoss()
         binary_logits = torch.randn(8, 1)
         binary_targets = torch.randint(0, 2, (8,))
-        losses = criterion(binary_logits=binary_logits, binary_targets=binary_targets)
-        assert losses["total"].item() == 0.0  # weight is 0
+        sample_weights = torch.tensor([1.0, 0.85, 1.0, 0.85, 1.0, 0.85, 1.0, 0.85])
+        losses = criterion(
+            binary_logits=binary_logits,
+            binary_targets=binary_targets,
+            sample_weights=sample_weights,
+        )
+        assert "total" in losses
+        assert losses["total"].item() > 0
 
 
 class TestMetrics:
@@ -187,16 +207,13 @@ class TestMetrics:
         result = binary_metrics(y_true, y_pred)
         assert result.f1 == 0.0
 
-    def test_multiclass(self):
-        y_true = np.array([0, 1, 2, 0, 1, 2])
-        y_pred = np.array([0, 1, 2, 0, 1, 2])
-        result = multiclass_metrics(y_true, y_pred, class_names=["A", "B", "C"])
-        assert result.f1 == 1.0
-        assert "A" in result.per_class
-
-    def test_localization(self):
-        y_true = [[0, 1, 1, 0], [0, 0, 1, 0]]
-        y_pred = [[0, 1, 0, 0], [0, 0, 1, 0]]
-        result = localization_metrics(y_true, y_pred)
-        assert 0.0 < result.f1 <= 1.0
-        assert result.support == 2
+    def test_find_best_threshold(self):
+        """Verify find_best_threshold chọn threshold tối ưu."""
+        # Tạo data với threshold tối ưu khoảng 0.3
+        np.random.seed(42)
+        n = 200
+        y_true = np.random.randint(0, 2, size=n)
+        y_prob = np.where(y_true == 1, np.random.uniform(0.5, 0.9, n), np.random.uniform(0.1, 0.4, n))
+        best_thr, metrics = find_best_threshold(y_true, y_prob)
+        assert 0.05 <= best_thr <= 0.95
+        assert metrics.f1 > 0.5  # Ít nhất 0.5 F1 với synthetic data

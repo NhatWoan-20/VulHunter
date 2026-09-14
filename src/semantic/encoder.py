@@ -19,18 +19,39 @@ logger = logging.getLogger(__name__)
 
 
 class SemanticEncoder(nn.Module):
+    """Qwen2.5-Coder + LoRA (default) hoặc frozen layers (fallback).
+
+    Supports two modes:
+        1. **LoRA mode** (`use_lora=True`): trainable LoRA adapters trên tất cả
+           attention + FFN modules. Phù hợp cho fusion/semantic_only trên T4.
+        2. **Frozen mode** (`use_lora=False`): chỉ unfreeze top N transformer layers.
+           Phù hợp cho memory-critical training hoặc ablation.
+
+    Args:
+        backbone: HF model name hoặc local path.
+        output_dim: Projection embedding dim (default 256).
+        pooling: 'last' (last non-pad token) hoặc 'mean' (masked average).
+            **'last' tốt hơn cho decoder-only LLM** vì token cuối tổng hợp context.
+        use_lora: Bật LoRA (khuyến nghị True).
+        lora_r, lora_alpha, lora_dropout: LoRA hyperparams.
+        use_rslora: Rank-stabilized LoRA.
+        lora_target_modules: list module names. Default = full attention + FFN.
+        freeze_layers: Số layer đóng băng từ dưới lên (chỉ khi `use_lora=False`).
+        gradient_checkpointing: Trade compute for memory.
+        use_fp16: Load backbone ở fp16 (~3GB/GPU cho 1.5B).
+    """
     def __init__(
         self,
-        backbone: str = "Qwen/Qwen2.5-Coder-3B-Instruct",
+        backbone: str = "Qwen/Qwen2.5-Coder-1.5B-Instruct",
         output_dim: int = 256,
         freeze_layers: int = 28,
         dropout: float = 0.1,
-        pooling: str = "mean",
+        pooling: str = "last",
         gradient_checkpointing: bool = False,
         use_fp16: bool = False,
-        use_lora: bool = False,
-        lora_r: int = 32,
-        lora_alpha: int = 64,
+        use_lora: bool = True,           # ĐỔI DEFAULT: True thay False
+        lora_r: int = 16,               # ĐỔI: 16 thay 32 (gấp 4× notebook Qwen gốc)
+        lora_alpha: int = 32,           # = 2*r (standard)
         lora_dropout: float = 0.05,
         use_rslora: bool = True,
         lora_target_modules: Optional[list[str]] = None,
@@ -183,16 +204,27 @@ class SemanticEncoder(nn.Module):
             hidden_states = outputs[0]
         else:
             hidden_states = outputs
+
+        # Pooling: 'last' (last non-pad token) tốt cho decoder-only; 'mean' fallback.
         if self.pooling == "cls":
             pooled = hidden_states[:, 0, :]
+        elif self.pooling == "last":
+            # Decoder-only: token cuối (không pad) tổng hợp context toàn sequence.
+            seq_lens = attention_mask.sum(dim=1) - 1
+            seq_lens = seq_lens.clamp(min=0)
+            idx = seq_lens.unsqueeze(-1).unsqueeze(-1).expand(-1, 1, hidden_states.size(-1))
+            pooled = hidden_states.gather(1, idx).squeeze(1).float()
         elif self.pooling == "mean":
             mask = attention_mask.unsqueeze(-1).float()
             pooled = (hidden_states * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
+            pooled = pooled.float()
         else:
             raise ValueError(f"Unknown pooling: {self.pooling}")
-        pooled_out = self.projection(pooled)
+
+        pooled_out = self.projection(pooled.to(next(self.projection.parameters()).dtype))
         if return_sequence:
-            seq_out = self.projection(hidden_states)
+            # Project sequence states (cho cross-attention fusion)
+            seq_out = self.projection(hidden_states.to(next(self.projection.parameters()).dtype))
             return pooled_out, seq_out
         return pooled_out
 

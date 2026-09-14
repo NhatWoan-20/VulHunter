@@ -101,6 +101,9 @@ class GraphCodeBERTNodeEmbedding(nn.Module):
         cls_embs = []
         
         # Process in chunks to prevent CUDA OOM on large batches of graphs
+        # This encoder is frozen feature extraction.  Explicit eval prevents
+        # dropout from making structural features change between epochs.
+        self.model.eval()
         for i in range(0, len(node_texts), chunk_size):
             chunk = node_texts[i:i + chunk_size]
             # Use max_length=32 to keep it fast, nodes usually contain short snippets
@@ -368,3 +371,43 @@ class GraphEncoder(nn.Module):
             return graph_out, node_out
 
         return graph_out
+
+    def unfreeze_top_layers(self, n: int = 6) -> None:
+        """Unfreeze top-N encoder layers của GraphCodeBERT.
+
+        Default GraphCodeBERT 100% frozen → collapse (AUC=0.5). Unfreeze top-6/12
+        layers giúp GCB adapt được với security domain mà vẫn tiết kiệm VRAM.
+
+        Args:
+            n: Số layer cuối được unfreeze. Set 0 để freeze toàn bộ.
+        """
+        if not self.use_graphcodebert:
+            logger.info("unfreeze_top_layers: GraphCodeBERT không bật, skip.")
+            return
+        try:
+            gcb = self.node_embedding.model
+            encoder = getattr(gcb.encoder, "layer", None)
+            if encoder is None:
+                logger.warning("Không tìm thấy gcb.encoder.layer; skip unfreeze.")
+                return
+            n_total = len(encoder)
+            unfreeze_from = max(0, n_total - n)
+            for i, layer in enumerate(encoder):
+                should_train = (i >= unfreeze_from)
+                for p in layer.parameters():
+                    p.requires_grad = should_train
+            # Pooler (nếu có) + projection luôn trainable
+            if hasattr(gcb, "pooler") and gcb.pooler is not None:
+                for p in gcb.pooler.parameters():
+                    p.requires_grad = True
+            for p in self.node_embedding.proj.parameters():
+                p.requires_grad = True
+            trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
+            total_params = sum(p.numel() for p in self.parameters())
+            logger.info(
+                "Unfroze top %d/%d GraphCodeBERT layers. Trainable: %s / %s (%.1f%%)",
+                n, n_total, f"{trainable:,}", f"{total_params:,}",
+                100.0 * trainable / total_params if total_params else 0,
+            )
+        except Exception as e:
+            logger.warning("unfreeze_top_layers(%d) failed: %s", n, e)

@@ -87,6 +87,7 @@ class CrossAttentionBlock(nn.Module):
         W_k: nn.Linear,
         W_v: nn.Linear,
         W_out: nn.Linear,
+        key_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Compute multi-head cross-attention.
 
@@ -109,6 +110,8 @@ class CrossAttentionBlock(nn.Module):
 
         # Scaled dot-product attention
         attn = torch.matmul(Q, K.transpose(-2, -1)) / (head_dim ** 0.5)  # (B, H, L_q, L_k)
+        if key_mask is not None:
+            attn = attn.masked_fill(~key_mask[:, None, None, :].bool(), torch.finfo(attn.dtype).min)
         attn = F.softmax(attn, dim=-1)
         attn = self.dropout(attn)
 
@@ -116,7 +119,7 @@ class CrossAttentionBlock(nn.Module):
         out = out.transpose(1, 2).contiguous().view(B, L_q, D)  # (B, L_q, D)
         return W_out(out)
 
-    def forward(self, semantic: torch.Tensor, graph: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, semantic: torch.Tensor, graph: torch.Tensor, semantic_mask: torch.Tensor | None = None, graph_mask: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply bidirectional cross-attention.
 
         Args:
@@ -135,8 +138,8 @@ class CrossAttentionBlock(nn.Module):
             graph = graph.unsqueeze(1)        # (B, 1, D)
 
         # Bidirectional cross-attention
-        s2g = self._cross_attend(semantic, graph, graph, self.s2g_q, self.s2g_k, self.s2g_v, self.s2g_out)
-        g2s = self._cross_attend(graph, semantic, semantic, self.g2s_q, self.g2s_k, self.g2s_v, self.g2s_out)
+        s2g = self._cross_attend(semantic, graph, graph, self.s2g_q, self.s2g_k, self.s2g_v, self.s2g_out, graph_mask)
+        g2s = self._cross_attend(graph, semantic, semantic, self.g2s_q, self.g2s_k, self.g2s_v, self.g2s_out, semantic_mask)
 
         # Residual + LayerNorm
         semantic = self.norm_s(semantic + self.dropout(s2g))
@@ -201,20 +204,61 @@ class CrossModalFusion(nn.Module):
             )
         # "mean" requires no extra parameters
 
-    def forward(self, semantic: torch.Tensor, graph: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        semantic: torch.Tensor,
+        graph: torch.Tensor,
+        semantic_mask: torch.Tensor | None = None,
+        graph_batch: torch.Tensor | None = None,
+        residual_alpha: float = 0.0,
+    ) -> torch.Tensor:
         """Fuse semantic and graph representations.
 
         Args:
             semantic: Semantic embedding of shape ``(B, D)`` or ``(B, L, D)``.
             graph: Graph embedding of shape ``(B, D)`` or ``(B, L, D)``.
+            semantic_mask: Optional mask ``(B, L)`` for semantic padding.
+            graph_batch: Graph batch vector (N,) để build padded node sequence.
+            residual_alpha: Weight của semantic-only path residual (0 = disabled).
+                Khuyến nghị 0.3 cho fusion mode để giữ semantic signal khi graph noise.
 
         Returns:
             Fused representation of shape ``(B, D)`` or ``(B, L, D)``.
         """
+        # ── Convert flat (N, D) graph nodes → padded (B, max_nodes, D) ──
+        if graph.dim() == 2 and graph_batch is not None:
+            from torch.nn.utils.rnn import pad_sequence
+            batch_size = semantic.size(0)
+            counts = torch.bincount(graph_batch, minlength=batch_size)
+            max_nodes = int(counts.max().item())
+            # Split graph embeddings theo batch index, rồi pad
+            splits = list(graph.split(counts.tolist(), dim=0))
+            if splits and max_nodes > 0:
+                padded = pad_sequence(splits, batch_first=True, padding_value=0.0)
+                # Đảm bảo padded có đúng (B, max_nodes, D); pad_sequence có thể trả (1, N, D)
+                # nếu chỉ 1 sample.
+                if padded.dim() == 2:
+                    padded = padded.unsqueeze(0)
+                # Nếu batch_size=1, splits có thể là list rỗng nếu 1 graph có 0 nodes
+                if padded.size(0) != batch_size:
+                    # Edge case: 1 sample với 0 nodes
+                    padded = graph.new_zeros(batch_size, max_nodes, graph.size(-1))
+                graph_mask = (torch.arange(max_nodes, device=graph.device).unsqueeze(0)
+                              < counts.unsqueeze(1))
+                graph = padded
+            else:
+                graph = graph.new_zeros(batch_size, 0, graph.size(-1))
+                graph_mask = torch.zeros(batch_size, 0, dtype=torch.bool, device=graph.device)
+        else:
+            graph_mask = None
+
+        # Lưu semantic-only path để residual skip
+        semantic_only_residual = semantic
         input_was_2d = semantic.dim() == 2 and graph.dim() == 2
+
         # Apply cross-attention blocks
         for block in self.blocks:
-            semantic, graph = block(semantic, graph)
+            semantic, graph = block(semantic, graph, semantic_mask, graph_mask)
 
         # Align sequence lengths by pooling graph features and broadcasting them
         # over semantic positions.
@@ -233,5 +277,9 @@ class CrossModalFusion(nn.Module):
             fused = gate_value * semantic + (1 - gate_value) * graph
         else:
             raise ValueError(f"Unknown combine strategy: {self.combine}")
+
+        # Residual skip: tránh fusion phá hỏng semantic signal khi graph rỗng/noisy
+        if residual_alpha > 0 and input_was_2d:
+            fused = (1.0 - residual_alpha) * fused + residual_alpha * semantic_only_residual
 
         return fused.squeeze(1) if input_was_2d else fused

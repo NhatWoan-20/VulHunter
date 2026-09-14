@@ -1,4 +1,4 @@
-"""Training Script — VulHunter Master 1-Stage (Kaggle 2xT4 ready).
+"""Training Script — VulHunter Binary Classification (Kaggle 2xT4 ready).
 
 Baseline: single-stage end-to-end trên Master Dataset (gold CVEFixes + silver GHSA)
 với repository-disjoint 80/10/10, quality-aware weighting, tiered LR, warmup+cosine.
@@ -8,6 +8,21 @@ Hỗ trợ Kaggle 2xT4:
   - FP16 mixed precision (--use-amp / training.use_amp, GradScaler)
   - num_workers configurable, pinned memory
   - Hiệu quả cho data pre-tokenized read-only (/kaggle/input/...)
+
+3 training modes:
+  - semantic_only: Qwen2.5-Coder + LoRA
+  - graph_only:    GraphCodeBERT (unfreeze top-6) + GAT
+  - fusion:        Cross-modal attention với residual skip
+
+Usage:
+    python scripts/training/train.py \
+        --config configs/train/fusion.yaml \
+        --model-config configs/model/default.yaml \
+        --mode fusion \
+        --train-data data/splits/train.jsonl \
+        --val-data data/splits/validation.jsonl \
+        --graph-data data/processed/master_graphs.jsonl \
+        --use-amp
 """
 from __future__ import annotations
 
@@ -50,8 +65,8 @@ except Exception:
 
 from src.multitask.model import VulHunterModel, ModelOutput  # noqa: E402
 from src.utils.dataset import VulHunterDataset, collate_fn  # noqa: E402
-from src.utils.losses import MultiTaskLoss  # noqa: E402
-from src.utils.metrics import binary_metrics  # noqa: E402
+from src.utils.losses import BinaryClassificationLoss  # noqa: E402
+from src.utils.metrics import binary_metrics, find_best_threshold  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 logger = logging.getLogger("train")
@@ -66,7 +81,7 @@ def set_seed(seed: int) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Train VulHunter model.")
+    p = argparse.ArgumentParser(description="Train VulHunter model (binary classification).")
     p.add_argument("--config", type=Path, default=None, help="YAML training config.")
     p.add_argument("--model-config", type=Path, default=ROOT / "configs/model/default.yaml")
     p.add_argument("--mode", type=str, default="fusion", choices=["fusion", "semantic_only", "graph_only"])
@@ -90,12 +105,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--single-gpu", action="store_true", default=False, help="Force single-GPU training even if multi-GPU detected.")
     p.add_argument("--resume", type=Path, default=None, help="Path to checkpoint (.pt) to resume training from.")
     p.add_argument("--reset-best-f1", action="store_true", help="Reset best_f1 and early stopping score to 0 when resuming.")
+    p.add_argument("--tune-threshold", action="store_true", help="Tune classification threshold on val set sau mỗi epoch.")
     return p.parse_args()
 
 
 def load_config(path: Path) -> dict:
     try:
-        import yaml  # type: ignore
+        import yaml
         with path.open("r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -138,30 +154,6 @@ class EarlyStopping:
             self.counter += 1
         return self.counter >= self.patience
 
-    @property
-    def should_save(self) -> bool:
-        return self.counter == 0
-
-
-def _build_loss_kwargs(output: ModelOutput, batch: dict, device: torch.device) -> dict:
-    kw: dict = {}
-    if output.binary_logits is not None:
-        kw["binary_logits"] = output.binary_logits
-        if "binary_labels" in batch:
-            kw["binary_targets"] = batch["binary_labels"].to(device)
-    if output.cwe_logits is not None:
-        kw["cwe_logits"] = output.cwe_logits
-        if "cwe_labels" in batch:
-            kw["cwe_targets"] = batch["cwe_labels"].to(device)
-    if output.severity_logits is not None:
-        kw["severity_logits"] = output.severity_logits
-        if "severity_labels" in batch:
-            kw["severity_targets"] = batch["severity_labels"].to(device)
-
-    if "sample_weights" in batch:
-        kw["sample_weights"] = batch["sample_weights"].to(device)
-    return kw
-
 
 def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, epoch=0, scaler=None, use_amp=False, is_parallel=False, scheduler=None):
     model.train()
@@ -186,18 +178,25 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
         is_accumulating = ((step + 1) % grad_accum != 0) and ((step + 1) != len(loader))
         sync_context = model.no_sync() if (hasattr(model, "no_sync") and is_accumulating) else nullcontext()
 
-        # forward + loss trong autocast khi use_amp
         with sync_context:
             if use_amp and device.type == "cuda":
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
                     output = model(**kwargs)
-                    losses = criterion(**_build_loss_kwargs(output, batch, device))
+                    losses = criterion(
+                        binary_logits=output.binary_logits,
+                        binary_targets=batch["binary_labels"].to(device),
+                        sample_weights=batch["sample_weights"].to(device),
+                    )
                     loss = losses["total"] / grad_accum
                 assert scaler is not None
                 scaler.scale(loss).backward()
             else:
                 output = model(**kwargs)
-                losses = criterion(**_build_loss_kwargs(output, batch, device))
+                losses = criterion(
+                    binary_logits=output.binary_logits,
+                    binary_targets=batch["binary_labels"].to(device),
+                    sample_weights=batch["sample_weights"].to(device),
+                )
                 loss = losses["total"] / grad_accum
                 loss.backward()
 
@@ -268,7 +267,11 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
                 output = model(**kwargs)
         else:
             output = model(**kwargs)
-        losses = criterion(**_build_loss_kwargs(output, batch, device))
+        losses = criterion(
+            binary_logits=output.binary_logits,
+            binary_targets=batch["binary_labels"].to(device),
+            sample_weights=batch["sample_weights"].to(device),
+        )
         for k, v in losses.items():
             total[k] = total.get(k, 0.0) + v.item()
         n_batches += 1
@@ -280,16 +283,11 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
             all_prob.extend(probs.cpu().tolist())
 
     if dist.is_available() and dist.is_initialized():
-        # Thu thập kết quả từ toàn bộ các GPU (ranks) về để tính metrics trên 100% tập dữ liệu validation
         world_size = dist.get_world_size()
         gathered: list[dict | None] = [None for _ in range(world_size)]
         local_eval = {
-            "total": total,
-            "n_batches": n_batches,
-            "all_true": all_true,
-            "all_pred": all_pred,
-            "all_prob": all_prob,
-
+            "total": total, "n_batches": n_batches,
+            "all_true": all_true, "all_pred": all_pred, "all_prob": all_prob,
         }
         dist.all_gather_object(gathered, local_eval)
 
@@ -298,7 +296,6 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
         m_true: list[int] = []
         m_pred: list[int] = []
         m_prob: list[float] = []
-
         for d in gathered:
             if d is None:
                 continue
@@ -308,27 +305,20 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
             m_true.extend(d.get("all_true", []))
             m_pred.extend(d.get("all_pred", []))
             m_prob.extend(d.get("all_prob", []))
-
-
-        total = m_total
-        n_batches = m_batches
-        all_true = m_true
-        all_pred = m_pred
-        all_prob = m_prob
-
+        total, n_batches, all_true, all_pred, all_prob = m_total, m_batches, m_true, m_pred, m_prob
 
     avg = {k: v / max(n_batches, 1) for k, v in total.items()}
     metrics: dict = {}
     if all_true:
-        metrics["binary"] = binary_metrics(np.array(all_true), np.array(all_pred), np.array(all_prob)).to_dict()
+        y_true = np.array(all_true)
+        y_prob = np.array(all_prob)
+        y_pred = np.array(all_pred)
+        metrics["binary"] = binary_metrics(y_true, y_pred, y_prob).to_dict()
         if not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0:
-            probs = np.array(all_prob)
-            preds = np.array(all_pred)
-            if len(probs) > 0:
-                logger.info(f"Binary probs: min={probs.min():.4f} max={probs.max():.4f} mean={probs.mean():.4f} std={probs.std():.4f}")
-                logger.info(f"Predictions: {preds.sum()}/{len(preds)} positive")
-
-    return avg, metrics
+            if len(y_prob) > 0:
+                logger.info(f"Binary probs: min={y_prob.min():.4f} max={y_prob.max():.4f} mean={y_prob.mean():.4f} std={y_prob.std():.4f}")
+                logger.info(f"Predictions: {y_pred.sum()}/{len(y_pred)} positive")
+    return avg, metrics, np.array(all_true), np.array(all_prob)
 
 
 def main() -> None:
@@ -337,16 +327,19 @@ def main() -> None:
     if args.config and args.config.exists():
         config = load_config(args.config)
     tcfg = config.get("training", {})
-    # CLI overrides config, config overrides default
+
     if tcfg.get("epochs") is not None:
         args.epochs = int(tcfg["epochs"])
     if tcfg.get("learning_rate") is not None:
         args.lr = float(tcfg["learning_rate"])
     if tcfg.get("early_stopping", {}).get("patience") is not None:
         args.patience = int(tcfg["early_stopping"]["patience"])
+    checkpoint_cfg = tcfg.get("checkpoint", {})
+    if args.checkpoint_dir == ROOT / "models/checkpoints" and checkpoint_cfg.get("save_dir"):
+        args.checkpoint_dir = Path(checkpoint_cfg["save_dir"])
     if args.num_workers is None:
         args.num_workers = int(tcfg.get("num_workers", 0))
-    # AMP: CLI > config
+
     cfg_amp = bool(tcfg.get("use_amp", False))
     if args.no_amp:
         use_amp = False
@@ -355,16 +348,17 @@ def main() -> None:
     else:
         use_amp = cfg_amp
 
-    # num_workers override
     num_workers = args.num_workers
     batch_size = args.batch_size
     grad_accum = args.grad_accum
-    if tcfg.get("batch_size") is not None and args.batch_size == 8:  # default chưa override
+    if tcfg.get("batch_size") is not None and args.batch_size == 8:
         batch_size = int(tcfg["batch_size"])
     if tcfg.get("gradient_accumulation_steps") is not None and args.grad_accum == 4:
         grad_accum = int(tcfg["gradient_accumulation_steps"])
 
-    # 0. Tự động chuyển sang PyTorch DDP nếu phát hiện >= 2 GPUs và chưa chạy qua DDP
+    tune_threshold = args.tune_threshold or tcfg.get("tune_threshold", False)
+
+    # Auto-switch to DDP nếu có >=2 GPUs
     n_cuda = torch.cuda.device_count() if torch.cuda.is_available() else 0
     if (
         n_cuda >= 2
@@ -384,7 +378,6 @@ def main() -> None:
         ret = subprocess.call(launcher_cmd)
         sys.exit(ret)
 
-    # 0. Khởi tạo PyTorch DDP (DistributedDataParallel) nếu chạy qua torchrun / torch.distributed.run
     is_ddp = False
     rank = 0
     local_rank = 0
@@ -405,7 +398,6 @@ def main() -> None:
     if not is_ddp:
         device = get_device(args.device)
 
-    # Nếu chạy DDP, các tiến trình rank > 0 chỉ in cảnh báo/lỗi để log rank 0 gọn gàng
     if is_ddp and rank != 0:
         logger.setLevel(logging.WARNING)
 
@@ -414,14 +406,12 @@ def main() -> None:
     if rank == 0:
         args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         args.log_dir.mkdir(parents=True, exist_ok=True)
-        # Thêm FileHandler để luôn lưu vết toàn bộ quá trình train và traceback vào đĩa
         log_file = args.log_dir / "train.log"
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
         logger.addHandler(file_handler)
         logging.getLogger().addHandler(file_handler)
 
-    # perf flags cho T4 (Internet ON)
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
         try:
@@ -430,7 +420,7 @@ def main() -> None:
         except Exception:
             pass
 
-    # model config merge: train.yaml:model overrides model.yaml
+    # model config merge
     model_config: dict = {}
     if args.model_config and args.model_config.exists():
         model_config = load_config(args.model_config).get("model", {}) or {}
@@ -461,13 +451,13 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("Mode: %s | Device: %s | DDP: %s (rank %d/%d) | AMP: %s", args.mode, device, is_ddp, rank, world_size, use_amp)
     logger.info("Batch: %d per-device (loader batch: %d) | grad_accum: %d | eff batch: %d | workers: %d", batch_size, loader_batch_size, grad_accum, eff_batch, num_workers)
-    logger.info("Epochs: %d | LR: %g | patience: %d | max_len: %d", args.epochs, args.lr, args.patience, args.max_length)
+    logger.info("Epochs: %d | LR: %g | patience: %d | max_len: %d | tune_threshold: %s", args.epochs, args.lr, args.patience, args.max_length, tune_threshold)
     logger.info("Data: train=%s val=%s graph=%s", args.train_data, args.val_data, args.graph_data)
     if not args.train_data.exists():
         logger.error("train-data không tồn tại: %s — Add Input dataset 'vulhunter-pre-tokenized'", args.train_data)
         sys.exit(1)
 
-    logger.info("Loading datasets ... (chỉ đọc, không cần writable)")
+    logger.info("Loading datasets ...")
     graph_path = args.graph_data if args.mode in ("fusion", "graph_only") else None
     train_dataset = VulHunterDataset(data_path=args.train_data, max_length=args.max_length, graph_data_path=graph_path)
     val_dataset = VulHunterDataset(data_path=args.val_data, max_length=args.max_length, graph_data_path=None)
@@ -486,8 +476,6 @@ def main() -> None:
     model = VulHunterModel(mode=args.mode, semantic_config=semantic_cfg, graph_config=graph_cfg, fusion_config=fusion_cfg, head_config=head_cfg)
     model.to(device)
 
-    # Đảm bảo toàn bộ tham số trainable đều ở float32 cho PyTorch AMP GradScaler
-    # (Base model frozen vẫn ở float16 để tiết kiệm VRAM ~6GB)
     trainable_fp16_count = 0
     for p in model.parameters():
         if p.requires_grad and p.dtype != torch.float32:
@@ -496,7 +484,6 @@ def main() -> None:
     if trainable_fp16_count > 0:
         logger.info("Đã chuyển %d tham số trainable sang float32 cho PyTorch AMP GradScaler.", trainable_fp16_count)
 
-    # Thu hồi ngay CPU buffer và CUDA context cache sau khi nạp weights
     import gc
     gc.collect()
     if torch.cuda.is_available():
@@ -509,28 +496,32 @@ def main() -> None:
         model = nn.DataParallel(model)
         logger.info("✅ DataParallel bật — %d GPUs.", n_gpus)
 
-    # optimizer: backbone lr nhỏ, head lr x10 (tốt hơn cho LLM fine-tune)
+    # Tiered LR: backbone, graph, head
     param_groups = []
-    backbone_params = []
-    head_params = []
+    backbone_params, graph_params, head_params = [], [], []
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
         if "semantic_encoder.backbone" in name:
             backbone_params.append(param)
-        elif args.mode == "graph_only" and "graph_encoder" in name:
-            backbone_params.append(param)
+        elif "graph_encoder" in name:
+            graph_params.append(param)
         else:
             head_params.append(param)
     backbone_lr = float(tcfg.get("learning_rate", args.lr))
+    graph_lr = float(tcfg.get("graph_learning_rate", backbone_lr * 5))
+    head_lr = float(tcfg.get("head_learning_rate", backbone_lr * 10))
     if backbone_params:
         param_groups.append({"params": backbone_params, "lr": backbone_lr})
+    if graph_params:
+        param_groups.append({"params": graph_params, "lr": graph_lr})
     if head_params:
-        param_groups.append({"params": head_params, "lr": backbone_lr * 10})
+        param_groups.append({"params": head_params, "lr": head_lr})
     if not param_groups:
         param_groups.append({"params": [p for p in model.parameters() if p.requires_grad], "lr": backbone_lr})
     optimizer = torch.optim.AdamW(param_groups, weight_decay=float(tcfg.get("weight_decay", 0.01)))
-    logger.info("Optimizer: %d backbone params (lr %.1e) + %d head params (lr %.1e)", len(backbone_params), backbone_lr, len(head_params), backbone_lr * 10)
+    logger.info("Optimizer: %d semantic params (lr %.1e) + %d graph params (lr %.1e) + %d head params (lr %.1e)",
+                len(backbone_params), backbone_lr, len(graph_params), graph_lr, len(head_params), head_lr)
 
     warmup_ratio = float(tcfg.get("warmup_ratio", 0.1))
     steps_per_epoch = math.ceil(len(train_loader) / max(1, grad_accum))
@@ -544,12 +535,10 @@ def main() -> None:
         return max(0.0, 0.5 * (1.0 + math.cos(math.pi * min(1.0, max(0.0, progress)))))
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_lr_lambda)
-    criterion = MultiTaskLoss(
+    criterion = BinaryClassificationLoss(
         focal_alpha=float(tcfg.get("focal_alpha", 0.5)),
         focal_gamma=float(tcfg.get("focal_gamma", 2.0)),
     )
-    if tcfg.get("loss_weights"):
-        criterion.update_weights(tcfg["loss_weights"])
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp and device.type == "cuda") if use_amp else None
     if use_amp and device.type == "cuda":
         logger.info("AMP FP16 bật — GradScaler enabled.")
@@ -558,10 +547,10 @@ def main() -> None:
     early_stop = EarlyStopping(patience=args.patience, mode=early_stop_mode)
 
     best_f1 = 0.0
+    best_threshold = 0.5
     start_epoch = 0
     history: list[dict] = []
 
-    # 4. Resume từ checkpoint nếu được chỉ định (--resume)
     if args.resume:
         resume_path = Path(args.resume)
         if not resume_path.exists():
@@ -580,46 +569,53 @@ def main() -> None:
         if "optimizer_state_dict" in ckpt:
             try:
                 optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-                logger.info("✅ Trạng thái Optimizer (AdamW) đã được khôi phục.")
+                logger.info("✅ Trạng thái Optimizer đã được khôi phục.")
             except Exception as e:
                 logger.warning("Không khôi phục được Optimizer state: %s", e)
-
         if "scheduler_state_dict" in ckpt:
             try:
                 scheduler.load_state_dict(ckpt["scheduler_state_dict"])
                 logger.info("✅ Trạng thái LR Scheduler đã được khôi phục.")
             except Exception as e:
                 logger.warning("Không khôi phục được Scheduler state: %s", e)
-
         if scaler is not None and "scaler_state_dict" in ckpt and ckpt["scaler_state_dict"] is not None:
             try:
                 scaler.load_state_dict(ckpt["scaler_state_dict"])
                 logger.info("✅ Trạng thái GradScaler FP16 đã được khôi phục.")
-            except Exception as e:
+            except Exception:
                 pass
 
         start_epoch = int(ckpt.get("epoch", 0))
         best_f1 = float(ckpt.get("best_f1", ckpt.get("val_f1", 0.0)))
+        best_threshold = float(ckpt.get("best_threshold", 0.5))
         if getattr(args, "reset_best_f1", False) or best_f1 >= 0.99:
-            logger.info("ℹ️ Best Val F1 trước đó (%.4f) được đặt lại về 0.0 để đánh giá chuẩn xác trên toàn bộ dữ liệu.", best_f1)
+            logger.info("ℹ️ Best Val F1 trước đó (%.4f) được đặt lại về 0.0.", best_f1)
             best_f1 = 0.0
         if "history" in ckpt and isinstance(ckpt["history"], list):
             history = list(ckpt["history"])
         early_stop.best_score = best_f1
-        logger.info("🚀 SẴN SÀNG RESUME: Bắt đầu từ Epoch %d/%d (Best Val F1 trước đó: %.4f, lịch sử: %d epochs).",
-                    start_epoch + 1, args.epochs, best_f1, len(history))
+        logger.info("🚀 SẴN SÀNG RESUME: Bắt đầu từ Epoch %d/%d (Best Val F1=%.4f, threshold=%.2f).",
+                    start_epoch + 1, args.epochs, best_f1, best_threshold)
         if start_epoch >= args.epochs:
-            logger.warning("⚠️ Checkpoint đã hoàn thành toàn bộ %d/%d epochs. Hãy tăng --epochs nếu muốn tiếp tục train thêm!", start_epoch, args.epochs)
+            logger.warning("⚠️ Checkpoint đã hoàn thành %d/%d epochs. Tăng --epochs nếu muốn tiếp tục.", start_epoch, args.epochs)
 
-    logger.info("Bắt đầu train ... (Internet ON — tokenizer pull từ HF, data read-only từ /kaggle/input)")
+    logger.info("Bắt đầu train ...")
     for epoch in range(start_epoch, args.epochs):
         if is_ddp and train_sampler is not None:
             train_sampler.set_epoch(epoch)
         t0 = time.time()
         train_losses = train_one_epoch(model, train_loader, criterion, optimizer, device, grad_accum, epoch, scaler, use_amp, is_parallel=(is_parallel or is_ddp), scheduler=scheduler)
-        val_losses, val_metrics = evaluate(model, val_loader, criterion, device, is_parallel=(is_parallel or is_ddp), use_amp=use_amp)
+        val_losses, val_metrics, val_y, val_prob = evaluate(model, val_loader, criterion, device, is_parallel=(is_parallel or is_ddp), use_amp=use_amp)
         elapsed = time.time() - t0
-        val_f1 = val_metrics.get("binary", {}).get("f1", 0.0)
+
+        # Threshold tuning nếu được yêu cầu
+        if tune_threshold and len(val_y) > 0:
+            thr_best, m_best = find_best_threshold(val_y, val_prob)
+            val_metrics["binary"] = m_best.to_dict()
+            val_f1 = m_best.f1
+        else:
+            val_f1 = val_metrics.get("binary", {}).get("f1", 0.0)
+            thr_best = val_metrics.get("binary", {}).get("threshold", 0.5)
 
         bin_m = val_metrics.get("binary", {})
         val_acc = bin_m.get("accuracy", 0.0)
@@ -627,7 +623,6 @@ def main() -> None:
         val_r = bin_m.get("recall", 0.0)
         val_auc = bin_m.get("auc", 0.0)
 
-        # log VRAM
         vram_str = ""
         if torch.cuda.is_available():
             try:
@@ -636,16 +631,19 @@ def main() -> None:
             except Exception:
                 pass
         if rank == 0:
-            logger.info("Epoch %d/%d (%.1fs%s) | Train %.4f | Val %.4f | Acc %.4f | P %.4f | R %.4f | Val F1 %.4f | AUC %.4f",
+            logger.info("Epoch %d/%d (%.1fs%s) | Train %.4f | Val %.4f | Acc %.4f | P %.4f | R %.4f | Val F1 %.4f | AUC %.4f | Thr %.2f",
                         epoch + 1, args.epochs, elapsed, vram_str,
                         train_losses.get("total", 0.0), val_losses.get("total", 0.0),
-                        val_acc, val_p, val_r, val_f1, val_auc)
-            history.append({"epoch": epoch + 1, "train_loss": train_losses, "val_loss": val_losses, "val_metrics": val_metrics})
-            # unwrap state_dict khi DataParallel hoặc DDP
+                        val_acc, val_p, val_r, val_f1, val_auc, thr_best)
+            history.append({
+                "epoch": epoch + 1,
+                "train_loss": train_losses,
+                "val_loss": val_losses,
+                "val_metrics": val_metrics,
+                "best_threshold": thr_best,
+                "elapsed": elapsed,
+            })
             state_dict = model.module.state_dict() if hasattr(model, "module") else model.state_dict()
-
-            # Nếu mô hình sử dụng LoRA (có tham số frozen), chỉ lưu các tham số trainable (LoRA adapters + heads).
-            # Tránh lưu 3.14 tỷ tham số frozen (~6.3GB), giúp checkpoint giảm từ 6.5GB xuống ~150MB, tiết kiệm 97% ổ cứng!
             core_model = model.module if hasattr(model, "module") else model
             trainable_names = {name for name, p in core_model.named_parameters() if p.requires_grad}
             if len(trainable_names) < sum(1 for _ in core_model.parameters()):
@@ -653,7 +651,6 @@ def main() -> None:
             else:
                 saved_state_dict = state_dict
 
-            # Luôn cập nhật last.pt sau mỗi epoch (ghi đè file cũ, duy nhất 1 file để phục vụ Resume)
             last_ckpt = {
                 "epoch": epoch + 1,
                 "model_state_dict": saved_state_dict,
@@ -661,6 +658,7 @@ def main() -> None:
                 "scheduler_state_dict": scheduler.state_dict(),
                 "scaler_state_dict": scaler.state_dict() if scaler is not None else None,
                 "best_f1": best_f1,
+                "best_threshold": best_threshold,
                 "val_f1": val_f1,
                 "val_metrics": val_metrics,
                 "config": {"mode": args.mode, "model": model_config},
@@ -668,19 +666,21 @@ def main() -> None:
             }
             last_path = args.checkpoint_dir / "last.pt"
             torch.save(last_ckpt, last_path)
-            logger.info("  💾 Checkpoint epoch %d đã lưu (ghi đè) -> %s", epoch + 1, last_path)
+            logger.info("  💾 Checkpoint epoch %d đã lưu -> %s", epoch + 1, last_path)
 
             if val_f1 > best_f1:
                 best_f1 = val_f1
+                best_threshold = thr_best
                 last_ckpt["best_f1"] = best_f1
+                last_ckpt["best_threshold"] = best_threshold
                 ckpt_path = args.checkpoint_dir / "best.pt"
                 torch.save(last_ckpt, ckpt_path)
-                logger.info("  ★ Best mới (F1=%.4f) -> %s", val_f1, ckpt_path)
+                logger.info("  ★ Best mới (F1=%.4f, thr=%.2f) -> %s", val_f1, best_threshold, ckpt_path)
+
         if early_stop_metric == "val_loss":
             score = val_losses.get("total", float("inf"))
         else:
             score = val_f1
-
         if early_stop(score):
             if rank == 0:
                 logger.info("Early stopping sau %d epochs không cải thiện.", early_stop.patience)
@@ -690,10 +690,9 @@ def main() -> None:
         history_path = args.checkpoint_dir / "training_history.json"
         history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info("=" * 60)
-        logger.info("Xong! Best Val F1: %.4f", best_f1)
+        logger.info("Xong! Best Val F1: %.4f @ threshold %.2f", best_f1, best_threshold)
         logger.info("Checkpoint: %s", args.checkpoint_dir / "best.pt")
         logger.info("History: %s", history_path)
-        logger.info("Trên Kaggle nhớ Save Version / Download checkpoint trước khi hết session.")
         logger.info("=" * 60)
 
     if is_ddp:

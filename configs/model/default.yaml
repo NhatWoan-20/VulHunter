@@ -1,52 +1,51 @@
-# ─── Model Architecture (Pillar 4) — source of truth for src/multitask/model.py ───
-# train.py loads this file via --model-config (default configs/model/default.yaml) and saves
-# the effective model config into each checkpoint so evaluation rebuilds the identical model.
+# ─── Model Architecture — Source of truth cho VulHunterModel ───
+# train.py loads file này qua --model-config và saves effective config vào checkpoint.
 #
-# IMPORTANT: every key below is passed as a keyword argument to the corresponding constructor
-# (SemanticEncoder / GraphEncoder / CrossModalFusion / *Head). Keys that are NOT constructor
-# parameters are kept as comments only — passing them would raise TypeError.
+# Cập nhật theo phương pháp đã đề xuất:
+#   - Semantic: LoRA r=16/α=32 + last-token pooling (decoder-only LLM)
+#   - Graph: unfreeze top-6 GraphCodeBERT layers để phá AUC=0.5 collapse
+#   - Fusion: residual_alpha=0.3 giữ semantic signal khi graph rỗng/noisy
+#   - Heads: chỉ BinaryHead (multi-task sẽ thêm sau)
 model:
-  # Semantic encoder (src/semantic/encoder.py)
+  # ─── Semantic encoder (src/semantic/encoder.py) ───
   semantic:
     backbone: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
     output_dim: 256            # Projected fusion embedding dimension
-    freeze_layers: 28          # Freeze bottom N of 36 transformer layers
+    freeze_layers: 28          # Freeze bottom N layers (LoRA overrides this)
     dropout: 0.1
-    pooling: "mean"            # masked mean pooling over sequence states
-    # max_length: 2048         # tokenizer-level limit — handled in dataset/tokenize, not a SemanticEncoder arg
-    # hidden_size: 2048        # informational only (Qwen2.5-Coder-3B hidden dim), not a constructor arg
+    pooling: "last"            # ★ last-token pooling (tốt nhất cho decoder-only)
+    gradient_checkpointing: false  # Bật true nếu VRAM <14GB
+    use_fp16: false            # Bật true nếu dùng FP16 cho backbone
+    use_lora: true             # ★ LoRA: trainable <1% backbone, tiết kiệm ~4GB VRAM
+    lora_r: 16                 # ★ Rank = 16 (gấp 4× notebook Qwen gốc)
+    lora_alpha: 32             # = 2 * lora_r (chuẩn LoRA scaling)
+    lora_dropout: 0.05
+    use_rslora: true           # Rank-stabilized LoRA
+    lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
-  # Graph encoder (src/graph/encoder.py)
+  # ─── Graph encoder (src/graph/encoder.py) ───
   graph:
     use_graphcodebert: true
-    node_feature_dim: 128      # Initial node-embedding dimension
+    node_feature_dim: 128
     hidden_dim: 256
     output_dim: 256            # Must equal semantic.output_dim for fusion
     num_layers: 4
     num_heads: 8               # GAT attention heads
     num_edge_types: 5
     dropout: 0.2
-    # edge_types (documented only; the 5 types are AST_CHILD, NEXT_STATEMENT,
-    # CONTROL_FLOW, DATA_FLOW, CALL — see src/graph/encoder.py EDGE_TYPE_MAP)
+    unfreeze_top_n: 6          # ★ Unfreeze 6/12 GraphCodeBERT top layers (chống AUC=0.5 collapse)
 
-  # Cross-modal fusion (src/fusion/cross_attention.py)
+  # ─── Cross-modal fusion (src/fusion/cross_attention.py) ───
   fusion:
     hidden_dim: 256
     num_heads: 8
     num_layers: 2
     dropout: 0.1
     combine: "gated"           # gated | concat | mean
+    residual_alpha: 0.3        # ★ 30% semantic-only skip
 
-  # Multi-task heads (src/multitask/heads.py)
+  # ─── Prediction heads (chỉ binary) ───
   heads:
     binary:
-      hidden_dim: 128
-      dropout: 0.3
-    cwe:
-      num_classes: 10          # 8 target CWEs + none + CWE-Other
-      hidden_dim: 128
-      dropout: 0.3
-    severity:
-      num_classes: 4           # Low / Moderate / High / Critical
       hidden_dim: 128
       dropout: 0.3

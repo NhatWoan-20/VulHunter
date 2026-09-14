@@ -1,13 +1,13 @@
 ﻿# 03 — System Architecture
 
-> **Version: 4.0** — **3/3 Tasks Active**
+> **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
 
 ---
 
 ## 1. High-Level Architecture
 
-VulHunter comprises two complementary encoders, cross-modal fusion, and **3 trainable multi-task heads**:
+VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trainable binary prediction head**:
 
 ```
                            Python Function Code
@@ -15,29 +15,32 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **3 trai
            ┌─────────────────────────┴─────────────────────────┐
            ▼                                                   ▼
  ┌──────────────────────┐                            ┌──────────────────────┐
- │   Semantic Branch    │                            │     Graph Branch     │
- │  (Tokenizer + LLM)   │                            │ (AST+CFG+DFG+Call GAT)│
+ │   Semantic Branch     │                            │     Graph Branch     │
+ │  (Qwen2.5-Coder +   │                            │ (AST+CFG+DFG+Call GAT)│
+ │   LoRA, r=16/α=32)  │                            │  GraphCodeBERT        │
+ │  Last-token pooling  │                            │  unfreeze top-6      │
  └──────────┬───────────┘                            └──────────┬───────────┘
-            │ H_sem ∈ ℝ^(B×L×D) seq + h_sem ∈ ℝ^(B×D) pool     │ H_graph ∈ ℝ^(B×N×D) / h_graph ∈ ℝ^(B×D)
-            │                                                   │
-            └────────────────────────┬──────────────────────────┘
-                                     ▼
-                      ┌──────────────────────────────┐
-                      │     Cross-Modal Fusion       │
-                      │ (Bidirectional Cross-Attn)   │
-                      └──────────────┬───────────────┘
-                                     │ h_fused ∈ ℝ^(B×D)
-      ┌──────────────────────────────┼──────────────────────────────┐
-      ▼                              ▼                              ▼
- ┌─────────┐                    ┌─────────┐                    ┌──────┐
- │ Binary  │                    │   CWE   │                    │Severity│
- │  Head   │                    │  Head   │                    │ Head  │
- │ (Focal) │                    │  (CE)   │                    │ (CE)  │
- └─────────┘                    └─────────┘                    └──────┘
-                 3 trainable heads (joint loss)
+             │ H_sem ∈ ℝ^(B×L×D) + h_sem ∈ ℝ^(B×D) pool      │ H_graph ∈ ℝ^(B×N×D) / h_graph ∈ ℝ^(B×D)
+             │                                                   │
+             └────────────────────────┬──────────────────────────┘
+                                      ▼
+                       ┌──────────────────────────────┐
+                       │     Cross-Modal Fusion       │
+                       │ (Gated Bidirectional Cross-Attn)│
+                       │ + Residual Skip (α=0.3)     │
+                       └──────────────┬───────────────┘
+                                      │ h_fused ∈ ℝ^(B×D)
+                                      ▼
+                       ┌──────────────────────────────┐
+                       │    Binary Prediction Head     │
+                       │      (Focal Loss)           │
+                       └──────────────┬───────────────┘
+                                      │ p(vulnerable) ∈ [0, 1]
+                                      ▼
+                                 ŷ ∈ {0, 1}
 ```
 
-> **Pillar 4 config note:** concrete dims/layers/heads/dropout/`num_classes` live in **`configs/kaggle/model_kaggle.yaml`** and are injected by `train.py` via `--model-config`; the effective config is saved in each checkpoint so evaluation rebuilds the identical model. `configs/train/*.yaml` owns the 3 loss weights (binary 1.0 / cwe 0.5 / severity 0.2).
+> **Config source:** `configs/model/default.yaml` (`--model-config`); effective config is saved in each checkpoint for reproducibility.
 
 ---
 
@@ -45,30 +48,95 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **3 trai
 
 ### 2.1 Semantic Encoder (`src/semantic/encoder.py`)
 
-- **Backbone:** `Qwen/Qwen2.5-Coder-1.5B-Instruct` for Kaggle 2x T4 environment.
-- **Context:** 2,048 tokens.
-- **Layer Freezing:** embedding + first `freeze_layers` (default 28/36) frozen; top layers fine-tuned.
-- **Outputs:** masked **mean-pooled** `h_sem ∈ ℝ^D` for classification heads.
+| Property | Value |
+|---|---|
+| **Backbone** | `Qwen/Qwen2.5-Coder-1.5B-Instruct` |
+| **Context Length** | 2,048 tokens |
+| **Pooling** | **Last-token pooling** (optimal for decoder-only LLMs) |
+| **Fine-tuning** | **LoRA** (r=16, α=32, dropout=0.05, RSLoRA enabled) |
+| **Target Modules** | `q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj` |
+| **Gradient Checkpointing** | Optional (enable for VRAM < 14GB) |
+| **Output** | `h_sem ∈ ℝ^D` (pooled representation, D=256) |
 
 ### 2.2 Graph Encoder (`src/graph/encoder.py`)
 
-- **Architecture:** 4-layer GAT, H=8 heads, `d_node=128`, `hidden=256`, `output=256`.
-- **Edge Types (5):** `AST_CHILD`, `NEXT_STATEMENT`, `CONTROL_FLOW`, `DATA_FLOW`, `CALL` (`EDGE_TYPE_MAP`).
-- **Readout:** mean-pool over nodes → `h_graph ∈ ℝ^D`.
+| Property | Value |
+|---|---|
+| **Architecture** | 4-layer GAT, H=8 attention heads |
+| **Node Features** | `d_node=128` |
+| **Hidden/Output Dim** | 256 |
+| **Edge Types (5)** | `AST_CHILD`, `NEXT_STATEMENT`, `CONTROL_FLOW`, `DATA_FLOW`, `CALL` (`EDGE_TYPE_MAP`) |
+| **Readout** | Mean-pool over nodes → `h_graph ∈ ℝ^D` |
+| **GraphCodeBERT** | Unfreeze top-6 layers (critical to avoid AUC=0.5 collapse) |
 
 ### 2.3 Cross-Modal Fusion (`src/fusion/cross_attention.py`)
 
-- **Mechanism:** bidirectional multi-head cross-attention `Softmax(QKᵀ/√d_k)V`; residual + LayerNorm: `h_fused = LayerNorm(h_sem + W_p[h_sem‖h_graph])`.
-- **Combine:** `gated` (default; `concat`/`mean` switches) via `fusion.combine`.
-- **Sequence path:** `H_seq` (semantic) is the sequence fed to classification heads via pooling.
+| Property | Value |
+|---|---|
+| **Mechanism** | Bidirectional multi-head cross-attention |
+| **Combine Mode** | `gated` (options: `concat`, `mean`) |
+| **Residual Skip** | `h_fused = LayerNorm(h_sem + α * h_cross)` where α=0.3 |
+| **Layers** | 2 cross-attention layers |
+| **Heads** | 8 |
+| **Output** | `h_fused ∈ ℝ^D` (same dimension as semantic/graph outputs) |
 
-### 2.4 Multi-Task Prediction Heads (`src/multitask/heads.py`) — 3 trainable
+### 2.4 Binary Prediction Head (`src/multitask/heads.py`)
 
-| Head | Input | Output | Loss |
-|---|---|---|---|
-| **Binary** | `h_fused` | logit ŷ_bin ∈ ℝ¹ | Focal α=0.25 γ=2.0, λ=1.0 |
-| **CWE** | `h_fused` | logits ŷ_cwe ∈ ℝ¹⁰ | CE label_smooth 0.1, λ=0.5 |
-| **Severity** | `h_fused` | logits ŷ_sev ∈ ℝ⁴ (masked if UNKNOWN=-1) | CE label_smooth 0.05, λ=0.2 |
+| Property | Value |
+|---|---|
+| **Input** | `h_fused ∈ ℝ^D` |
+| **Architecture** | MLP: Linear(D→128) → GELU → Dropout → Linear(128→64) → GELU → Dropout → Linear(64→1) |
+| **Output** | Logit ŷ ∈ ℝ¹ |
+| **Loss Function** | Focal Loss (α=0.5, γ=2.0) with quality-tier sample weighting |
 
-> **Alignment:** per-role `sample_id = "{source}:{pair_id}:{role}"` links semantic tokens (`input_ids_qwen`), graph nodes, and all 3 label vectors. `quality_tier` (gold/silver) → `sample_weights` scales every trainable loss.
+---
 
+## 3. Three Operating Modes
+
+VulHunter supports three modes, selected via `--mode` flag:
+
+| Mode | Semantic Encoder | Graph Encoder | Fusion | Use Case |
+|---|---|---|---|---|
+| `semantic_only` | ✓ Qwen + LoRA | ✗ | ✗ | Semantic baseline |
+| `graph_only` | ✗ | ✓ GraphCodeBERT + GAT | ✗ | Structural baseline |
+| `fusion` (Proposed) | ✓ Qwen + LoRA | ✓ GraphCodeBERT + GAT | ✓ Gated Cross-Attn | **Main approach** |
+
+---
+
+## 4. Data Flow
+
+1. **Input:** Python function code string
+2. **Semantic Branch:** Tokenize with Qwen tokenizer → LoRA fine-tuned Qwen2.5-Coder → last-token pooling → `h_sem`
+3. **Graph Branch:** Parse AST/CFG/DFG/Call → heterogeneous graph → GraphCodeBERT + GAT → mean pool → `h_graph`
+4. **Fusion:** Cross-attend `h_sem` and `h_graph` → residual skip → `h_fused`
+5. **Prediction:** Binary head → logit → sigmoid → `p(vulnerable)`
+
+---
+
+## 5. Model Configuration
+
+All hyperparameters are centralized in `configs/model/default.yaml`:
+
+```yaml
+model:
+  semantic:
+    backbone: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+    output_dim: 256
+    freeze_layers: 28
+    pooling: "last"
+    use_lora: true
+    lora_r: 16
+    lora_alpha: 32
+  graph:
+    use_graphcodebert: true
+    unfreeze_top_n: 6  # Critical: avoid AUC=0.5 collapse
+    num_layers: 4
+    num_heads: 8
+  fusion:
+    combine: "gated"
+    residual_alpha: 0.3
+  heads:
+    binary:
+      hidden_dim: 128
+      dropout: 0.3
+```

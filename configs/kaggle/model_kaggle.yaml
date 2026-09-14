@@ -1,20 +1,43 @@
 # configs/kaggle/model_kaggle.yaml
-# Khuyến nghị cho Kaggle 2x T4 16GB (Internet ON) — Qwen2.5-Coder-1.5B-Instruct + DataParallel + fp16
-# 1.5B ~11GB/GPU fp16+ckpt bs2 — vừa 16GB, còn dư cho optimizer
+# Tối ưu cho Kaggle 2x T4 16GB (Internet ON).
+# Binary classification: Qwen2.5-Coder-1.5B + LoRA + GraphCodeBERT + GAT.
+#   - LoRA r=16/α=32 thay vì unfreeze top layers (tiết kiệm VRAM ~4GB).
+#   - Gradient checkpointing cho Qwen (quan trọng).
+#   - FP16 backbone + FP32 trainable parts (PyTorch AMP).
+#   - Last-token pooling cho decoder-only LLM.
+#   - Unfreeze top-6 GraphCodeBERT layers (chống collapse).
+#   - Dynamic padding giảm VRAM theo max-len trong batch.
 model:
   semantic:
     backbone: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
     output_dim: 256
-    freeze_layers: 24          # Unfreeze 4 top layers (1.5B có 28 layers) để semantic thích ứng bài toán (VRAM còn dư 10GB)
+    freeze_layers: 28          # Freeze toàn bộ nếu dùng LoRA
     dropout: 0.1
-    pooling: "mean"
-    gradient_checkpointing: true
+    pooling: "last"            # ★ Last-token pooling cho decoder-only
+    gradient_checkpointing: true  # ★ Quan trọng: tiết kiệm VRAM ~3GB
     use_fp16: true
-  graph:    {use_graphcodebert: true, node_feature_dim: 128, hidden_dim: 256, output_dim: 256, num_layers: 4, num_heads: 8, num_edge_types: 5, dropout: 0.2}
-  fusion:   {hidden_dim: 256, num_heads: 8, num_layers: 2, dropout: 0.1, combine: "gated"}
+    use_lora: true             # ★ LoRA: chỉ ~30M params trainable thay vì 1.5B
+    lora_r: 16
+    lora_alpha: 32
+    lora_dropout: 0.05
+    use_rslora: true
+    lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  graph:
+    use_graphcodebert: true
+    node_feature_dim: 128
+    hidden_dim: 256
+    output_dim: 256
+    num_layers: 4
+    num_heads: 8
+    num_edge_types: 5
+    dropout: 0.2
+    unfreeze_top_n: 6          # ★ Unfreeze 6/12 GraphCodeBERT top layers
+  fusion:
+    hidden_dim: 256
+    num_heads: 8
+    num_layers: 2
+    dropout: 0.1
+    combine: "gated"
+    residual_alpha: 0.3        # ★ 30% semantic residual skip
   heads:
-    binary:       {hidden_dim: 128, dropout: 0.3}
-    cwe:          {num_classes: 10, hidden_dim: 128, dropout: 0.3}
-    severity:     {num_classes: 4,  hidden_dim: 128, dropout: 0.3}
-    localization: {hidden_dim: 128, dropout: 0.2}
-    source_sink:  {hidden_dim: 128, num_classes: 3, dropout: 0.2}
+    binary: {hidden_dim: 128, dropout: 0.3}

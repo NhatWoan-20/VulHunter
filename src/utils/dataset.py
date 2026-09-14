@@ -1,12 +1,7 @@
-"""Dataset — PyTorch Dataset and collation utilities for VulHunter.
+"""Dataset — PyTorch Dataset và collation utilities cho VulHunter binary classification.
 
-Loads preprocessed JSONL data and converts it into tensors suitable for
-the multi-task model. Handles variable-length sequences and graph structures.
-
-Supports the three remaining tasks:
-    - Binary vulnerability detection
-    - CWE classification
-    - Severity prediction
+Loads preprocessed JSONL data và convert thành tensors cho VulHunterModel.
+Handles variable-length sequences và graph structures.
 
 Usage:
     >>> dataset = VulHunterDataset("data/splits/train.jsonl")
@@ -14,11 +9,9 @@ Usage:
 """
 from __future__ import annotations
 
-import bisect
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 import torch
 from torch.utils.data import Dataset
@@ -26,34 +19,13 @@ from torch.utils.data import Dataset
 from src.graph.encoder import EDGE_TYPE_MAP
 from src.utils.losses import QUALITY_TIER_WEIGHTS
 
-
-
 logger = logging.getLogger(__name__)
-
-# CWE ID → integer class index mapping
-CWE_CLASSES = {
-    "none": 0,
-    "CWE-22": 1,   # Path Traversal
-    "CWE-78": 2,   # OS Command Injection
-    "CWE-79": 3,   # Cross-Site Scripting
-    "CWE-89": 4,   # SQL Injection
-    "CWE-94": 5,   # Code Injection
-    "CWE-502": 6,  # Unsafe Deserialization
-    "CWE-918": 7,  # SSRF
-    "CWE-327": 8,  # Weak Cryptography
-    "CWE-Other": 9,
-}
-
-SEVERITY_CLASSES = {"UNKNOWN": -1, "LOW": 0, "MODERATE": 1, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
-
-
-
 
 
 class _LazySampleList:
-    """Lazy sequence that reads JSONL lines on demand, consuming virtually 0 MB RAM."""
+    """Lazy sequence đọc JSONL lines on-demand, gần như 0 MB RAM."""
 
-    def __init__(self, dataset: VulHunterDataset) -> None:
+    def __init__(self, dataset: "VulHunterDataset") -> None:
         self._ds = dataset
 
     def __len__(self) -> int:
@@ -74,7 +46,7 @@ class _LazySampleList:
 
 
 class _LazyGraphDict:
-    """Lazy dictionary that reads graph lines on demand by sample_id, consuming ~2 MB RAM."""
+    """Lazy dictionary đọc graph lines on-demand theo sample_id, ~2 MB RAM."""
 
     def __init__(self, path: Path, offsets: dict[str, int]) -> None:
         self._path = path
@@ -109,24 +81,24 @@ class _LazyGraphDict:
 
 
 class VulHunterDataset(Dataset):
-    """PyTorch Dataset for vulnerability detection.
+    """PyTorch Dataset cho binary vulnerability detection.
 
-    Uses lazy line-offset indexing for JSONL files to achieve near-zero RAM footprint,
-    preventing OOM crashes during training and model loading.
+    Sử dụng lazy line-offset indexing cho JSONL files để gần như 0 RAM footprint,
+    ngăn OOM crashes khi training và model loading.
 
     Args:
         data_path: Path to JSONL file.
-        max_length: Maximum sequence length for tokenization.
-        tokenizer_name: HF tokenizer name (used if pre-tokenized data missing).
-        graph_data_path: Optional path to JSONL with graph data.
+        max_length: Maximum sequence length cho tokenization.
+        tokenizer_name: HF tokenizer name (dùng nếu pre-tokenized data missing).
+        graph_data_path: Optional path to JSONL với graph data.
     """
 
     def __init__(
         self,
         data_path: str | Path,
         max_length: int = 2048,
-        tokenizer_name: Optional[str] = None,
-        graph_data_path: Optional[str | Path] = None,
+        tokenizer_name: str | None = None,
+        graph_data_path: str | Path | None = None,
     ) -> None:
         self.data_path = Path(data_path)
         self.max_length = max_length
@@ -216,17 +188,8 @@ class VulHunterDataset(Dataset):
             result["input_ids"] = encoded["input_ids"].squeeze(0)
             result["attention_mask"] = encoded["attention_mask"].squeeze(0)
 
-        # ── Labels ──
+        # ── Labels (chỉ binary) ──
         result["binary_label"] = sample.get("binary_label", 0)
-        severity = str(sample.get("severity") or "UNKNOWN").strip().upper()
-        result["severity_label"] = SEVERITY_CLASSES.get(severity, -1)
-        cwe_ids = sample.get("cwe_ids", [])
-        if cwe_ids:
-            primary_cwe = cwe_ids[0] if isinstance(cwe_ids[0], str) else f"CWE-{cwe_ids[0]}"
-            result["cwe_label"] = CWE_CLASSES.get(primary_cwe, CWE_CLASSES.get("CWE-Other", 9))
-        else:
-            result["cwe_label"] = 0
-        result["line_labels"] = sample.get("line_labels", [])
         result["code"] = sample.get("code", "")
         result["quality_tier"] = sample.get("quality_tier", "gold")
 
@@ -263,7 +226,7 @@ class VulHunterDataset(Dataset):
 
 
 def collate_fn(batch: list[dict]) -> dict:
-    """Collate variable-length samples, padding token↔line and source/sink."""
+    """Collate variable-length samples, padding token↔line và source/sink."""
     result: dict = {}
 
     if "input_ids" in batch[0]:
@@ -277,29 +240,14 @@ def collate_fn(batch: list[dict]) -> dict:
         result["input_ids"] = input_ids
         result["attention_mask"] = attention_mask
 
+    # Binary labels (chỉ task duy nhất)
     result["binary_labels"] = torch.tensor([s["binary_label"] for s in batch], dtype=torch.long)
-    result["cwe_labels"] = torch.tensor([s["cwe_label"] for s in batch], dtype=torch.long)
-    result["severity_labels"] = torch.tensor([s["severity_label"] for s in batch], dtype=torch.long)
     result["quality_tiers"] = [s.get("quality_tier", "gold") for s in batch]
     result["sample_weights"] = torch.tensor(
         [QUALITY_TIER_WEIGHTS.get(s.get("quality_tier", "gold"), 1.0) for s in batch],
         dtype=torch.float,
     )
     result["codes"] = [s.get("code", "") for s in batch]
-
-    # line_labels: per-sample lines padded with -1
-    if batch[0].get("line_labels") is not None:
-        # Use max lines; allow empty line_labels ([] => treat as all -1)
-        line_lists = [s.get("line_labels", []) for s in batch]
-        max_lines = max((len(ll) for ll in line_lists), default=0)
-        if max_lines > 0:
-            line_labels = torch.full((len(batch), max_lines), -1, dtype=torch.long)
-            for i, ll in enumerate(line_lists):
-                if ll:
-                    line_labels[i, : len(ll)] = torch.tensor(ll, dtype=torch.long)
-            result["line_labels"] = line_labels
-        else:
-            result["line_labels"] = torch.full((len(batch), 1), -1, dtype=torch.long)
 
     if "node_types" in batch[0]:
         all_node_types: list[str] = []
@@ -314,9 +262,9 @@ def collate_fn(batch: list[dict]) -> dict:
             ntexts = s.get("node_texts", ntypes)
             all_node_texts.extend(ntexts)
             num_nodes = len(ntypes)
-            if "edge_index" in s and s["edge_index"].size(1) > 0:  # type: ignore[attr-defined]
-                edge_indices.append(s["edge_index"] + node_offset)  # type: ignore[attr-defined]
-                edge_types.append(s["edge_type"])  # type: ignore[attr-defined]
+            if "edge_index" in s and s["edge_index"].size(1) > 0:
+                edge_indices.append(s["edge_index"] + node_offset)
+                edge_types.append(s["edge_type"])
             graph_batch.extend([i] * num_nodes)
             node_offset += num_nodes
         result["node_types"] = all_node_types

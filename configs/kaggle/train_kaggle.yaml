@@ -1,24 +1,30 @@
 # configs/kaggle/train_kaggle.yaml
-# Tối ưu cho Kaggle 2x T4 16GB + Internet ON + DataParallel + fp16
-# Effective batch = per_device_batch * grad_accum * num_gpus
-#   bs=2 * grad_accum=4 * 2 GPUs = eff 16 (cân bằng speed vs memory)
+# Tối ưu cho Kaggle 2x T4 16GB + Internet ON.
+# Binary classification với tiered LR, threshold tuning, AMP FP16.
 training:
   seed: 42
-  device: "auto"           # train.py sẽ wrap DataParallel nếu thấy 2 GPUs
-  num_workers: 0           # 0 workers để tránh nhân bản RAM tiến trình trên Kaggle
+  device: "auto"           # train.py tự động DDP nếu có 2 GPU.
+  num_workers: 2           # Tăng từ 0 → 2 để pipeline CPU-GPU overlap.
   pin_memory: true
-  use_amp: true            # fp16 mixed precision — train.py đã hỗ trợ autocast
+  use_amp: true            # fp16 mixed precision
 
   optimizer: "adamw"
-  learning_rate: 2e-5      # lr hơi cao hơn single-GPU vì eff batch lớn
+  learning_rate: 2.0e-5    # Backbone (LoRA)
+  graph_learning_rate: 1.0e-4
+  head_learning_rate: 2.0e-4
   weight_decay: 0.01
   max_grad_norm: 1.0
   warmup_ratio: 0.1
 
   scheduler: "cosine"
-  epochs: 8                # ~1.5-2.5h trên 2xT4 với 1.5B + DataParallel
-  batch_size: 2            # per-device; DataParallel tự chia
-  gradient_accumulation_steps: 4  # eff = 2*4*2 = 16
+  epochs: 8                # ~2-3h trên 2xT4 với 1.5B + LoRA
+  batch_size: 2            # per-device; eff = 2*4*2 = 16
+  gradient_accumulation_steps: 4
+
+  focal_alpha: 0.5
+  focal_gamma: 2.0
+
+  tune_threshold: true
 
   early_stopping:
     enabled: true
@@ -31,11 +37,9 @@ training:
     save_top_k: 1
     save_every_n_epochs: 0
 
-  loss_weights: {binary: 1.0, cwe: 0.5, severity: 0.2, localization: 0.4, source_sink: 0.15}
   quality_tiers: {gold: 1.0, silver: 0.85}
 
   logging:
     backend: "tensorboard"
     log_dir: "/kaggle/working/runs/"
     log_every_n_steps: 20
-    wandb_project: "vulhunter-kaggle"

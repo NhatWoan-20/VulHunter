@@ -1,33 +1,33 @@
-"""Metrics — Evaluation metrics for all vulnerability detection tasks.
+"""Metrics — Evaluation metrics cho binary vulnerability detection.
 
-Provides metric computation for:
-    - Binary detection: Precision, Recall, F1, ROC-AUC
-    - CWE classification: Macro/Micro F1, Per-class F1
-
+Cung cấp:
+    - binary_metrics: Precision, Recall, F1, Accuracy, ROC-AUC, PR-AUC, MCC.
+    - best_threshold: Tìm threshold tối ưu dựa trên F1.
 
 All metrics operate on numpy arrays for compatibility with scikit-learn.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 
 
 @dataclass
 class MetricResult:
-    """Container for computed metric values.
+    """Container cho binary classification metrics.
 
-    All fields default to 0.0 if not computed.
+    Tất cả fields default 0.0 nếu không compute.
     """
     precision: float = 0.0
     recall: float = 0.0
     f1: float = 0.0
     accuracy: float = 0.0
     auc: float = 0.0
+    pr_auc: float = 0.0
+    mcc: float = 0.0
+    threshold: float = 0.5
     support: int = 0
-    per_class: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -37,30 +37,37 @@ class MetricResult:
             "f1": round(self.f1, 4),
             "accuracy": round(self.accuracy, 4),
             "support": self.support,
+            "threshold": round(self.threshold, 4),
         }
         if self.auc > 0:
             d["auc"] = round(self.auc, 4)
-        if self.per_class:
-            d["per_class"] = self.per_class
+        d["pr_auc"] = round(self.pr_auc, 4)
+        d["mcc"] = round(self.mcc, 4)
         return d
 
 
-def binary_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optional[np.ndarray] = None) -> MetricResult:
+def binary_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_prob: np.ndarray | None = None,
+    threshold: float = 0.5,
+) -> MetricResult:
     """Compute binary classification metrics.
 
     Args:
         y_true: Ground truth labels, shape ``(N,)``, values in {0, 1}.
         y_pred: Predicted labels, shape ``(N,)``, values in {0, 1}.
         y_prob: Predicted probabilities for positive class, shape ``(N,)``.
-            If provided, ROC-AUC is also computed.
+            Nếu cung cấp, ROC-AUC và PR-AUC cũng được tính.
+        threshold: Threshold đã dùng để tạo y_pred (cho logging).
 
     Returns:
-        MetricResult with precision, recall, F1, accuracy, and optionally AUC.
+        MetricResult với precision, recall, F1, accuracy, AUC.
     """
-    tp = np.sum((y_pred == 1) & (y_true == 1))
-    fp = np.sum((y_pred == 1) & (y_true == 0))
-    fn = np.sum((y_pred == 0) & (y_true == 1))
-    tn = np.sum((y_pred == 0) & (y_true == 0))
+    tp = int(np.sum((y_pred == 1) & (y_true == 1)))
+    fp = int(np.sum((y_pred == 1) & (y_true == 0)))
+    fn = int(np.sum((y_pred == 0) & (y_true == 1)))
+    tn = int(np.sum((y_pred == 0) & (y_true == 0)))
 
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
@@ -72,90 +79,54 @@ def binary_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: Optional[np.n
         recall=recall,
         f1=f1,
         accuracy=accuracy,
+        threshold=threshold,
         support=len(y_true),
     )
 
-    # ROC-AUC
+    # MCC — đặc biệt hữu ích với imbalanced data
+    denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
+    result.mcc = float((tp * tn - fp * fn) / denominator) if denominator else 0.0
+
+    # ROC-AUC và PR-AUC
     if y_prob is not None and len(np.unique(y_true)) > 1:
         try:
-            from sklearn.metrics import roc_auc_score
-            result.auc = roc_auc_score(y_true, y_prob)
+            from sklearn.metrics import average_precision_score, roc_auc_score
+            result.auc = float(roc_auc_score(y_true, y_prob))
+            result.pr_auc = float(average_precision_score(y_true, y_prob))
         except (ImportError, ValueError):
             pass
 
     return result
 
 
-def multiclass_metrics(
+def find_best_threshold(
     y_true: np.ndarray,
-    y_pred: np.ndarray,
-    class_names: Optional[list[str]] = None,
-) -> MetricResult:
-    """Compute multi-class classification metrics.
+    y_prob: np.ndarray,
+    thresholds: np.ndarray | None = None,
+) -> tuple[float, MetricResult]:
+    """Tìm threshold tối ưu dựa trên F1 score.
 
     Args:
-        y_true: Ground truth class indices, shape ``(N,)``.
-        y_pred: Predicted class indices, shape ``(N,)``.
-        class_names: Optional list of class name strings for per-class reporting.
+        y_true: Ground truth labels, shape ``(N,)``.
+        y_prob: Predicted probabilities, shape ``(N,)``.
+        thresholds: Optional array of thresholds to test.
+            Default: np.arange(0.05, 0.96, 0.05).
 
     Returns:
-        MetricResult with macro F1, accuracy, and per-class breakdown.
+        Tuple of (best_threshold, MetricResult at best threshold).
     """
-    classes = np.unique(np.concatenate([y_true, y_pred]))
+    if thresholds is None:
+        thresholds = np.arange(0.05, 0.96, 0.05)
 
-    per_class = {}
-    f1_scores = []
-    for cls in classes:
-        tp = np.sum((y_pred == cls) & (y_true == cls))
-        fp = np.sum((y_pred == cls) & (y_true != cls))
-        fn = np.sum((y_pred != cls) & (y_true == cls))
+    best_thr, best_f1 = 0.5, 0.0
+    best_result = binary_metrics(y_true, (y_prob >= 0.5).astype(int), y_prob, threshold=0.5)
 
-        p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+    for thr in thresholds:
+        preds = (y_prob >= thr).astype(int)
+        result = binary_metrics(y_true, preds, y_prob, threshold=float(thr))
+        if result.f1 > best_f1:
+            best_f1 = result.f1
+            best_thr = float(thr)
+            best_result = result
 
-        name = class_names[int(cls)] if class_names and int(cls) < len(class_names) else str(int(cls))
-        per_class[name] = {"precision": round(p, 4), "recall": round(r, 4), "f1": round(f, 4), "support": int(np.sum(y_true == cls))}
-        f1_scores.append(f)
-
-    macro_f1 = np.mean(f1_scores) if f1_scores else 0.0
-    accuracy = np.sum(y_true == y_pred) / len(y_true) if len(y_true) > 0 else 0.0
-
-    return MetricResult(
-        f1=macro_f1,
-        accuracy=accuracy,
-        support=len(y_true),
-        per_class=per_class,
-    )
-
-
-
-def compute_all_metrics(
-    binary_true: Optional[np.ndarray] = None,
-    binary_pred: Optional[np.ndarray] = None,
-    binary_prob: Optional[np.ndarray] = None,
-    cwe_true: Optional[np.ndarray] = None,
-    cwe_pred: Optional[np.ndarray] = None,
-    cwe_names: Optional[list[str]] = None,
-    loc_true: Optional[list[list[int]]] = None,
-    loc_pred: Optional[list[list[int]]] = None,
-) -> dict[str, MetricResult]:
-    """Compute all metrics for the multi-task model.
-
-    Args:
-        binary_true/pred/prob: Binary detection arrays.
-        cwe_true/pred: CWE classification arrays.
-        cwe_names: CWE class name strings.
-
-    Returns:
-        Dictionary mapping task names to MetricResult objects.
-    """
-    results: dict[str, MetricResult] = {}
-
-    if binary_true is not None and binary_pred is not None:
-        results["binary"] = binary_metrics(binary_true, binary_pred, binary_prob)
-
-    if cwe_true is not None and cwe_pred is not None:
-        results["cwe"] = multiclass_metrics(cwe_true, cwe_pred, cwe_names)
-
-    return results
+    return best_thr, best_result

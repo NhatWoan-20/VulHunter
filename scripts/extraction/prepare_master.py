@@ -1,12 +1,15 @@
-"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) for 1-Stage End-to-End training.
+"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) cho binary classification.
 
 Implements (docs/04_dataset.md § Pillar 1-3):
     - Strict noise / test-code cleansing: drop methods whose file path indicates tests, mock,
       or config scaffolding (tests/, test_, testing/, mocks/, conftest.py, setup.py, ...).
-    - Schema unification to a single canonical pair-level record with a quality_tier attribute
-      ("gold" for CVEFixes, "silver" for GHSA).
+    - Schema unification to a single canonical record với quality_tier attribute
+      ("gold" cho CVEFixes, "silver" cho GHSA).
     - Canonical lowercase `repository` key so Pillar 2's cross-dataset repository-disjoint split
       treats the same repo across sources as a single group.
+
+Mỗi record giữ nguyên `code` (vulnerable) và `safe_code` (safe version) để
+build_samples.py có thể tạo cặp vulnerable/safe cho binary classification.
 
 Usage:
     python scripts/extraction/prepare_master.py [--cvefixes ...] [--ghsa ...] [--output ...]
@@ -14,6 +17,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 from collections import Counter
 from pathlib import Path
 
@@ -38,11 +43,7 @@ NOISE_SUFFIXES = ("/setup.py", "setup.py", "fabfile.py", "tasks.py")
 
 
 def canonical_repo(raw: object) -> str:
-    """Normalize a repository identifier to a stable lower-case 'owner/name' key.
-
-    Ensures the same repository shared by GHSA and CVEFixes maps to one group in
-    the repository-disjoint split (Pillar 2).
-    """
+    """Normalize a repository identifier to a stable lower-case 'owner/name' key."""
     if not raw:
         return "unknown"
     r = str(raw).strip().rstrip("/")
@@ -69,7 +70,6 @@ def is_noise_path(file_path: str) -> bool:
     if any(p.endswith(s) for s in NOISE_SUFFIXES):
         return True
     return False
-
 
 
 def _cvefixes_record(raw: dict) -> dict | None:
@@ -109,7 +109,6 @@ def _ghsa_record(raw: dict) -> dict | None:
     safe_code = raw.get("safe_code", "")
     if not code or not safe_code:
         return None
-
 
     severity = str(raw.get("severity") or "UNKNOWN").strip().upper()
     repo = canonical_repo(raw.get("repository"))
@@ -160,8 +159,8 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.report.parent.mkdir(parents=True, exist_ok=True)
 
-    cvefixes = _load_jsonl(args.cvefixes)
-    ghsa = _load_jsonl(args.ghsa)
+    cvefixes = _load_jsonl(args.cvefixes) if args.cvefixes.exists() else []
+    ghsa = _load_jsonl(args.ghsa) if args.ghsa.exists() else []
     logger.info("Loaded CVEFixes: %d pairs, GHSA: %d pairs", len(cvefixes), len(ghsa))
 
     stats: dict = {
@@ -203,7 +202,6 @@ def main() -> None:
     tiers = Counter(x.get("quality_tier") for x in out_rows)
     labels = Counter(x.get("binary_label") for x in out_rows)
     sevs = Counter(x.get("severity") for x in out_rows)
-
     cwe_count = sum(1 for x in out_rows if x.get("cwe_ids"))
 
     report = {

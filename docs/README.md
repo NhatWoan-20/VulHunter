@@ -1,147 +1,357 @@
-﻿# VulHunter Research Specification & Documentation
+﻿<h1 align="center">🛡️ VulHunter</h1>
 
-> **Authoritative methodology — Master 1-Stage, 3 Tasks Active**
+<p align="center">
+  <strong>Hybrid Multi-Modal Binary Vulnerability Detection for Python</strong><br/>
+  <em>Qwen2.5-Coder-1.5B (Semantic View) + GraphCodeBERT/GAT (Structural View) + Gated Bidirectional Cross-Attention (Fusion)</em>
+</p>
 
-VulHunter is a hybrid multi-modal vulnerability detection framework for Python source code combining semantic code representations (Transformers / Code LLMs) and structural program graphs (Heterogeneous AST / CFG / DFG / Call graphs).
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/PyTorch-2.1%2B-red?logo=pytorch&logoColor=white" alt="PyTorch">
+  <img src="https://img.shields.io/badge/Transformers-4.36%2B-yellow?logo=huggingface&logoColor=white" alt="Transformers">
+  <img src="https://img.shields.io/badge/Kaggle-2xT4-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
+  <img src="https://img.shields.io/badge/Tests-61%2F61%20Passed-brightgreen" alt="Tests">
+  <a href="https://doi.org/10.5281/zenodo.13118970"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.13118970-blue" alt="DOI"></a>
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
+</p>
 
-> **Single source of truth:** `docs/` (this folder) is the only authoritative methodology. The legacy v1/v2 research draft and the original full-length specification are archived and **superseded** in `docs/archive/`.
-
----
-
-## 1. Documentation Map
-
-| Document | Topic | Key Content |
-|---|---|---|
-| [`01_overview.md`](01_overview.md) | Problem & Objectives | Research questions, scope, 3-task schema, success criteria |
-| [`02_literature_review.md`](02_literature_review.md) | State of the Art | Semantic vs Graph vs Hybrid models, literature gaps |
-| [`03_architecture.md`](03_architecture.md) | System Architecture | Encoders, Fusion, **3 trainable heads** |
-| [`04_dataset.md`](04_dataset.md) | Data & Preprocessing | Unified Master dataset |
-| [`05_training.md`](05_training.md) | Training & Optimization | 3-loss multi-task (binary/CWE/severity), tiered LR |
-| [`06_evaluation.md`](06_evaluation.md) | Evaluation & Ablation | 3-task metrics |
-| [`07_extensions.md`](07_extensions.md) | Research Extensions | (Deprecated) Line localization, source/sink, LLM explanations |
-
----
-
-## 2. Dataset Contract & Policy
-
-| Dataset | Location | Records | Role | Supervision |
-|---|---|---|---|---|
-| **CVEFixes (gold)** | `data/raw/python_cvefixes_methods.jsonl` | **2,985** pairs (659 CVEs, 361 repos) | Primary high-quality tier | binary, CWE, severity |
-| **GHSA (silver)** | `data/raw/ghsa/ghsa_methods.jsonl` | **12,366** kept of 17,049 (4,683 noise removed) | Secondary tier | binary, CWE, severity |
-| **Master (consolidated)** | `data/raw/master_methods.jsonl` → per-role `data/final/master_samples.jsonl` | **15,351 pairs → 30,454 per-role samples** | **Single training corpus** (80/10/10) | |
-| **PyCode-Vul Train / Test** | `data/raw/external/PyCode_Vul-{train,test}-set.csv` | **14,248 / 3,563** functions | **Evaluation only**, final step | binary only |
-
-### Hard rules (invariants)
-
-1. **Master dataset** (gold + silver) is the single unified training corpus, namespaced `quality_tier` (`gold`/`silver`).
-2. Splits are **fixed**: cross-dataset **repository-disjoint** (canonical lower-case `owner/name`), `--seed 42`, 80/10/10. Never re-split.
-3. **PyCode-Vul** is **read-only and evaluation-only** — never enters `data/splits/`.
-4. Every artifact (samples, tokens, graphs) is keyed by per-role `sample_id` (`{source}:{raw_id}:{role}`).
-5. **Configs must be honored by code.** Hyperparameters in `configs/train/*.yaml`, architecture in `configs/kaggle/model_kaggle.yaml` — both injected by `train.py` and stored in each checkpoint.
+<p align="center">
+  <a href="#-quick-start--60s">Quick Start</a> •
+  <a href="#-key-features">Key Features</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-dataset">Dataset</a> •
+  <a href="#-run-on-kaggle-2xt4">Kaggle 2x T4</a> •
+  <a href="#-training-modes">Training</a> •
+  <a href="#-benchmarks--evaluation">Evaluation</a>
+</p>
 
 ---
 
-## 3. Implementation Status Matrix
+## 📌 What is VulHunter?
 
-| Component | Status | Implementation Details |
-|---|---|---|
-| **Master Dataset build** | ✅ Implemented | `scripts/extraction/prepare_master.py` |
-| **Semantic Branch** | ✅ Implemented | `src/semantic/encoder.py` (Qwen2.5-Coder-1.5B-Instruct) |
-| **Graph Branch** | ✅ Implemented | `src/graph/encoder.py` (GAT, 5 edge types) |
-| **Cross-Modal Fusion** | ✅ Implemented | `src/fusion/cross_attention.py` (gated) |
-| **Multi-Task Heads** | ✅ Active (3/3) | Binary, CWE (10), Severity (4) |
-| **Preprocessing** | ✅ Implemented | `scripts/preprocessing/*` |
-| **Splitting** | ✅ Implemented + verified | `split.py` — cross-dataset repo-disjoint |
-| **Tokenization** | ✅ Active | `tokenize_qwen.py` |
-| **Graph build + merge** | ✅ Implemented | `scripts/graph/*` + `merge_graphs.py` → `master_graphs.jsonl` |
-| **Training** | ✅ Active | `train.py` wires 3 losses via Kaggle 2x T4 environments |
-| **In-Domain Evaluation** | ✅ Active | `scripts/evaluation/evaluate.py` reports binary/CWE/severity |
-| **External Evaluation** | ✅ Implemented | `scripts/evaluation/evaluate_external.py` |
+**VulHunter** is an end-to-end deep learning system for **binary vulnerability detection** in Python function-level code (vulnerable vs. safe).
 
-*Full `semantic_only`/`fusion` training runs on Kaggle 2x T4 (16GB).*
+Traditional vulnerability detectors rely either on purely syntactic sequence representations (LLMs/Transformers) which can miss non-local data-flow constraints, or purely on graph structures (AST/CFG/GNNs) which discard rich identifier semantics and comments. **VulHunter bridges this gap** by fusing two complementary representations:
+
+1. **Semantic Perception**: Pretrained **Qwen2.5-Coder-1.5B-Instruct** + LoRA for token semantics and control keywords.
+2. **Structural Perception**: **GraphCodeBERT** + Custom **Graph Attention Network (GAT)** processing 5 heterogeneous program graph edge types.
+3. **Cross-Modal Fusion**: A **gated bidirectional cross-attention** mechanism with residual skip that dynamically balances semantic and structural signals.
+4. **Binary Supervision**: Focal loss với quality-tier sample weighting.
+
+> [!NOTE]
+> **Roadmap**: Hiện tại tập trung vào **binary classification**. Multi-task heads (CWE, Severity) sẽ được bổ sung sau khi task chính đã hoàn thiện.
 
 ---
 
-## 4. Canonical Data Pipeline (fixed to `master`)
+## ⚡ Key Features
 
-Pipeline is fixed to `master`. Each preprocessing/graph script is hardcoded to `master_*` paths; to target a different dataset, edit the `INPUT`/`OUTPUT` constants at the top of the script directly.
-
-```
-data/raw/databases/cvefixes.db ──extract.py──▶ data/raw/python_cvefixes_methods.jsonl   (2,985)
-data/raw/ghsa/ghsa_methods.jsonl                                     (17,049; 4,683 dropped)
-        │  scripts/extraction/prepare_master.py  (canonicalize repo, GHSA line labels)
-        ▼
-data/raw/master_methods.jsonl                     (15,351 pairs: 2,985 gold + 12,366 silver)
-        │  clean_comments → normalize → validate_ast → strip_docstrings
-        ▼
-data/processed/master_graph_input.jsonl
-        │  build_samples.py          (pair → vulnerable + safe role; per-role sample_id)
-        ▼
-data/final/master_samples.jsonl      (30,454 per-role samples; gold/silver tiers)
-        │  split.py --seed 42        (cross-dataset repo-disjoint)
-        ▼
-data/splits/{train,validation,test}.jsonl       (20,638 / 6,404 / 3,412)
-        │  tokenize_qwen.py          (in-place)
-        ▼  graph builders + merge_graphs.py
-data/processed/master_graphs.jsonl   (30,427 heterogeneous graphs keyed by sample_id)
-```
-
-The **diagram is the contract** — scripts must reproduce it exactly (hardcoded `master_*`).
+- **Single Task Focus**: Binary vulnerability detection (vulnerable=1 / safe=0) — đơn giản, hiệu quả.
+- **3 Training Modes**: `semantic_only`, `graph_only`, `fusion` — train song song để so sánh.
+- **LoRA Fine-Tuning**: Hiệu quả cho Qwen2.5-Coder-1.5B với VRAM thấp (~4GB savings).
+- **Last-Token Pooling**: Tối ưu cho decoder-only LLM.
+- **Unfreeze Top-6 GraphCodeBERT**: Chống AUC=0.5 collapse.
+- **Threshold Tuning**: Auto-find optimal F1 threshold trên val set.
+- **MLOps Ready**: FastAPI deployment script.
+- **Strict Leakage Prevention**: 80/10/10 split grouped strictly by GitHub repository.
+- **Resource Efficient**: Fits Kaggle 2x T4 (16GB VRAM) với FP16 mixed precision.
 
 ---
 
-## 5. Reproducible Workflow
+## 🏗️ Architecture
 
-No env var — just `python <script>.py` (each script defaults to `master_*` paths). Example:
-
-```powershell
-# 1. Build the unified Master corpus (gold CVEFixes + silver GHSA)
-python scripts/extraction/prepare_master.py
-
-# 2. Preprocess, expand to per-role samples, split
-python scripts/preprocessing/clean_comments.py
-python scripts/preprocessing/normalize.py
-python scripts/preprocessing/validate_ast.py
-python scripts/preprocessing/strip_docstrings.py
-python scripts/preprocessing/build_samples.py
-python scripts/preprocessing/split.py --seed 42
-
-# 3. Tokenize splits in place
-python scripts/preprocessing/tokenize_qwen.py
-
-# 4. Build + merge program graphs (optional, for graph_only/fusion)
-python scripts/graph/build_ast.py
-python scripts/graph/build_cfg.py
-python scripts/graph/build_dfg.py
-python scripts/graph/build_call.py
-python scripts/graph/merge_graphs.py
-
-# 5. Train the three branches (identical splits & schedule; GPU recommended)
-python scripts/training/train.py --mode semantic_only --config configs/train/semantic.yaml
-python scripts/training/train.py --mode graph_only --config configs/train/graph.yaml --graph-data data/processed/master_graphs.jsonl
-python scripts/training/train.py --mode fusion --config configs/train/fusion.yaml --graph-data data/processed/master_graphs.jsonl
-# 3 losses active: binary 1.0 / cwe 0.5 / severity 0.2
-
-# 6. In-domain evaluation (reports 3 tasks)
-python scripts/evaluation/evaluate.py --checkpoint models/checkpoints/best.pt
-python scripts/evaluation/evaluate.py --checkpoint models/checkpoints/best.pt --graph-data data/processed/master_graphs.jsonl
-
-# 7. External generalization (isolated, final step; semantic_only)
-python scripts/evaluation/evaluate_external.py --checkpoint models/checkpoints/best.pt --split train
-python scripts/evaluation/evaluate_external.py --checkpoint models/checkpoints/best.pt --split test
+```text
+                                Python Function Code
+                                         │
+                 ┌───────────────────────┴───────────────────────┐
+                 ▼                                               ▼
+       [Semantic Branch]                                [Structural Branch]
+     Qwen2.5-Coder-1.5B-Instruct                  Heterogeneous Program Graph
+     + LoRA (r=16, α=32)                           (AST + CFG + DFG + Call)
+     Last-token pooling
+                 │                                               │
+        Per-token sequence                              GraphCodeBERT (unfreeze
+        representations                                top-6) + 4-layer GAT
+                 │                                               │
+                 └───────────────────────┬───────────────────────┘
+                                         ▼
+                       Gated Bidirectional Cross-Attention
+                       + Residual Skip (alpha=0.3)
+                                         │
+                                         ▼
+                                Binary Prediction Head
+                                  (Focal Loss với
+                                   quality-tier weights)
+                                         │
+                                         ▼
+                              P(vulnerable) ∈ [0, 1]
 ```
 
-To target a different dataset, edit the `INPUT`/`OUTPUT` constants at the top of each script directly — no CLI switch or env var.
+Configuration wiring được tách riêng ở `configs/model/default.yaml` và training schedules ở `configs/train/` (`semantic.yaml`, `graph.yaml`, `fusion.yaml`).
 
 ---
 
-## 6. Vibe-Coding Guardrails
+## 📦 Dataset
 
-1. **Only `docs/` defines methodology.** Reconcile anything imported from `docs/archive/` here before adding it.
-2. **Never touch PyCode-Vul / GHSA raw files** — read-only inputs. Derived files live outside `data/splits/`.
-3. **Keep three branches comparable.** Data split, seed, LR, loss weights, and early stopping must be identical across `semantic_only`, `graph_only`, `fusion`.
-4. **`sample_id` is sacred.** Samples, tokens, and graphs all use per-role `{source}:{raw_id}:{role}`. Graph data keyed otherwise silently fails to join.
-5. **Pipeline is fixed to `master`.** All preprocessing/graph scripts are hardcoded to `master_*` paths; to target a different dataset, edit the `INPUT`/`OUTPUT` constants in the script header.
-6. **Checkpoint selection is on validation binary F1 only.**
-7. **Explanation is post-hoc (deprecated for primary training).** Never let the explanation LLM influence training or checkpoint selection.
+VulHunter trains trên consolidated **Master Dataset** kết hợp:
 
+| Source Tier | Raw Samples | Cleaned Pairs | Role Samples | Quality Weight |
+|:---|:---|:---:|:---:|:---:|
+| **CVEFixes (Gold)** | Zenodo SQL dump | **2,985** | 5,958 | $w = 1.00$ |
+| **GHSA (Silver)** | GitHub Security Advisories | **12,366** | 24,496 | $w = 0.85$ |
+| **Master (Unified)** | Gold + Silver | **15,351** | **30,454** | Quality-weighted |
+
+Split: **80/10/10 repository-disjoint** (strict repo-disjoint).
+
+```json
+{
+  "sample_id": "cvefixes:98919200308f75a4:vulnerable",
+  "code": "def run_query(q):\n    return db.execute('SELECT * WHERE id = ' + q)",
+  "binary_label": 1,
+  "cwe_ids": ["CWE-89"],
+  "severity": "HIGH",
+  "quality_tier": "gold",
+  "input_ids_qwen": [13, 298, ...]
+}
+```
+
+---
+
+## ⚡ Quick Start — 60s
+
+### 1. Environment Setup
+
+```bash
+# Clone repository
+git clone https://github.com/NhatWoan-20/VulHunter.git
+cd VulHunter
+
+# Setup virtual environment
+python -m venv .venv
+# Windows: .venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
+
+# Install PyTorch với CUDA
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install dependencies
+pip install -r requirements.txt
+pip install -e .
+```
+
+### 2. Chuẩn bị dữ liệu (Local hoặc Kaggle)
+
+```bash
+# Full pipeline: master → samples → AST → graphs → tokenize → split
+python scripts/preprocessing/run_pipeline.py
+
+# Nếu chỉ cần semantic-only (không cần graph):
+python scripts/preprocessing/run_pipeline.py --skip-graph
+
+# Nếu chỉ cần graph-only (không cần tokenize):
+python scripts/preprocessing/run_pipeline.py --skip-tokenize
+```
+
+### 3. Training
+
+```bash
+# Semantic-only baseline
+python scripts/training/train.py \
+    --mode semantic_only \
+    --config configs/train/semantic.yaml \
+    --model-config configs/model/default.yaml \
+    --use-amp
+
+# Graph-only baseline
+python scripts/training/train.py \
+    --mode graph_only \
+    --config configs/train/graph.yaml \
+    --graph-data data/processed/master_graphs.jsonl \
+    --use-amp
+
+# Fusion (đề xuất chính)
+python scripts/training/train.py \
+    --mode fusion \
+    --config configs/train/fusion.yaml \
+    --graph-data data/processed/master_graphs.jsonl \
+    --tune-threshold \
+    --use-amp
+```
+
+### 4. Evaluation
+
+```bash
+python scripts/evaluation/evaluate.py \
+    --checkpoint models/checkpoints/best.pt \
+    --test-data data/splits/test.jsonl \
+    --graph-data data/processed/master_graphs.jsonl \
+    --output outputs/metrics/evaluation_report.json
+```
+
+### 5. FastAPI Deployment
+
+```bash
+uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
+
+curl -X POST "http://localhost:8000/predict" \
+     -H "Content-Type: application/json" \
+     -d '{"code": "import os\ndef run():\n    os.system(user_input)"}'
+```
+
+---
+
+## ☁️ Run on Kaggle (2x T4 GPUs)
+
+### Workflow
+
+1. **Upload Dataset (Local, Once)**:
+   ```powershell
+   python notebooks/prepare_kaggle_dataset.py --zip
+   # Generates dist/kaggle_dataset/ ready cho Kaggle Datasets
+   ```
+2. **Launch Kaggle Notebook**:
+   - Accelerator: **GPU T4 x2**
+   - Internet: **ON** | Persistence: **ON**
+   - Add Input: `vulhunter-pre-tokenized`
+3. **Run Notebooks**:
+   - `notebooks/train_fusion.ipynb` — Fusion mode (chính)
+   - `notebooks/train_semantic_only.ipynb` — Semantic baseline
+   - `notebooks/train_graph_only.ipynb` — Graph baseline
+
+---
+
+## 🚀 Training Modes
+
+#### Scenario A: Semantic-Only (Qwen2.5-Coder-1.5B + LoRA)
+```bash
+python scripts/training/train.py \
+  --mode semantic_only \
+  --config configs/train/semantic.yaml \
+  --model-config configs/kaggle/model_kaggle.yaml \
+  --use-amp
+```
+
+#### Scenario B: Graph-Only Structural Baseline
+```bash
+python scripts/training/train.py \
+  --mode graph_only \
+  --config configs/train/graph.yaml \
+  --graph-data data/processed/master_graphs.jsonl \
+  --use-amp
+```
+
+#### Scenario C: Multi-Modal Fusion (Qwen + GAT)
+```bash
+python scripts/training/train.py \
+  --mode fusion \
+  --config configs/train/fusion.yaml \
+  --model-config configs/kaggle/model_kaggle.yaml \
+  --graph-data data/processed/master_graphs.jsonl \
+  --tune-threshold \
+  --use-amp
+```
+
+### Tips:
+
+- **`--tune-threshold`**: Auto-tune classification threshold trên val set sau mỗi epoch.
+- **`--use-amp`**: Bật FP16 mixed precision.
+- **`--data-parallel`**: Force single-node DataParallel (thay vì DDP).
+
+---
+
+## 📊 Benchmarks & Evaluation
+
+Đánh giá theo multi-tier protocol:
+1. **In-Domain**: Held-out 10% test split từ Master Dataset (repo-disjoint).
+2. **Out-of-Domain** (future): Zero-shot trên PyCode-Vul.
+
+### Metric Targets (binary classification)
+
+| Metric | Rất kém | Kém | Trung bình | Tốt | Rất tốt |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| AUC-ROC | <0.55 | 0.55-0.65 | 0.65-0.75 | 0.75-0.85 | >0.85 |
+| F1 Score | <0.20 | 0.20-0.40 | 0.40-0.60 | 0.60-0.75 | >0.75 |
+| Precision | — | — | — | >0.70 | >0.80 |
+| Recall | — | — | — | >0.65 | >0.75 |
+
+### Benchmark Results
+
+> [!NOTE]
+> **Experimental Phase:** Benchmark scores sẽ được populate sau khi training hoàn tất.
+
+| Model Variant | Binary F1 | Binary MCC | AUC-ROC |
+|:---|:---:|:---:|:---:|
+| `graph_only` (GraphCodeBERT + GAT) | *TBD* | *TBD* | *TBD* |
+| `semantic_only` (Qwen2.5-Coder-1.5B) | *TBD* | *TBD* | *TBD* |
+| **`fusion` (Qwen2.5-Coder-1.5B + GAT)** | *TBD* | *TBD* | *TBD* |
+
+---
+
+## 📁 Project Structure
+
+```text
+VulHunter/
+├── configs/                     # Hyperparameter & architecture specs
+│   ├── model/default.yaml       # Qwen2.5 + 4-layer GAT + Gated Cross-Attention
+│   ├── train/                   # Training profiles (semantic.yaml, graph.yaml, fusion.yaml)
+│   └── kaggle/                  # Kaggle profiles
+├── data/
+│   ├── raw/databases/           # CVEFixes DB extraction scripts
+│   └── splits/                  # Repo-disjoint train/validation/test splits
+├── notebooks/                   # Kaggle notebooks (3 modes)
+│   ├── train_fusion.ipynb       # ★ Main: fusion mode
+│   ├── train_semantic_only.ipynb
+│   └── train_graph_only.ipynb
+├── src/                         # Core VulHunter Library
+│   ├── semantic/encoder.py      # Qwen2.5 + LoRA, last-token pooling
+│   ├── graph/encoder.py         # PyTorch GAT, unfreeze_top_layers
+│   ├── fusion/cross_attention.py# Gated bidirectional cross-attention + residual
+│   ├── multitask/model.py       # VulHunterModel (binary output)
+│   ├── multitask/heads.py       # BinaryHead
+│   └── utils/                   # Datasets, focal loss, metrics
+├── scripts/
+│   ├── extraction/prepare_master.py  # Master dataset builder
+│   ├── preprocessing/           # Tokenize, comment strip, graph build, split
+│   │   └── run_pipeline.py      # ★ End-to-end pipeline orchestrator
+│   ├── graph/                   # AST, CFG, DFG, Call extraction
+│   ├── training/train.py        # Distributed / AMP training runner
+│   ├── evaluation/evaluate.py   # Binary classification evaluation
+│   └── api_deployment.py        # FastAPI server
+├── tests/                       # Test suite (61 unit tests)
+└── docs/                        # Research methodology & specifications
+```
+
+---
+
+## 🧪 Testing & Verification
+
+```bash
+# Run all unit tests
+pytest tests -q
+
+# Run with coverage
+pytest tests --cov=src --cov-report=term-missing
+```
+
+---
+
+## 🛠️ Tech Stack
+
+- **Deep Learning**: [PyTorch 2.1+](https://pytorch.org/), [HuggingFace Transformers](https://huggingface.co/docs/transformers/index)
+- **Foundation Model**: [Qwen2.5-Coder](https://github.com/QwenLM/Qwen2.5-Coder) (1.5B Instruct)
+- **LoRA**: [PEFT](https://github.com/huggingface/peft)
+- **Graph Neural Network**: Custom heterogeneous GAT
+- **Evaluation**: `scikit-learn`, `scipy`
+
+---
+
+## 🤝 Contributing & License
+
+Contributions welcome! Đảm bảo pass existing unit tests (`pytest tests -q`).
+
+Distributed under the **MIT License**.
+
+### Acknowledgments
+- **CVEFixes**: [secureIT-project/CVEfixes](https://github.com/secureIT-project/CVEfixes) (Zenodo DOI: `10.5281/zenodo.13118970`)
+- **GitHub Security Advisories (GHSA)**: [GitHub Advisory Database](https://github.com/advisories)
+- **Qwen2.5-Coder**: Qwen Team, Alibaba Cloud
+- **GraphCodeBERT**: Microsoft Research

@@ -20,7 +20,7 @@ Dockerfile Idea:
     CMD ["uvicorn", "scripts.api_deployment:app", "--host", "0.0.0.0", "--port", "8000"]
 """
 
-from typing import Optional
+import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import torch
@@ -50,15 +50,6 @@ class CodeRequest(BaseModel):
 class PredictionResponse(BaseModel):
     is_vulnerable: bool
     vulnerability_probability: float
-    cwe_type: Optional[str]
-    severity: Optional[str]
-
-CWE_CLASSES = [
-    "CWE-79", "CWE-89", "CWE-20", "CWE-125", "CWE-787",
-    "CWE-416", "CWE-190", "CWE-476", "none", "Other"
-]
-
-SEVERITY_CLASSES = ["LOW", "MODERATE", "HIGH", "CRITICAL"]
 
 @app.on_event("startup")
 async def load_model():
@@ -66,17 +57,26 @@ async def load_model():
     global MODEL, TOKENIZER
     logger.info(f"Loading model on device: {DEVICE}")
     try:
-        # For demonstration purposes, we initialize an untrained model or load from a checkpoint.
-        # In a real deployment, you would load the weights from 'models/checkpoints/best.pt'.
-        
-        # We load the tokenizer
-        tokenizer_name = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+        checkpoint_path = os.environ.get("VULHUNTER_CHECKPOINT")
+        if not checkpoint_path:
+            raise RuntimeError("Set VULHUNTER_CHECKPOINT to a trained semantic_only checkpoint.")
+        checkpoint = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
+        config = checkpoint.get("config", {})
+        if config.get("mode", "semantic_only") != "semantic_only":
+            raise RuntimeError("The HTTP API currently serves semantic_only checkpoints; graph extraction is not exposed by this endpoint.")
+        model_cfg = config.get("model", {})
+        tokenizer_name = model_cfg.get("semantic", {}).get("backbone", "Qwen/Qwen2.5-Coder-1.5B-Instruct")
         TOKENIZER = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
         if TOKENIZER.pad_token is None:
             TOKENIZER.pad_token = TOKENIZER.eos_token
 
-        # Initialize the 3-task model
-        MODEL = VulHunterModel(mode="semantic_only", num_cwe_classes=10)
+        MODEL = VulHunterModel(mode="semantic_only", semantic_config=model_cfg.get("semantic", {}), head_config=model_cfg.get("heads", {}))
+        state = {k.removeprefix("module."): v for k, v in checkpoint["model_state_dict"].items()}
+        missing, unexpected = MODEL.load_state_dict(state, strict=False)
+        required = {name for name, parameter in MODEL.named_parameters() if parameter.requires_grad}
+        missing_required = sorted(required.intersection(missing))
+        if missing_required or unexpected:
+            raise RuntimeError(f"Incompatible checkpoint (missing_trainable={missing_required}, unexpected={unexpected})")
         MODEL.to(DEVICE)
         MODEL.eval()
         logger.info("Model loaded successfully.")
@@ -107,31 +107,16 @@ async def predict(request: CodeRequest):
             outputs = MODEL(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                tasks=["binary", "cwe", "severity"]
+                tasks=["binary"]
             )
         
         # Binary prediction
         bin_prob = torch.sigmoid(outputs.binary_logits[0]).item()
         is_vuln = bin_prob > 0.5
         
-        # Default empty values
-        cwe_pred_label = "none"
-        sev_pred_label = "UNKNOWN"
-
-        if is_vuln:
-            # CWE prediction
-            cwe_idx = torch.argmax(outputs.cwe_logits[0]).item()
-            cwe_pred_label = CWE_CLASSES[cwe_idx] if cwe_idx < len(CWE_CLASSES) else "Other"
-            
-            # Severity prediction
-            sev_idx = torch.argmax(outputs.severity_logits[0]).item()
-            sev_pred_label = SEVERITY_CLASSES[sev_idx] if sev_idx < len(SEVERITY_CLASSES) else "UNKNOWN"
-
         return PredictionResponse(
             is_vulnerable=is_vuln,
             vulnerability_probability=round(bin_prob, 4),
-            cwe_type=cwe_pred_label if is_vuln else None,
-            severity=sev_pred_label if is_vuln else None,
         )
 
     except Exception as e:

@@ -65,6 +65,23 @@ def norm(code: str | None) -> str:
     ).strip("\n")
 
 
+def compute_line_labels(vulnerable_code: str, fixed_code: str) -> list[int]:
+    """Mark vulnerable-code lines changed by a paired fix.
+
+    This utility is retained for dataset construction only; it is not a
+    training target in the binary-only release.
+    """
+    vulnerable_lines = norm(vulnerable_code).splitlines()
+    fixed_lines = norm(fixed_code).splitlines()
+    labels = [0] * len(vulnerable_lines)
+    matcher = difflib.SequenceMatcher(a=vulnerable_lines, b=fixed_lines)
+    for tag, start, end, _, _ in matcher.get_opcodes():
+        if tag != "equal":
+            for index in range(start, end):
+                labels[index] = 1
+    return labels
+
+
 
 def sample_id(*parts: Any) -> str:
     """Generate deterministic 16-character SHA-1 ID from sample parts."""
