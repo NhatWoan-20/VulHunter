@@ -158,7 +158,7 @@ class VulHunterModel(nn.Module):
 
         # ──── Encode ────
         if self.mode == "semantic_only":
-            pooled, _ = self.semantic_encoder(input_ids, attention_mask, return_sequence=False)
+            pooled = self.semantic_encoder(input_ids, attention_mask, return_sequence=False)
             fused_pooled = pooled
 
         elif self.mode == "graph_only":

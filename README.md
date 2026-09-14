@@ -201,21 +201,25 @@ curl -X POST "http://localhost:8000/predict" \
 
 ## ☁️ Run on Kaggle (2x T4 GPUs)
 
+> **Tự động clone:** Các notebooks sẽ tự động clone VulHunter từ GitHub khi chạy. Không cần upload dataset!
+
 ### Workflow
 
-1. **Upload Dataset (Local, Once)**:
-   ```powershell
-   python notebooks/prepare_kaggle_dataset.py --zip
-   # Generates dist/kaggle_dataset/ ready cho Kaggle Datasets
-   ```
-2. **Launch Kaggle Notebook**:
+1. **Launch Kaggle Notebook**:
    - Accelerator: **GPU T4 x2**
    - Internet: **ON** | Persistence: **ON**
-   - Add Input: `vulhunter-pre-tokenized`
-3. **Run Notebooks**:
+   - Add Input: `vulhunter-pre-tokenized` (dataset đã tokenized sẵn)
+   - *Lưu ý: Nếu không có dataset, notebooks sẽ tự clone repo và bạn cần chạy preprocessing*
+
+2. **Run Notebooks** (tự động clone):
    - `notebooks/train_fusion.ipynb` — Fusion mode (chính)
    - `notebooks/train_semantic_only.ipynb` — Semantic baseline
    - `notebooks/train_graph_only.ipynb` — Graph baseline
+
+3. **Sau khi clone thành công**, notebook sẽ:
+   - Cài đặt dependencies tự động
+   - Import modules và hiển thị "All imports OK"
+   - Sẵn sàng để train
 
 ---
 
