@@ -101,9 +101,9 @@ class VulHunterModel(nn.Module):
         # Fusion module (chỉ cho fusion mode)
         if mode == "fusion":
             fusion_config.setdefault("hidden_dim", output_dim)
+            # Extract residual_alpha before passing to constructor (not an init param)
+            self._fusion_residual_alpha = float(fusion_config.pop("residual_alpha", 0.3))
             self.fusion = CrossModalFusion(**fusion_config)
-            # Lưu residual_alpha từ config
-            self._fusion_residual_alpha = float(fusion_config.get("residual_alpha", 0.3))
             logger.info("Khởi tạo CrossModalFusion (residual_alpha=%.2f)", self._fusion_residual_alpha)
 
         # Binary prediction head (task chính)
