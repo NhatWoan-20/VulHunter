@@ -1,4 +1,4 @@
-﻿"""VulHunter Model — Binary vulnerability detection.
+"""VulHunter Model — Binary vulnerability detection.
 
 Main model class tích hợp:
     1. Semantic Encoder (LLM backbone, vd: CodeBERT)
@@ -164,7 +164,7 @@ class VulHunterModel(nn.Module):
             elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
                 edge_index = edge_index.view(2, -1)
             graph_pooled = self.graph_encoder(
-                node_types, edge_index, edge_type, batch, node_texts=node_texts,
+                node_types, edge_index, edge_type, batch,
             )
             fused_pooled = graph_pooled
 
@@ -182,7 +182,7 @@ class VulHunterModel(nn.Module):
                 edge_index = edge_index.view(2, -1)
             graph_pooled, node_emb = self.graph_encoder(
                 node_types, edge_index, edge_type, batch,
-                return_node_embeddings=True, node_texts=node_texts,
+                return_node_embeddings=True,
             )
             # Cross-attend code tokens to graph nodes
             # residual_alpha giữ semantic signal khi graph rỗng/noisy.
