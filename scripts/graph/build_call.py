@@ -1,13 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-INPUT = ROOT / "data" / "final" / "master_samples.jsonl"
+INPUT = ROOT / "data" / "processed" / "master_graph_samples.jsonl"
 OUTPUT = ROOT / "data" / "processed" / "master_call.jsonl"
-REPORT = ROOT / "reports" / "preprocessing" / "master_call.json"
 
 
 class CallGraphBuilder(ast.NodeVisitor):
@@ -54,7 +53,6 @@ class CallGraphBuilder(ast.NodeVisitor):
 
 def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    REPORT.parent.mkdir(parents=True, exist_ok=True)
 
     builder = CallGraphBuilder()
     rows = skipped = 0
@@ -69,13 +67,16 @@ def main() -> None:
                 skipped += 1
                 continue
             out = {k: row.get(k) for k in ["sample_id", "pair_id", "role", "cve_id", "repository", "file_path", "function_name", "signature", "binary_label"]}
-            out.update({"cwe_ids": row.get("cwe_ids", []), "graph_type": "call", "nodes": graph["nodes"], "edges": graph["edges"]})
+            out.update({"graph_type": "call", "nodes": graph["nodes"], "edges": graph["edges"]})
             fout.write(json.dumps(out, ensure_ascii=False) + "\n")
             rows += 1
 
-    REPORT.write_text(json.dumps({"input": str(INPUT), "output": str(OUTPUT), "rows": rows, "skipped": skipped}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"input": str(INPUT), "output": str(OUTPUT), "rows": rows, "skipped": skipped}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
     main()
+
+
+
+

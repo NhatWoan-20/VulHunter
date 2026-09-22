@@ -1,57 +1,43 @@
-# ─── Training Configuration (Fusion Mode) ───
-# Binary classification với cross-modal fusion (Qwen + GraphCodeBERT).
+﻿# ─── Training Configuration (Fusion Mode) ───
+# Binary classification với cross-modal fusion (CodeBERT + Pure Structural Graph).
 training:
   seed: 42
   device: "auto"
   num_workers: 2
   pin_memory: true
-
   optimizer: "adamw"
-  learning_rate: 2.0e-5         # Backbone (LoRA)
-  graph_learning_rate: 1.0e-4    # GAT + unfrozen GraphCodeBERT top layers
+  learning_rate: 2.0e-5         # Backbone
+  graph_learning_rate: 1.0e-4    # GAT + Pure Structural Embeddings
   head_learning_rate: 2.0e-4     # Binary head
   weight_decay: 0.01
   max_grad_norm: 1.0
   warmup_ratio: 0.1
-
   scheduler: "cosine"
   epochs: 12
   batch_size: 2                 # Per-device; effective = 2 * 2 (DDP) * 4 (grad_accum) = 16
   gradient_accumulation_steps: 4
-
   focal_alpha: 0.5              # Auto-tuned dựa trên pos/neg ratio trong train (xem notebook)
   focal_gamma: 2.0
-
   tune_threshold: true          # Tìm threshold tối ưu trên val set sau mỗi epoch
-
   early_stopping:
     enabled: true
     patience: 4
     metric: "val_f1_binary"
     mode: "max"
-
   checkpoint:
     save_dir: "models/checkpoints/fusion"
     save_top_k: 1
     save_every_n_epochs: 0
-
-  quality_tiers:
-    gold: 1.0
-    silver: 0.85
-
   logging:
     backend: "tensorboard"
     log_dir: "runs/fusion"
     log_every_n_steps: 50
-
 # ─── Model overrides cho fusion mode ───
 model:
   semantic:
-    use_lora: true
     pooling: "last"
     gradient_checkpointing: false  # Bật true nếu OOM trên T4
-  graph:
-    unfreeze_top_n: 6
   fusion:
     combine: "gated"
     residual_alpha: 0.3
+

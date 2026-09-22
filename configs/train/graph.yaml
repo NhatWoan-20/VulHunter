@@ -1,53 +1,37 @@
-# ─── Training Configuration (Graph Only Mode) ───
-# Baseline graph-only: GraphCodeBERT + GAT, KHÔNG có semantic.
-# Mục đích: chứng minh graph-only giỏi phát hiện structural vulnerabilities nhưng
-# thiếu context về variable naming/comment → cần fusion với semantic.
-#
-# CRITICAL: BẮT BUỘC unfreeze_top_n=6 (nếu =0, GraphCodeBERT collapse về AUC=0.5).
+﻿# ─── Training Configuration (Graph Only Mode - Pure Structural) ───
+# Baseline graph-only: Thuần túy học cấu trúc từ NodeTypeEmbedding + GAT.
+# KHÔNG sử dụng GraphCodeBERT để nhúng node text.
+# Mục đích: Chứng minh nếu mù ngữ nghĩa (chỉ nhìn thấy Assign, Call, BinOp...)
+# thì model không thể phát hiện lỗi bảo mật tốt.
 training:
   seed: 42
   device: "auto"
   num_workers: 2
   pin_memory: true
-
   optimizer: "adamw"
-  learning_rate: 1.0e-4         # GAT + unfrozen GraphCodeBERT top layers
-  head_learning_rate: 1.0e-4
+  learning_rate: 1.0e-3         # GAT + Embedding table training (lr thường cao hơn LM finetuning)
+  head_learning_rate: 1.0e-3
   weight_decay: 0.01
   max_grad_norm: 1.0
   warmup_ratio: 0.1
-
   scheduler: "cosine"
-  epochs: 25                    # Graph-only hội tụ chậm hơn
-  batch_size: 8                 # No LLM → batch lớn hơn
-  gradient_accumulation_steps: 2
-
+  epochs: 30                    # Thuần cấu trúc cần nhiều epoch hơn để hội tụ
+  batch_size: 16                # Model rất nhỏ, batch có thể cực lớn
+  gradient_accumulation_steps: 1
   focal_alpha: 0.5
   focal_gamma: 2.0
-
   tune_threshold: true
-
   early_stopping:
     enabled: true
     patience: 5
     metric: "val_f1_binary"
     mode: "max"
-
   checkpoint:
     save_dir: "models/checkpoints/graph"
     save_top_k: 1
     save_every_n_epochs: 0
-
-  quality_tiers:
-    gold: 1.0
-    silver: 0.85
-
   logging:
     backend: "tensorboard"
     log_dir: "runs/graph"
     log_every_n_steps: 50
 
-# ─── Model overrides cho graph-only ───
-model:
-  graph:
-    unfreeze_top_n: 6           # ★ CRITICAL: tránh AUC=0.5 collapse

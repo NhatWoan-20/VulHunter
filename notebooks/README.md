@@ -1,6 +1,6 @@
 # Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (2x T4)
 
-> **Mục tiêu:** Chạy mô hình **VulHunter v4.0 (3 tasks)** trên **Kaggle Notebook `GPU T4 x2` + Internet ON** với **Qwen2.5-Coder-1.5B-Instruct**.
+> **Mục tiêu:** Chạy mô hình **VulHunter v4.0 (3 tasks)** trên **Kaggle Notebook `GPU T4 x2` + Internet ON** với **CodeBERT**.
 > **Lưu ý Cốt Lõi:** Toàn bộ quá trình Thu thập dữ liệu (Collection), Trích xuất (Extraction), Tiền xử lý (Preprocessing) và Tạo đồ thị (Graph Generation) **PHẢI ĐƯỢC CHẠY TRÊN MÁY LOCAL**. Kaggle chỉ được sử dụng cho bước cuối cùng là **Huấn luyện (Training)** và **Đánh giá (Evaluation)** nhằm tận dụng GPU.
 
 ---
@@ -25,10 +25,10 @@ python scripts/extraction/prepare_master.py
 python scripts/preprocessing/clean_comments.py
 python scripts/preprocessing/normalize.py
 python scripts/preprocessing/validate_ast.py
-python scripts/preprocessing/strip_docstrings.py
 python scripts/preprocessing/build_samples.py
+python scripts/preprocessing/strip_docstrings.py
 python scripts/preprocessing/split.py
-python scripts/preprocessing/tokenize_qwen.py
+python scripts/preprocessing/tokenization (on-the-fly)
 
 # 4. Xây dựng đồ thị cấu trúc (AST, CFG, DFG, Call Graph)
 python scripts/graph/build_ast.py
@@ -44,7 +44,7 @@ Thay vì upload toàn bộ thư mục `data/` khổng lồ, chúng ta sử dụn
 
 ```powershell
 # Chạy script đóng gói (thêm cờ --with-graphs để mang theo dữ liệu đồ thị cho nhánh fusion)
-python notebooks/prepare_kaggle_dataset.py --with-graphs
+python notebooks/ --with-graphs
 ```
 
 Script này sẽ copy các file chia tách (`train.jsonl`, `validation.jsonl`, `test.jsonl`) và `master_graphs.jsonl` ra thư mục `dist/kaggle_dataset/`.
@@ -75,7 +75,7 @@ kaggle datasets create -p dist/kaggle_dataset
 1. Mở Kaggle Notebook mới hoặc notebook có sẵn của bạn.
 2. Góc phải màn hình, mục **Settings**:
    - **Accelerator**: Chọn **GPU T4 x2**.
-   - **Internet**: Bật **ON** (để mô hình tự động pull Qwen weights trực tiếp từ thư viện HuggingFace).
+   - **Internet**: Bật **ON** (để mô hình tự động pull CodeBERT weights trực tiếp từ thư viện HuggingFace).
 3. Góc phải màn hình, mục **Input**:
    - Bấm **Add Input**.
    - Chọn tab **Your Datasets** và add dataset `vulhunter-pre-tokenized` mà bạn vừa tạo ở Bước 2.
@@ -90,7 +90,7 @@ Upload file `notebooks/train_fusion.ipynb` hoặc `notebooks/train_semantic_only
 
 | Đặc điểm của Kaggle | Tối ưu của VulHunter |
 |---|---|
-| **2x T4 16GB VRAM** | Bằng cách chuyển sang Qwen2.5-Coder-1.5B-Instruct, mô hình có thể được Full Fine-Tune trực tiếp với `fp16`, `gradient_checkpointing` và batch size nhỏ. Không cần LoRA phức tạp. (T4 hỗ trợ FP16 tốt hơn P100 rất nhiều và không gặp lỗi "no kernel image"). |
+| **2x T4 16GB VRAM** | Bằng cách chuyển sang CodeBERT, mô hình có thể được Full Fine-Tune trực tiếp với `fp16`, `gradient_checkpointing` và batch size nhỏ. Không cần Full Fine-tuning phức tạp. (T4 hỗ trợ FP16 tốt hơn P100 rất nhiều và không gặp lỗi "no kernel image"). |
 | **Internet ON** | Không cần tốn dung lượng Kaggle Dataset để lưu trữ weight nguyên bản của mô hình. `transformers` sẽ tự động tải weights từ HuggingFace vào cache. |
 
 ---
@@ -99,3 +99,5 @@ Upload file `notebooks/train_fusion.ipynb` hoặc `notebooks/train_semantic_only
 
 - **Lưu Checkpoint**: Mô hình tốt nhất sẽ được lưu tại `models/checkpoints/best.pt`. Bạn **PHẢI** bấm nút **Save Version** (hoặc Download) trên Kaggle UI trước khi tắt trình duyệt / hết session để không bị mất file checkpoint này!
 - **Lỗi `MISSING train.jsonl`**: Bạn quên chưa thực hiện bước Add Input dataset ở góc phải Notebook.
+
+

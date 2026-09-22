@@ -1,11 +1,10 @@
-import ast
+﻿import ast
 import json
 import textwrap
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
-INPUT = ROOT / "data" / "processed" / "master_validated.jsonl"
-OUTPUT = ROOT / "data" / "processed" / "master_graph_input.jsonl"
-REPORT = ROOT / "reports" / "preprocessing" / "master_strip_docstrings.json"
+INPUT = ROOT / "data" / "processed" / "master_semantic_samples.jsonl"
+OUTPUT = ROOT / "data" / "processed" / "master_graph_samples.jsonl"
 
 
 class DocstringStripper(ast.NodeTransformer):
@@ -39,7 +38,6 @@ def strip_docstrings(code: str) -> str:
 
 def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    REPORT.parent.mkdir(parents=True, exist_ok=True)
 
     rows = skipped = 0
     with INPUT.open("r", encoding="utf-8") as fin, OUTPUT.open("w", encoding="utf-8") as fout:
@@ -49,16 +47,16 @@ def main() -> None:
             row = json.loads(raw)
             try:
                 row["code"] = strip_docstrings(row.get("code", ""))
-                row["safe_code"] = strip_docstrings(row.get("safe_code", ""))
             except Exception:
                 skipped += 1
                 continue
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
             rows += 1
 
-    REPORT.write_text(json.dumps({"input": str(INPUT), "output": str(OUTPUT), "rows": rows, "skipped": skipped}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"input": str(INPUT), "output": str(OUTPUT), "rows": rows, "skipped": skipped}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
     main()
+
+

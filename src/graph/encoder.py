@@ -82,41 +82,6 @@ class NodeTypeEmbedding(nn.Module):
         return self.embedding(idx_tensor)
 
 
-class GraphCodeBERTNodeEmbedding(nn.Module):
-    """Learnable embedding for node texts using GraphCodeBERT."""
-
-    def __init__(self, model_name: str = "microsoft/graphcodebert-base", freeze: bool = True, output_dim: int = 128) -> None:
-        super().__init__()
-        from transformers import AutoModel, AutoTokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
-        if freeze:
-            for param in self.model.parameters():
-                param.requires_grad = False
-        self.proj = nn.Linear(self.model.config.hidden_size, output_dim)
-
-    def forward(self, node_texts: list[str]) -> torch.Tensor:
-        device = self.proj.weight.device
-        chunk_size = 512
-        cls_embs = []
-        
-        # Process in chunks to prevent CUDA OOM on large batches of graphs
-        # This encoder is frozen feature extraction.  Explicit eval prevents
-        # dropout from making structural features change between epochs.
-        self.model.eval()
-        for i in range(0, len(node_texts), chunk_size):
-            chunk = node_texts[i:i + chunk_size]
-            # Use max_length=32 to keep it fast, nodes usually contain short snippets
-            inputs = self.tokenizer(chunk, padding=True, truncation=True, max_length=32, return_tensors="pt")
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                cls_emb_chunk = outputs.last_hidden_state[:, 0, :]
-                cls_embs.append(cls_emb_chunk)
-                
-        cls_emb = torch.cat(cls_embs, dim=0)
-        return self.proj(cls_emb)
 
 
 class GATLayer(nn.Module):
@@ -296,15 +261,9 @@ class GraphEncoder(nn.Module):
         num_heads: int = 8,
         num_edge_types: int = 5,
         dropout: float = 0.2,
-        use_graphcodebert: bool = False,
-        unfreeze_top_n: int = 0,  # Số layer cuối của GraphCodeBERT được unfreeze
     ) -> None:
         super().__init__()
-        self.use_graphcodebert = use_graphcodebert
-        if use_graphcodebert:
-            self.node_embedding = GraphCodeBERTNodeEmbedding(output_dim=node_feature_dim)
-        else:
-            self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
+        self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
 
         # Input projection
         self.input_proj = nn.Linear(node_feature_dim, hidden_dim)
@@ -331,9 +290,7 @@ class GraphEncoder(nn.Module):
             nn.Dropout(dropout),
         )
 
-        # Unfreeze top-N GraphCodeBERT layers nếu được cấu hình
-        if use_graphcodebert and unfreeze_top_n > 0:
-            self.unfreeze_top_layers(unfreeze_top_n)
+
 
     def forward(
         self,
@@ -342,7 +299,6 @@ class GraphEncoder(nn.Module):
         edge_type: torch.Tensor,
         batch: Optional[torch.Tensor] = None,
         return_node_embeddings: bool = False,
-        node_texts: Optional[list[str]] = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Encode a batched heterogeneous program graph.
 
@@ -363,12 +319,7 @@ class GraphEncoder(nn.Module):
                 ``node_embeddings`` has shape ``(N, output_dim)``.
         """
         # Node type → embedding
-        if self.use_graphcodebert:
-            if node_texts is None:
-                node_texts = node_types
-            x = self.node_embedding(node_texts)  # (N, node_feature_dim)
-        else:
-            x = self.node_embedding(node_types)  # (N, node_feature_dim)
+        x = self.node_embedding(node_types)  # (N, node_feature_dim)
         x = self.input_proj(x)                # (N, hidden_dim)
 
         # Apply GAT layers
@@ -394,42 +345,3 @@ class GraphEncoder(nn.Module):
 
         return graph_out
 
-    def unfreeze_top_layers(self, n: int = 6) -> None:
-        """Unfreeze top-N encoder layers của GraphCodeBERT.
-
-        Default GraphCodeBERT 100% frozen → collapse (AUC=0.5). Unfreeze top-6/12
-        layers giúp GCB adapt được với security domain mà vẫn tiết kiệm VRAM.
-
-        Args:
-            n: Số layer cuối được unfreeze. Set 0 để freeze toàn bộ.
-        """
-        if not self.use_graphcodebert:
-            logger.info("unfreeze_top_layers: GraphCodeBERT không bật, skip.")
-            return
-        try:
-            gcb = self.node_embedding.model
-            encoder = getattr(gcb.encoder, "layer", None)
-            if encoder is None:
-                logger.warning("Không tìm thấy gcb.encoder.layer; skip unfreeze.")
-                return
-            n_total = len(encoder)
-            unfreeze_from = max(0, n_total - n)
-            for i, layer in enumerate(encoder):
-                should_train = (i >= unfreeze_from)
-                for p in layer.parameters():
-                    p.requires_grad = should_train
-            # Pooler (nếu có) + projection luôn trainable
-            if hasattr(gcb, "pooler") and gcb.pooler is not None:
-                for p in gcb.pooler.parameters():
-                    p.requires_grad = True
-            for p in self.node_embedding.proj.parameters():
-                p.requires_grad = True
-            trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
-            total_params = sum(p.numel() for p in self.parameters())
-            logger.info(
-                "Unfroze top %d/%d GraphCodeBERT layers. Trainable: %s / %s (%.1f%%)",
-                n, n_total, f"{trainable:,}", f"{total_params:,}",
-                100.0 * trainable / total_params if total_params else 0,
-            )
-        except Exception as e:
-            logger.warning("unfreeze_top_layers(%d) failed: %s", n, e)

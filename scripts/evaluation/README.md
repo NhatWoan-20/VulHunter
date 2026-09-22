@@ -1,4 +1,4 @@
-# Evaluation & Benchmark
+﻿# Evaluation & Benchmark
 
 > **Objective:** Rigorously evaluate trained checkpoints on in-domain test sets and external zero-shot benchmarks.
 
@@ -8,11 +8,9 @@ This directory contains scripts to assess model performance across all tasks.
 
 - **`evaluate.py`**: The primary evaluation script for the in-domain Master Dataset test split. It loads a trained checkpoint (`best.pt`) and computes comprehensive metrics for all 3 tasks:
   - Binary Classification (F1, MCC, AUC, Accuracy)
-  - CWE Classification (Macro-F1, Precision, Recall)
-  - Severity Prediction (F1, Accuracy)
   It outputs a detailed JSON report to `outputs/metrics/evaluation_report.json`.
 
-- **`evaluate_external.py`**: Evaluates model generalization on a held-out, out-of-domain dataset (PyCode-Vul). Since PyCode-Vul lacks program graphs, this script only evaluates the semantic branch of the model (or `semantic_only` checkpoints). It tokenizes the raw source code on the fly using `Qwen2.5-Coder` and tests binary and CWE capabilities.
+- **`evaluate_external.py`**: Evaluates model generalization on a held-out, out-of-domain dataset (PyCode-Vul). Since PyCode-Vul lacks program graphs, this script only evaluates the semantic branch of the model (or `semantic_only` checkpoints). It tokenizes the raw source code on the fly using `CodeBERT` and tests binary and CWE capabilities.
 
 ## How to Run
 
@@ -35,3 +33,6 @@ python scripts/evaluation/evaluate_external.py \
 
 > [!NOTE]
 > Check the `outputs/metrics/` directory for the resulting JSON files. These metrics are used to compare `semantic_only`, `graph_only`, and `fusion` modalities for research evaluation.
+
+
+

@@ -2,17 +2,16 @@
 
 Chạy tuần tự các bước:
     1. Prepare master dataset (gold CVEFixes + silver GHSA)
-    2. Build pair samples (vulnerable vs safe)
+    2. Strip docstrings
     3. Clean comments
     4. Validate AST
-    5. Strip docstrings
+    5. Build pair samples (vulnerable vs safe)
     6. Build graphs (AST, CFG, DFG, Call)
     7. Merge graphs
-    8. Tokenize với Qwen2.5-Coder
-    9. Split train/val/test (repository-disjoint)
+    8. Split train/val/test (repository-disjoint)
 
 Usage:
-    python scripts/preprocessing/run_pipeline.py [--skip-graph] [--skip-tokenize]
+    python scripts/preprocessing/run_pipeline.py [--skip-graph]
 """
 from __future__ import annotations
 
@@ -48,7 +47,6 @@ def run_step(name: str, script: str, *args: str) -> bool:
 def main() -> None:
     p = argparse.ArgumentParser(description="Run full preprocessing pipeline.")
     p.add_argument("--skip-graph", action="store_true", help="Skip graph extraction (chỉ cho semantic_only mode).")
-    p.add_argument("--skip-tokenize", action="store_true", help="Skip Qwen tokenization.")
     p.add_argument("--cvefixes", type=Path, default=ROOT / "data" / "raw" / "python_cvefixes_methods.jsonl")
     p.add_argument("--ghsa", type=Path, default=ROOT / "data" / "raw" / "ghsa" / "ghsa_methods.jsonl")
     args = p.parse_args()
@@ -56,10 +54,10 @@ def main() -> None:
     steps = [
         ("Prepare master dataset", "extraction/prepare_master.py",
          "--cvefixes", str(args.cvefixes), "--ghsa", str(args.ghsa)),
-        ("Build pair samples", "preprocessing/build_samples.py"),
         ("Clean comments", "preprocessing/clean_comments.py"),
         ("Normalize code", "preprocessing/normalize.py"),
         ("Validate AST", "preprocessing/validate_ast.py"),
+        ("Build pair samples", "preprocessing/build_samples.py"),
         ("Strip docstrings", "preprocessing/strip_docstrings.py"),
     ]
 
@@ -79,11 +77,6 @@ def main() -> None:
             if not run_step(name, script):
                 sys.exit(1)
 
-    # Tokenize với Qwen (chỉ khi cần cho semantic/fusion mode)
-    if not args.skip_tokenize:
-        if not run_step("Tokenize with Qwen2.5-Coder", "preprocessing/tokenize_qwen.py"):
-            sys.exit(1)
-
     # Split (LUÔN chạy cuối cùng)
     if not run_step("Repository-disjoint split", "preprocessing/split.py"):
         sys.exit(1)
@@ -97,8 +90,6 @@ def main() -> None:
     logger.info("  - data/splits/test.jsonl")
     if not args.skip_graph:
         logger.info("  - data/processed/master_graphs.jsonl")
-    if not args.skip_tokenize:
-        logger.info("  - data/tokenized/sem_qwen.jsonl")
     logger.info("")
     logger.info("Sẵn sàng cho training! Xem docs/ cho hướng dẫn chi tiết.")
 

@@ -1,4 +1,4 @@
-"""Evaluate a trained CVEFixes model on held-out PyCode-Vul data.
+﻿"""Evaluate a trained CVEFixes model on held-out PyCode-Vul data.
 
 This script is intentionally isolated from the training pipeline. It never writes
 external samples into data/splits and is only used after a checkpoint exists.
@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data" / "raw" / "external")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--tokenizer", default="Qwen/Qwen2.5-Coder-3B-Instruct", help="HuggingFace tokenizer for on-the-fly encoding of external samples.")
+    parser.add_argument("--tokenizer", default="microsoft/codebert-base", help="HuggingFace tokenizer for on-the-fly encoding of external samples.")
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -58,7 +58,6 @@ def convert_external_csv(path: Path, output: Path) -> int:
             record = {
                 "sample_id": f"pycode_vul:{row.get('repo', '')}:{row.get('sha', '')}:{row.get('file_path', '')}:{count}",
                 "data_source": "pycode_vul",
-                "quality_tier": "external_evaluation",
                 "repository": row.get("repo", ""),
                 "sha": row.get("sha", ""),
                 "file_path": row.get("file_path", ""),
@@ -67,8 +66,6 @@ def convert_external_csv(path: Path, output: Path) -> int:
                 "safe_code": "",
                 "binary_label": int(label_value),
                 "label": int(label_value),
-                "cwe_ids": [],
-                "is_cwe_reliable": False,
             }
             target.write(json.dumps(record, ensure_ascii=False) + "\n")
             count += 1
@@ -131,3 +128,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+

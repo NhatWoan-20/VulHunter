@@ -1,4 +1,4 @@
-# 06 — Evaluation & Metrics
+﻿# 06 — Evaluation & Metrics
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
@@ -160,3 +160,4 @@ Evaluation results are saved to JSON:
 - Checkpoints contain full configuration for exact reproduction.
 - `training_history.json` logs per-epoch metrics.
 - Fixed seed (42) for deterministic evaluation.
+

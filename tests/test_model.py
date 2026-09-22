@@ -75,19 +75,7 @@ class TestGraphEncoder:
         graph_out, node_out = encoder(node_types, edge_index, edge_type, return_node_embeddings=True)
         assert node_out.shape == (3, 64)
 
-    def test_unfreeze_top_layers(self):
-        """Verify unfreeze_top_layers correctly unfreezes GraphCodeBERT top layers."""
-        encoder = GraphEncoder(
-            use_graphcodebert=True,
-            node_feature_dim=32, hidden_dim=64, output_dim=64,
-            num_layers=2, num_heads=4,
-        )
-        initial_trainable = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
-        if hasattr(encoder, "unfreeze_top_layers"):
-            encoder.unfreeze_top_layers(n=6)
-        after_trainable = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
-        # Sau unfreeze, trainable params phải TĂNG (không giảm).
-        assert after_trainable >= initial_trainable
+
 
 
 class TestCrossModalFusion:
@@ -172,20 +160,6 @@ class TestBinaryClassificationLoss:
         losses = criterion(binary_logits=binary_logits, binary_targets=binary_targets)
         assert "total" in losses
         assert "binary" in losses
-        assert losses["total"].item() > 0
-
-    def test_with_sample_weights(self):
-        """Quality-tier weights (gold=1.0, silver=0.85) hoạt động đúng."""
-        criterion = BinaryClassificationLoss()
-        binary_logits = torch.randn(8, 1)
-        binary_targets = torch.randint(0, 2, (8,))
-        sample_weights = torch.tensor([1.0, 0.85, 1.0, 0.85, 1.0, 0.85, 1.0, 0.85])
-        losses = criterion(
-            binary_logits=binary_logits,
-            binary_targets=binary_targets,
-            sample_weights=sample_weights,
-        )
-        assert "total" in losses
         assert losses["total"].item() > 0
 
 

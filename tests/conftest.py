@@ -1,4 +1,4 @@
-"""Shared test fixtures for VulHunter test suite."""
+﻿"""Shared test fixtures for VulHunter test suite."""
 from __future__ import annotations
 
 import json
@@ -27,9 +27,7 @@ def login(username):
 SAMPLE_RECORD = {
     "sample_id": "test001",
     "pair_id": "test001",
-    "data_source": "cvefixes",
-    "quality_tier": "gold",
-    "cve_id": "CVE-2024-0001",
+    "data_source": "cvefixes",    "cve_id": "CVE-2024-0001",
     "repository": "test/repo",
     # Canonical keys (post-prepare_master / build_samples):
     "file_path": "app.py",
@@ -42,10 +40,8 @@ SAMPLE_RECORD = {
     "code": SAMPLE_VULNERABLE_CODE.strip(),
     "safe_code": SAMPLE_SAFE_CODE.strip(),
     "binary_label": 1,
-    "cwe_ids": ["CWE-89"],
     "line_labels": [0, 1, 1],
     "vulnerable_lines": [2, 3],
-    "severity": "HIGH",
 }
 
 
@@ -74,7 +70,6 @@ def tmp_jsonl(tmp_path: Path) -> Path:
             "code": SAMPLE_VULNERABLE_CODE.strip() if i % 2 == 0 else SAMPLE_SAFE_CODE.strip(),
             "safe_code": SAMPLE_SAFE_CODE.strip(),
             "label": i % 2,
-            "cwe_ids": ["CWE-89"] if i % 2 == 0 else [],
             "line_labels": [0, 1, 1] if i % 2 == 0 else [0, 0, 0],
             "vulnerable_lines": [2, 3] if i % 2 == 0 else [],
             "repository": f"repo_{i % 3}",
@@ -85,3 +80,5 @@ def tmp_jsonl(tmp_path: Path) -> Path:
         for rec in records:
             f.write(json.dumps(rec) + "\n")
     return path
+
+

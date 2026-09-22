@@ -1,4 +1,4 @@
-﻿# 03 — System Architecture
+# 03 — System Architecture
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
@@ -16,8 +16,8 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
            ▼                                                   ▼
  ┌──────────────────────┐                            ┌──────────────────────┐
  │   Semantic Branch     │                            │     Graph Branch     │
- │  (Qwen2.5-Coder +   │                            │ (AST+CFG+DFG+Call GAT)│
- │   LoRA, r=16/α=32)  │                            │  GraphCodeBERT        │
+ │  (CodeBERT +   │                            │ (AST+CFG+DFG+Call GAT)│
+ │   Full Fine-tuning, r=16/α=32)  │                            │  Pure Structural Graph        │
  │  Last-token pooling  │                            │  unfreeze top-6      │
  └──────────┬───────────┘                            └──────────┬───────────┘
              │ H_sem ∈ ℝ^(B×L×D) + h_sem ∈ ℝ^(B×D) pool      │ H_graph ∈ ℝ^(B×N×D) / h_graph ∈ ℝ^(B×D)
@@ -50,10 +50,10 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 
 | Property | Value |
 |---|---|
-| **Backbone** | `Qwen/Qwen2.5-Coder-1.5B-Instruct` |
+| **Backbone** | `CodeBERT/CodeBERT` |
 | **Context Length** | 2,048 tokens |
 | **Pooling** | **Last-token pooling** (optimal for decoder-only LLMs) |
-| **Fine-tuning** | **LoRA** (r=16, α=32, dropout=0.05, RSLoRA enabled) |
+| **Fine-tuning** | **Full Fine-tuning** (r=16, α=32, dropout=0.05, RSFull Fine-tuning enabled) |
 | **Target Modules** | `q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj` |
 | **Gradient Checkpointing** | Optional (enable for VRAM < 14GB) |
 | **Output** | `h_sem ∈ ℝ^D` (pooled representation, D=256) |
@@ -67,7 +67,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 | **Hidden/Output Dim** | 256 |
 | **Edge Types (5)** | `AST_CHILD`, `NEXT_STATEMENT`, `CONTROL_FLOW`, `DATA_FLOW`, `CALL` (`EDGE_TYPE_MAP`) |
 | **Readout** | Mean-pool over nodes → `h_graph ∈ ℝ^D` |
-| **GraphCodeBERT** | Unfreeze top-6 layers (critical to avoid AUC=0.5 collapse) |
+| **Pure Structural Graph** | Unfreeze top-6 layers (critical to avoid AUC=0.5 collapse) |
 
 ### 2.3 Cross-Modal Fusion (`src/fusion/cross_attention.py`)
 
@@ -97,17 +97,17 @@ VulHunter supports three modes, selected via `--mode` flag:
 
 | Mode | Semantic Encoder | Graph Encoder | Fusion | Use Case |
 |---|---|---|---|---|
-| `semantic_only` | ✓ Qwen + LoRA | ✗ | ✗ | Semantic baseline |
-| `graph_only` | ✗ | ✓ GraphCodeBERT + GAT | ✗ | Structural baseline |
-| `fusion` (Proposed) | ✓ Qwen + LoRA | ✓ GraphCodeBERT + GAT | ✓ Gated Cross-Attn | **Main approach** |
+| `semantic_only` | ✓ CodeBERT | ✗ | ✗ | Semantic baseline |
+| `graph_only` | ✗ | ✓ Pure Structural Graph + GAT | ✗ | Structural baseline |
+| `fusion` (Proposed) | ✓ CodeBERT | ✓ Pure Structural Graph + GAT | ✓ Gated Cross-Attn | **Main approach** |
 
 ---
 
 ## 4. Data Flow
 
 1. **Input:** Python function code string
-2. **Semantic Branch:** Tokenize with Qwen tokenizer → LoRA fine-tuned Qwen2.5-Coder → last-token pooling → `h_sem`
-3. **Graph Branch:** Parse AST/CFG/DFG/Call → heterogeneous graph → GraphCodeBERT + GAT → mean pool → `h_graph`
+2. **Semantic Branch:** Tokenize with CodeBERT tokenizer → Full Fine-tuning fine-tuned CodeBERT → last-token pooling → `h_sem`
+3. **Graph Branch:** Parse AST/CFG/DFG/Call → heterogeneous graph → Pure Structural Graph + GAT → mean pool → `h_graph`
 4. **Fusion:** Cross-attend `h_sem` and `h_graph` → residual skip → `h_fused`
 5. **Prediction:** Binary head → logit → sigmoid → `p(vulnerable)`
 
@@ -120,16 +120,12 @@ All hyperparameters are centralized in `configs/model/default.yaml`:
 ```yaml
 model:
   semantic:
-    backbone: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+    backbone: "CodeBERT/CodeBERT"
     output_dim: 256
     freeze_layers: 28
-    pooling: "last"
-    use_lora: true
-    lora_r: 16
-    lora_alpha: 32
+    pooling: "cls"
   graph:
-    use_graphcodebert: true
-    unfreeze_top_n: 6  # Critical: avoid AUC=0.5 collapse
+
     num_layers: 4
     num_heads: 8
   fusion:
@@ -140,3 +136,6 @@ model:
       hidden_dim: 128
       dropout: 0.3
 ```
+
+
+

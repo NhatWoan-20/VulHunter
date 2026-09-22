@@ -1,4 +1,4 @@
-# 04 — Data Engineering & Splitting: The Master Dataset Strategy
+﻿# 04 — Data Engineering & Splitting: The Master Dataset Strategy
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
@@ -48,20 +48,19 @@ python scripts/preprocessing/run_pipeline.py --skip-tokenize
 
 ```
 data/raw/python_cvefixes_methods.jsonl ─┐
-                                        ├─ prepare_master.py  (unify schema, noise filter, quality tiers)
+                                        ├─ prepare_master.py  (unify schema, noise filter)
 data/raw/ghsa/ghsa_methods.jsonl ─────────┘
   ▼ data/raw/master_methods.jsonl          (15,351 pairs)
-build_samples.py                           (pair → vulnerable + safe role)
-  ▼ data/final/master_samples.jsonl       (30,454 per-role samples)
 clean_comments.py                          (remove code comments)
 normalize.py                              (normalize whitespace/indentation)
 validate_ast.py                           (verify valid Python AST)
+build_samples.py                           (pair → vulnerable + safe role)
+  ▼ data/processed/master_semantic_samples.jsonl       (Docstrings retained for Semantic)
 strip_docstrings.py                       (remove docstrings)
-  ▼ data/processed/master_graph_input.jsonl
+  ▼ data/processed/master_graph_samples.jsonl (For Graph Branch)
 build_ast.py → build_cfg.py → build_dfg.py → build_call.py → merge_graphs.py
   ▼ data/processed/master_graphs.jsonl    (30,427 heterogeneous graphs)
-tokenize_qwen.py                         (Qwen2.5-Coder tokenization)
-  ▼ data/splits/{train,validation,test}.jsonl (in-place input_ids_qwen)
+tokenization (on-the-fly)                         (CodeBERT tokenization)
 split.py                                 (80/10/10 repo-disjoint)
   ▼ data/splits/{train,validation,test}.jsonl
 ```
@@ -82,14 +81,7 @@ GHSA fix commits contain non-application code; such methods are dropped:
 Applied during `prepare_master.py`: **4,683 GHSA methods removed** (27.5%).
 CVEFixes gold intact (already reviewed).
 
-### 3.2 Quality Tiers
 
-| Tier | Source | Weight | Description |
-|---|---|---|---|
-| `gold` | CVEFixes | **1.00** | Human-reviewed vulnerability fixes |
-| `silver` | GHSA | **0.85** | Automatically extracted fixes |
-
-Sample weights are computed in `src/utils/losses.py::QUALITY_TIER_WEIGHTS`.
 
 ---
 
@@ -97,28 +89,14 @@ Sample weights are computed in `src/utils/losses.py::QUALITY_TIER_WEIGHTS`.
 
 ### 4.1 Master Record Schema
 
-Every Master pair uses one canonical schema and carries `quality_tier`:
 
 ```json
 {
   "sample_id": "cvefixes:98919200308f75a4",
-  "pair_id": "cvefixes:98919200308f75a4",
-  "data_source": "cvefixes",
-  "quality_tier": "gold",
-  "source": "cvefixes",
-  "source_id": "CVE-2021-2765",
-  "cve_id": "CVE-2021-2765",
   "repository": "irmen/pyro3",
-  "sha": "554e095a62c4412c91f981e72fd34a936ac2bf1e",
-  "file_path": "daemonizer.py",
-  "function_name": "__init__",
-  "full_function_name": "__init__",
-  "signature": "__init__( self , pidfile = None )",
   "code": "def __init__(self, pidfile=None):\n    if not pidfile:\n        self.pidfile = \"/tmp/%s.pid\" % self.__class__.__name__.lower()\n    else:\n        self.pidfile = pidfile",
   "safe_code": "def __init__(self, pidfile=None):\n    if not pidfile:\n        self.pidfile = \"/var/run/pyro-%s.pid\" % self.__class__.__name__.lower()\n    else:\n        self.pidfile = pidfile",
   "binary_label": 1,
-  "severity": "MEDIUM",
-  "cwe_ids": ["CWE-59"]
 }
 ```
 
@@ -129,14 +107,10 @@ After `build_samples.py`, each pair expands into two samples:
 ```json
 {
   "sample_id": "cvefixes:98919200308f75a4:vulnerable",
-  "pair_id": "cvefixes:98919200308f75a4",
-  "role": "vulnerable",
-  "data_source": "cvefixes",
   "code": "def __init__(self, pidfile=None):\n    ...",
   "binary_label": 1,
-  "quality_tier": "gold",
-  "input_ids_qwen": [151643, 29871, ...],
-  "attention_mask_qwen": [1, 1, ...]
+  "input_ids": [151643, 29871, ...],
+  "attention_mask": [1, 1, ...]
 }
 ```
 
@@ -172,3 +146,9 @@ Binary labels are balanced within every split (per-role vulnerable+safe twins).
 | PyCode-Vul test (3,563) | Final OOD benchmark | Evaluation only |
 
 PyCode-Vul is **evaluation-only**: never used for training or checkpoint selection.
+
+
+
+
+
+

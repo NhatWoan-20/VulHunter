@@ -2,11 +2,7 @@
 
 Implements:
     - FocalLoss: For imbalanced binary classification
-    - BinaryClassificationLoss: Wrapper cho FocalLoss với quality-tier sample weighting
-
-Quality-aware sample weighting (Pillar 4):
-    Gold CVEFixes samples keep full weight, silver GHSA samples are down-weighted
-    so noisy auto-derived diffs perturb gradients less.
+    - BinaryClassificationLoss: Wrapper cho FocalLoss
 """
 from __future__ import annotations
 
@@ -15,12 +11,6 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-QUALITY_TIER_WEIGHTS = {
-    "gold": 1.0,
-    "silver": 0.85,
-}
 
 
 class FocalLoss(nn.Module):
@@ -57,7 +47,7 @@ class FocalLoss(nn.Module):
 
 
 class BinaryClassificationLoss(nn.Module):
-    """Binary focal loss với quality-tier sample weighting.
+    """Binary focal loss.
 
     Returns dict với keys 'binary' và 'total' để tương thích API cũ.
     """
@@ -72,29 +62,15 @@ class BinaryClassificationLoss(nn.Module):
         self,
         binary_logits: torch.Tensor,
         binary_targets: torch.Tensor,
-        sample_weights: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         """Compute binary focal loss.
 
         Args:
             binary_logits: Logits shape ``(B, 1)`` hoặc ``(B,)``.
             binary_targets: Targets shape ``(B,)`` values in {0, 1}.
-            sample_weights: Optional per-sample weights (gold=1.0, silver=0.85).
 
         Returns:
             Dict với keys 'binary' và 'total'.
         """
-        if sample_weights is None:
-            loss = self.focal_loss(binary_logits, binary_targets)
-        else:
-            # Tính loss per-sample để áp dụng weights
-            logits = binary_logits.view(-1)
-            targets = binary_targets.float().view(-1)
-            weights = sample_weights.float().view(-1)
-            ce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
-            probs = torch.sigmoid(logits)
-            p_t = probs * targets + (1 - probs) * (1 - targets)
-            alpha_t = self.focal_alpha * targets + (1 - self.focal_alpha) * (1 - targets)
-            values = alpha_t * (1 - p_t).pow(self.focal_gamma) * ce
-            loss = (values * weights).sum() / weights.sum().clamp(min=1e-6)
+        loss = self.focal_loss(binary_logits, binary_targets)
         return {"binary": loss, "total": loss}

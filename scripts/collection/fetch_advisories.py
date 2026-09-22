@@ -1,4 +1,4 @@
-"""Step 1: Fetch Security Advisories for the PIP (Python) ecosystem from GitHub GraphQL API.
+﻿"""Step 1: Fetch Security Advisories for the PIP (Python) ecosystem from GitHub GraphQL API.
 
 Usage:
     python scripts/collection/fetch_advisories.py [--token <GITHUB_PAT>] [--limit <N>] [--resume]
@@ -31,7 +31,6 @@ logger = logging.getLogger("vulhunter.fetch_advisories")
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = ROOT / "data" / "raw" / "ghsa" / "advisories.jsonl"
-DEFAULT_REPORT = ROOT / "reports" / "collection" / "fetch_advisories_report.json"
 
 GRAPHQL_QUERY = """
 query GetPipAdvisories($cursor: String) {
@@ -101,11 +100,6 @@ def extract_advisory_record(node: dict[str, Any]) -> dict[str, Any] | None:
             break
 
     # Extract CWE IDs
-    cwe_ids = []
-    for cwe_node in advisory.get("cwes", {}).get("nodes", []):
-        cwe_id = cwe_node.get("cweId")
-        if cwe_id:
-            cwe_ids.append(cwe_id)
 
     # Extract Fix Commits from references
     references = [ref.get("url") for ref in advisory.get("references", []) if ref.get("url")]
@@ -160,7 +154,6 @@ def main() -> None:
         sys.exit(1)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
 
     client = GitHubClient(token=token)
 
@@ -247,12 +240,10 @@ def main() -> None:
         "advisories_with_cwe": cwe_count,
         "total_fix_commits": total_commits,
     }
-    args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     logger.info("=== STEP 1 COMPLETED ===")
     logger.info("Total Advisories with Fix Commits: %d", len(all_records))
     logger.info("Advisories with valid CVE: %d", cve_count)
-    logger.info("Advisories with valid CWE: %d", cwe_count)
     logger.info("Total Fix Commits found: %d", total_commits)
     logger.info("Output saved to: %s", args.output)
     logger.info("Report saved to: %s", args.report)
@@ -260,3 +251,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

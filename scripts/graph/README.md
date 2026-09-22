@@ -1,4 +1,4 @@
-# Program Graph Generation
+﻿# Program Graph Generation
 
 > **Objective:** Extract structural representations (AST, CFG, DFG, Call Graph) from source code to form heterogeneous graphs.
 
@@ -8,7 +8,7 @@ This directory handles the generation of program graphs necessary for the `graph
 
 ```mermaid
 flowchart TD
-    A(master_samples.jsonl) --> B1[build_ast.py]
+    A(master_graph_samples.jsonl) --> B1[build_ast.py]
     A --> B2[build_cfg.py]
     A --> B3[build_dfg.py]
     A --> B4[build_call.py]
@@ -36,7 +36,7 @@ flowchart TD
 
 ## Input / Output
 
-- **Input**: The cleaned but un-tokenized samples from `data/final/master_samples.jsonl`.
+- **Input**: The cleaned but un-tokenized samples from `data/final/master_graph_samples.jsonl`.
 - **Outputs**:
   - Intermediate graphs: `data/processed/master_{ast,cfg,dfg,call}.jsonl`
   - Final merged graph dataset: `data/processed/master_graphs.jsonl`
@@ -58,3 +58,4 @@ python scripts/graph/merge_graphs.py
 
 > [!TIP]
 > Graph extraction can be CPU-intensive. The scripts process the dataset independently and handle cases where code cannot be parsed perfectly by dropping or falling back gracefully.
+

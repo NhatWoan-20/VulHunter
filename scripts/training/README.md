@@ -1,4 +1,4 @@
-# Model Training
+﻿# Model Training
 
 > **Objective:** Train the multi-task, multi-modal VulHunter model.
 
@@ -8,7 +8,7 @@ This directory contains the central training script for the project. It orchestr
 
 - **`train.py`**: The master training script. It handles:
   - **3 Operating Modes**: `semantic_only` (LLM only), `graph_only` (GAT only), and `fusion` (Cross-Attention between LLM and GAT).
-  - **Multi-Task Optimization**: Jointly optimizes 3 loss heads (Binary, CWE, Severity) weighted by sample quality (gold/silver).
+  - **Binary Optimization**: Jointly optimizes binary loss head (Binary) weighted by sample quality (gold/silver).
   - **Hardware Acceleration**: Mixed Precision (AMP FP16), and Gradient Checkpointing, optimized for Kaggle 2x T4 (16GB) DataParallel setups.
 
 ## Configuration
@@ -35,7 +35,7 @@ python scripts/training/train.py \
 ```
 
 ### 2. Semantic-Only Mode (LLM Only)
-Trains only the Qwen2.5-Coder semantic encoder. Does not require graph data.
+Trains only the CodeBERT semantic encoder. Does not require graph data.
 
 ```bash
 python scripts/training/train.py \
@@ -60,3 +60,6 @@ python scripts/training/train.py \
 
 > [!IMPORTANT]
 > The early stopping mechanism monitors the **validation binary F1 score**. The best checkpoint will be saved to `models/checkpoints/best.pt`.
+
+
+

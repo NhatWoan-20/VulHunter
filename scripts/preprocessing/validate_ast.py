@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -7,8 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INPUT = ROOT / "data" / "processed" / "master_normalized.jsonl"
-OUTPUT = ROOT / "data" / "processed" / "master_validated.jsonl"
-REPORT = ROOT / "reports" / "preprocessing" / "master_validate_ast.json"
+OUTPUT = ROOT / "data" / "processed" / "master_validated_ast.jsonl"
 
 
 def try_parse(code: str) -> tuple[bool, str]:
@@ -31,7 +30,6 @@ def try_parse(code: str) -> tuple[bool, str]:
 
 
 def main() -> None:
-    REPORT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 
     total = kept = skipped = 0
@@ -53,10 +51,10 @@ def main() -> None:
             row["syntax_validation"] = {"code": code_strategy, "safe_code": safe_strategy}
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    report = {"input": str(INPUT), "output": str(OUTPUT), "total": total, "kept": kept, "skipped": skipped, "strategy_counts": strategy_counts}
-    REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"input": str(INPUT), "output": str(OUTPUT), "total": total, "kept": kept, "skipped": skipped, "strategy_counts": strategy_counts}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
     main()
+
+

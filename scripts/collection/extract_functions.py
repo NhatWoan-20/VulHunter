@@ -1,11 +1,10 @@
-"""Step 2: Extract changed Python functions from Fix Commits.
+﻿"""Step 2: Extract changed Python functions from Fix Commits.
 
 Crawls GitHub REST API to download vulnerable/patched Python files from
 fix commits identified in Step 1, then uses AST to extract the specific
 functions that were modified.
 
 Output schema (raw collection — NO line-level labels):
-    sample_id, cve_id, ghsa_id, data_source, quality_tier,
     repository, sha, file, function, full_function_name,
     severity, signature, code, safe_code, label, cwe_ids
 
@@ -46,7 +45,6 @@ logger = logging.getLogger("vulhunter.extract_functions")
 
 DEFAULT_INPUT = ROOT / "data" / "raw" / "ghsa" / "advisories.jsonl"
 DEFAULT_OUTPUT = ROOT / "data" / "raw" / "ghsa" / "ghsa_methods.jsonl"
-DEFAULT_REPORT = ROOT / "data" / "reports" / "collection" / "extract_functions_report.json"
 
 
 def parse_args() -> argparse.Namespace:
@@ -146,7 +144,6 @@ def process_commit(
                 "cve_id": advisory.get("cve_id"),
                 "ghsa_id": advisory.get("ghsa_id"),
                 "data_source": "ghsa",
-                "quality_tier": "gold",
                 "repository": f"{owner}/{repo}",
                 "sha": sha,
                 "file": filename,
@@ -284,11 +281,13 @@ def main() -> None:
     logger.info("Total Extracted Method Pairs: %d", len(all_samples))
     logger.info("Unique CVEs: %d", len(unique_cves))
     logger.info("Unique Repositories: %d", len(unique_repos))
-    logger.info("Samples with valid CWE: %d (%.1f%%)", samples_with_cwe, (samples_with_cwe / len(all_samples) * 100) if all_samples else 0.0)
     logger.info("Output saved to: %s", args.output)
     logger.info("Report saved to: %s", args.report)
 
 
 if __name__ == "__main__":
     main()
+
+
+
 

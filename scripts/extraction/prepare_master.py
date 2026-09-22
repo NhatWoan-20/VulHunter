@@ -1,10 +1,9 @@
-"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) cho binary classification.
+﻿"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) cho binary classification.
 
 Implements (docs/04_dataset.md § Pillar 1-3):
     - Strict noise / test-code cleansing: drop methods whose file path indicates tests, mock,
       or config scaffolding (tests/, test_, testing/, mocks/, conftest.py, setup.py, ...).
-    - Schema unification to a single canonical record với quality_tier attribute
-      ("gold" cho CVEFixes, "silver" cho GHSA).
+    - Schema unification to a single canonical record.
     - Canonical lowercase `repository` key so Pillar 2's cross-dataset repository-disjoint split
       treats the same repo across sources as a single group.
 
@@ -29,10 +28,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CVEFIXES = ROOT / "data" / "raw" / "python_cvefixes_methods.jsonl"
 DEFAULT_GHSA = ROOT / "data" / "raw" / "ghsa" / "ghsa_methods.jsonl"
 DEFAULT_OUTPUT = ROOT / "data" / "raw" / "master_methods.jsonl"
-DEFAULT_REPORT = ROOT / "reports" / "extraction" / "prepare_master.json"
 
-GOLD_TIER = "gold"
-SILVER_TIER = "silver"
+
 
 # Paths that indicate test / mock / build-config code rather than real application source.
 NOISE_SUBSTRINGS = (
@@ -74,29 +71,12 @@ def is_noise_path(file_path: str) -> bool:
 
 def _cvefixes_record(raw: dict) -> dict | None:
     repo = canonical_repo(raw.get("repository"))
-    severity = str(raw.get("severity") or "UNKNOWN").strip().upper()
-    if severity == "NAN":
-        severity = "UNKNOWN"
     return {
         "sample_id": f"cvefixes:{raw.get('sample_id')}",
-        "pair_id": f"cvefixes:{raw.get('sample_id')}",
-        "data_source": "cvefixes",
-        "quality_tier": GOLD_TIER,
-        "source": "cvefixes",
-        "source_id": raw.get("cve_id"),
-        "cve_id": raw.get("cve_id"),
-        "ghsa_id": raw.get("ghsa_id"),
         "repository": repo,
-        "sha": raw.get("sha"),
-        "file_path": raw.get("file_path"),
-        "function_name": raw.get("function_name") or raw.get("full_function_name"),
-        "full_function_name": raw.get("full_function_name"),
-        "signature": raw.get("signature"),
         "code": raw.get("code", ""),
         "safe_code": raw.get("safe_code", ""),
         "binary_label": int(raw.get("binary_label", 1)),
-        "severity": severity,
-        "cwe_ids": raw.get("cwe_ids", []),
     }
 
 
@@ -110,29 +90,14 @@ def _ghsa_record(raw: dict) -> dict | None:
     if not code or not safe_code:
         return None
 
-    severity = str(raw.get("severity") or "UNKNOWN").strip().upper()
     repo = canonical_repo(raw.get("repository"))
 
     return {
         "sample_id": f"ghsa:{raw.get('sample_id')}",
-        "pair_id": f"ghsa:{raw.get('sample_id')}",
-        "data_source": "ghsa",
-        "quality_tier": SILVER_TIER,
-        "source": "ghsa",
-        "source_id": raw.get("cve_id"),
-        "cve_id": raw.get("cve_id"),
-        "ghsa_id": raw.get("ghsa_id"),
         "repository": repo,
-        "sha": raw.get("sha"),
-        "file_path": file_path,
-        "function_name": raw.get("function") or raw.get("full_function_name"),
-        "full_function_name": raw.get("full_function_name"),
-        "signature": raw.get("signature"),
         "code": code,
         "safe_code": safe_code,
         "binary_label": int(raw.get("label", raw.get("binary_label", 1))),
-        "severity": severity,
-        "cwe_ids": raw.get("cwe_ids", []),
     }
 
 
@@ -199,19 +164,15 @@ def main() -> None:
             fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     # Stats
-    tiers = Counter(x.get("quality_tier") for x in out_rows)
+
     labels = Counter(x.get("binary_label") for x in out_rows)
-    sevs = Counter(x.get("severity") for x in out_rows)
-    cwe_count = sum(1 for x in out_rows if x.get("cwe_ids"))
 
     report = {
         "input": {"cvefixes": str(args.cvefixes), "ghsa": str(args.ghsa)},
         "output": str(args.output),
         "total_pairs": len(out_rows),
-        "tiers": dict(tiers),
+
         "binary_labels": dict(labels),
-        "severity": dict(sevs),
-        "pairs_with_cwe": cwe_count,
         "cross_dataset_shared_repos": len(shared_repos),
         "shared_repos_sample": sorted(shared_repos)[:10],
         **stats,
@@ -222,3 +183,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

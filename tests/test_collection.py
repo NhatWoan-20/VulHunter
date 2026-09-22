@@ -1,4 +1,4 @@
-"""Unit and Integration Tests for GHSA Collection Pipeline.
+﻿"""Unit and Integration Tests for GHSA Collection Pipeline.
 
 Validates:
 1. AST function extraction on complex Python code.
@@ -16,7 +16,7 @@ import logging
 import sys
 from pathlib import Path
 
-# tests/ → parent is the project root (one level up).
+# tests/ ? parent is the project root (one level up).
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -118,7 +118,6 @@ def test_schema_compatibility_and_50_samples() -> None:
         "code",
         "safe_code",
         "binary_label",
-        "cwe_ids",
         "line_labels",
         "vulnerable_lines",
     }
@@ -139,23 +138,18 @@ def test_schema_compatibility_and_50_samples() -> None:
             "sample_id": sample_id(repo, sha, filename, func_name),
             "cve_id": s.get("cve_id"),
             "ghsa_id": f"GHSA-test-{i:04d}",
-            "data_source": "ghsa",
-            "quality_tier": "gold",
-            "repository": repo,
+            "data_source": "ghsa",            "repository": repo,
             "sha": sha,
             "file_path": filename,
             "function_name": func_name,
             "file": filename,
             "function": func_name,
             "full_function_name": func_name,
-            "is_cwe_reliable": True,
-            "severity": s.get("severity", "HIGH"),
             "signature": s.get("signature", ""),
             "code": v_code,
             "safe_code": s_code,
             "binary_label": 1,
             "label": 1,
-            "cwe_ids": s.get("cwe_ids", ["CWE-89"]),
             "line_labels": labels,
             "vulnerable_lines": vuln_lines,
         }
@@ -184,9 +178,11 @@ def main() -> None:
     test_line_labels()
     test_schema_compatibility_and_50_samples()
     logger.info("==========================================")
-    logger.info("ALL TESTS PASSED SUCCESSFULLY! ✅")
+    logger.info("ALL TESTS PASSED SUCCESSFULLY! ?")
     logger.info("==========================================")
 
 
 if __name__ == "__main__":
     main()
+
+

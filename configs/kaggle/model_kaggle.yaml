@@ -1,4 +1,4 @@
-# configs/kaggle/model_kaggle.yaml
+﻿# configs/kaggle/model_kaggle.yaml
 # Tối ưu cho Kaggle 2x T4 16GB (Internet ON).
 # Binary classification: Qwen2.5-Coder-1.5B + LoRA + GraphCodeBERT + GAT.
 #   - LoRA r=16/α=32 thay vì unfreeze top layers (tiết kiệm VRAM ~4GB).
@@ -16,14 +16,7 @@ model:
     pooling: "last"            # ★ Last-token pooling cho decoder-only
     gradient_checkpointing: true  # ★ Quan trọng: tiết kiệm VRAM ~3GB
     use_fp16: true
-    use_lora: true             # ★ LoRA: chỉ ~30M params trainable thay vì 1.5B
-    lora_r: 16
-    lora_alpha: 32
-    lora_dropout: 0.05
-    use_rslora: true
-    lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
   graph:
-    use_graphcodebert: true
     node_feature_dim: 128
     hidden_dim: 256
     output_dim: 256
@@ -31,7 +24,6 @@ model:
     num_heads: 8
     num_edge_types: 5
     dropout: 0.2
-    unfreeze_top_n: 6          # ★ Unfreeze 6/12 GraphCodeBERT top layers
   fusion:
     hidden_dim: 256
     num_heads: 8
@@ -41,3 +33,4 @@ model:
     residual_alpha: 0.3        # ★ 30% semantic residual skip
   heads:
     binary: {hidden_dim: 128, dropout: 0.3}
+

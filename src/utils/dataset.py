@@ -17,7 +17,6 @@ import torch
 from torch.utils.data import Dataset
 
 from src.graph.encoder import EDGE_TYPE_MAP
-from src.utils.losses import QUALITY_TIER_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
@@ -171,19 +170,13 @@ class VulHunterDataset(Dataset):
         result: dict = {"sample_id": sample.get("sample_id", str(idx))}
 
         # ── Semantic features ──
-        if "input_ids_qwen" in sample:
-            ids = sample["input_ids_qwen"][: self.max_length]
-            mask = sample.get("attention_mask_qwen", [1] * len(ids))[: self.max_length]
-            result["input_ids"] = torch.tensor(ids, dtype=torch.long)
-            result["attention_mask"] = torch.tensor(mask, dtype=torch.long)
-
-        elif self.tokenizer and "code" in sample:
+        if self.tokenizer and "code" in sample:
             encoded = self.tokenizer(
                 sample["code"],
                 truncation=True,
                 max_length=self.max_length,
                 return_tensors="pt",
-                return_offsets_mapping=True,
+                return_offsets_mapping=False,
             )
             result["input_ids"] = encoded["input_ids"].squeeze(0)
             result["attention_mask"] = encoded["attention_mask"].squeeze(0)
@@ -191,7 +184,6 @@ class VulHunterDataset(Dataset):
         # ── Labels (chỉ binary) ──
         result["binary_label"] = sample.get("binary_label", 0)
         result["code"] = sample.get("code", "")
-        result["quality_tier"] = sample.get("quality_tier", "gold")
 
         # ── Graph features ──
         sid = sample.get("sample_id")
@@ -242,11 +234,6 @@ def collate_fn(batch: list[dict]) -> dict:
 
     # Binary labels (chỉ task duy nhất)
     result["binary_labels"] = torch.tensor([s["binary_label"] for s in batch], dtype=torch.long)
-    result["quality_tiers"] = [s.get("quality_tier", "gold") for s in batch]
-    result["sample_weights"] = torch.tensor(
-        [QUALITY_TIER_WEIGHTS.get(s.get("quality_tier", "gold"), 1.0) for s in batch],
-        dtype=torch.float,
-    )
     result["codes"] = [s.get("code", "") for s in batch]
 
     if "node_types" in batch[0]:

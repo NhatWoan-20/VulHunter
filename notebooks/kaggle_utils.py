@@ -1,10 +1,10 @@
-"""
+﻿"""
 kaggle_utils.py — Helper cho Kaggle (Internet ON, 2x T4, 1.5B Full Fine-Tune).
 
 Giả định Kaggle:
   - Internet luôn bật  -> pull tokenizer/model trực tiếp từ HF, không cần snapshot
-  - 2x T4 16GB        -> Qwen-1.5B full fine-tune vừa vặn 16GB.
-  - Data đã chia sẵn  -> /kaggle/input/<dataset>/train.jsonl (pre-tokenized) mount read-only,
+  - 2x T4 16GB        -> CodeBERT-1.5B full fine-tune vừa vặn 16GB.
+  - Data đã chia sẵn  -> /kaggle/input/<dataset>/train.jsonl \(raw code\) mount read-only,
                         dùng thẳng không cần copy 370MB hay re-tokenize.
 """
 from __future__ import annotations
@@ -113,7 +113,7 @@ def print_gpu_info():
 def estimate_vram(backbone: str, dual: bool = True) -> str:
     # DataParallel vẫn replicate model mỗi GPU nên per-GPU VRAM không giảm
     t = {
-        "Qwen/Qwen2.5-Coder-1.5B-Instruct": "1.5B: ~11GB/GPU fp16+ckpt bs2 — vừa 16GB T4",
+        "CodeBERT/CodeBERT": "1.5B: ~11GB/GPU fp16+ckpt bs2 — vừa 16GB T4",
     }
     return t.get(backbone, "—")
 
@@ -143,7 +143,7 @@ def setup_multi_gpu(model, prefer_data_parallel: bool = True):
     Notes:
         - DataParallel vẫn replicate toàn bộ model trên mỗi GPU, nên giảm batch
           lại mới có hiệu quả: loader_batch = batch_size * n_gpus.
-        - Với Qwen-1.5B + LoRA + GAT fusion ở bs=2 per-GPU đã vừa 14GB/GPU.
+        - Với CodeBERT-1.5B + Full Fine-tuning + GAT fusion ở bs=2 per-GPU đã vừa 14GB/GPU.
         - Nếu vẫn OOM, bật gradient_checkpointing: True trong model config.
     """
     import torch
@@ -189,11 +189,11 @@ def inspect_splits(data_root: Path | None = None) -> dict:
                 if i == 0:
                     s = json.loads(line)
                     keys = list(s.keys())[:18]
-                    has_tok = "input_ids_qwen" in s
+                    has_tok = "input_ids" in s
                 count += 1
         info["splits"][name] = {"exists": True, "rows": count, "size_mb": round(size_mb, 1),
-                                "has_input_ids_qwen": has_tok, "sample_keys": keys}
-    info["ready_for_training"] = all(v.get("has_input_ids_qwen")
+                                "has_input_ids": has_tok, "sample_keys": keys}
+    info["ready_for_training"] = all(v.get("has_input_ids")
                                      for v in info["splits"].values() if v.get("exists"))
     return info
 
@@ -204,7 +204,7 @@ def print_inspect(info: dict):
         if not v.get("exists"):
             print(f"  {name:12s} MISSING")
         else:
-            flag = "✅ READY" if v["has_input_ids_qwen"] else "⚠️ THIẾU field input_ids_qwen"
+            flag = "✅ READY" if v["has_input_ids"] else "⚠️ THIẾU field input_ids"
             print(f"  {name:12s} {v['rows']:5d} rows  {v['size_mb']:6.1f} MB  {flag}")
 
 # ---------------------------------------------------------------------------
@@ -270,11 +270,11 @@ def setup_kaggle_env():
         if info["ready_for_training"]:
             print("\n\u2705 Data đã pre-tokenized — SẴN SÀNG TRAIN (không cần preprocessing).")
         else:
-            print("\n[LỖI NGHIÊM TRỌNG] Data thiếu input_ids_qwen.")
+            print("\n[LỖI NGHIÊM TRỌNG] Data thiếu input_ids.")
             print("Theo quy định mới, TOÀN BỘ quá trình chuẩn bị dữ liệu (Preprocessing) PHẢI được chạy ở Local.")
-            print("Vui lòng chạy `python notebooks/prepare_kaggle_dataset.py` ở máy cá nhân rồi upload lại dataset.")
+            print("Vui lòng chạy `python notebooks/` ở máy cá nhân rồi upload lại dataset.")
     else:
-        print(f"\n[WARN] Không thấy data tại {data_root} — Add Input dataset 'vulhunter-pre-tokenized'.")
+        print(f"\n[WARN] Không thấy data tại {data_root} — Add Input dataset 'vulhunter-raw-data'.")
     print("Setup DONE.\n")
     return root
 
@@ -286,14 +286,14 @@ def resolve_splits() -> dict[str, Path]:
         out[name] = p
         print(f"  {name:12s} {'OK' if p.exists() else 'MISSING':8s} {f'{p.stat().st_size/1e6:.1f} MB' if p.exists() else '-':>10s}  {p}")
     if not all(p.exists() for p in out.values()):
-        print("\n[WARN] Thiếu splits — Add Input 'vulhunter-pre-tokenized'.")
+        print("\n[WARN] Thiếu splits — Add Input 'vulhunter-raw-data'.")
     else:
         info = inspect_splits(data_root)
         print(f"  Pre-tokenized: {'YES \u2705' if info['ready_for_training'] else 'NO'}")
     return out
 
 def resolve_tokenizer_or_model(backbone: str) -> str:
-    local = os.getenv("QWEN_LOCAL_PATH")
+    local = os.getenv("CODEBERT_LOCAL_PATH")
     if local and Path(local).exists():
         print(f"[LOCAL OVERRIDE] {backbone} -> {local}")
         return local
@@ -327,7 +327,7 @@ def find_resume_checkpoint() -> Path | None:
     candidates = list(input_dir.rglob("*last*.pt")) + list(input_dir.rglob("*best*.pt"))
     for cand in candidates:
         cand_str = str(cand).lower()
-        if "vulhunter-pre-tokenized" not in cand_str and cand.is_file():
+        if "vulhunter-raw-data" not in cand_str and cand.is_file():
             return cand
     return None
 
@@ -388,5 +388,10 @@ def inspect_disk_usage(path: Path | str | None = None) -> None:
     except Exception:
         pass
     print("=" * 65)
+
+
+
+
+
 
 

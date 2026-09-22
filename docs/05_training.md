@@ -10,11 +10,10 @@
 Training consumes `data/splits/{train,validation}.jsonl` from the **Master Dataset** —
 per-role records keyed by `{source}:{pair}:{role}`, each carrying:
 
-- `code`, `binary_label`, `quality_tier` (gold/silver)
-- `input_ids_qwen` + `attention_mask_qwen`
+- `input_ids` + `attention_mask`
 - For graph/fusion modes: per-sample heterogeneous graphs in `data/processed/master_graphs.jsonl`
 
-`VulHunterDataset` loads all fields; `collate_fn` pads `input_ids_qwen` → `(B, max_seq)`.
+`VulHunterDataset` loads all fields; `collate_fn` pads `input_ids` → `(B, max_seq)`.
 
 ---
 
@@ -24,7 +23,7 @@ Three branches share identical data, seed, loss function, scheduler, and early s
 
 | Branch | Modalities | Purpose |
 |---|---|---|
-| `semantic_only` | Qwen2.5-Coder + LoRA (seq + pool) | Pure semantic baseline |
+| `semantic_only` | CodeBERT (seq + pool) | Pure semantic baseline |
 | `graph_only` | GAT on AST+CFG+DFG+Call | Pure structural baseline |
 | `fusion` (Proposed) | Semantic + Graph cross-attention | **Proposed hybrid** |
 
@@ -60,7 +59,7 @@ Different components have different learning rates:
 
 | Component | Learning Rate | Reason |
 |---|---|---|
-| Backbone (LoRA) | 2e-5 | Preserve pre-trained knowledge |
+| Backbone (Full Fine-tuning) | 2e-5 | Preserve pre-trained knowledge |
 | Graph Encoder | 1e-4 | Randomly initialized, needs more adaptation |
 | Binary Head | 2e-4 | Task-specific head, fastest adaptation |
 
@@ -144,7 +143,6 @@ Upload `notebooks/train_fusion.ipynb`, `notebooks/train_semantic_only.ipynb`, or
 
 ## 8. Roadmap: Future Multi-Task Extension
 
-After binary baseline is production-ready, multi-task heads (CWE classification, Severity classification) will be added using curriculum learning:
 
 1. Train binary classification first (current phase)
 2. Freeze binary head weights
@@ -155,3 +153,8 @@ The current architecture is designed to support this transition:
 - `BinaryHead` is already modular
 - `ModelOutput` can be extended with additional logits
 - Quality-tier weighting already in place
+
+
+
+
+

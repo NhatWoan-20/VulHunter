@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Hybrid Multi-Modal Binary Vulnerability Detection for Python</strong><br/>
-  <em>Qwen2.5-Coder-1.5B (Semantic View) + GraphCodeBERT/GAT (Structural View) + Gated Bidirectional Cross-Attention (Fusion)</em>
+  <em>CodeBERT (Semantic View) + Pure Structural Graph (GAT) (Structural View) + Gated Bidirectional Cross-Attention (Fusion)</em>
 </p>
 
 <p align="center">
@@ -33,13 +33,12 @@
 
 Traditional vulnerability detectors rely either on purely syntactic sequence representations (LLMs/Transformers) which can miss non-local data-flow constraints, or purely on graph structures (AST/CFG/GNNs) which discard rich identifier semantics and comments. **VulHunter bridges this gap** by fusing two complementary representations:
 
-1. **Semantic Perception**: Pretrained **Qwen2.5-Coder-1.5B-Instruct** + LoRA for token semantics and control keywords.
-2. **Structural Perception**: **GraphCodeBERT** + Custom **Graph Attention Network (GAT)** processing 5 heterogeneous program graph edge types.
+1. **Semantic Perception**: Pretrained **CodeBERT** + Full Fine-tuning for token semantics and control keywords.
+2. **Structural Perception**: **Pure Structural Graph** + Custom **Graph Attention Network (GAT)** processing 5 heterogeneous program graph edge types.
 3. **Cross-Modal Fusion**: A **gated bidirectional cross-attention** mechanism with residual skip that dynamically balances semantic and structural signals.
 4. **Binary Supervision**: Focal loss với quality-tier sample weighting.
 
 > [!NOTE]
-> **Roadmap**: Hiện tại tập trung vào **binary classification**. Multi-task heads (CWE, Severity) sẽ được bổ sung sau khi task chính đã hoàn thiện.
 
 ---
 
@@ -47,9 +46,9 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
 
 - **Single Task Focus**: Binary vulnerability detection (vulnerable=1 / safe=0) — đơn giản, hiệu quả.
 - **3 Training Modes**: `semantic_only`, `graph_only`, `fusion` — train song song để so sánh.
-- **LoRA Fine-Tuning**: Hiệu quả cho Qwen2.5-Coder-1.5B với VRAM thấp (~4GB savings).
+- **Full Fine-tuning Fine-Tuning**: Hiệu quả cho CodeBERT với VRAM thấp (~4GB savings).
 - **Last-Token Pooling**: Tối ưu cho decoder-only LLM.
-- **Unfreeze Top-6 GraphCodeBERT**: Chống AUC=0.5 collapse.
+- **Unfreeze Top-6 Pure Structural Graph**: Chống AUC=0.5 collapse.
 - **Threshold Tuning**: Auto-find optimal F1 threshold trên val set.
 - **MLOps Ready**: FastAPI deployment script.
 - **Strict Leakage Prevention**: 80/10/10 split grouped strictly by GitHub repository.
@@ -65,11 +64,11 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
                  ┌───────────────────────┴───────────────────────┐
                  ▼                                               ▼
        [Semantic Branch]                                [Structural Branch]
-     Qwen2.5-Coder-1.5B-Instruct                  Heterogeneous Program Graph
-     + LoRA (r=16, α=32)                           (AST + CFG + DFG + Call)
+     CodeBERT                  Heterogeneous Program Graph
+     + Full Fine-tuning (r=16, α=32)                           (AST + CFG + DFG + Call)
      Last-token pooling
                  │                                               │
-        Per-token sequence                              GraphCodeBERT (unfreeze
+        Per-token sequence                              Pure Structural Graph (unfreeze
         representations                                top-6) + 4-layer GAT
                  │                                               │
                  └───────────────────────┬───────────────────────┘
@@ -107,10 +106,7 @@ Split: **80/10/10 repository-disjoint** (strict repo-disjoint).
   "sample_id": "cvefixes:98919200308f75a4:vulnerable",
   "code": "def run_query(q):\n    return db.execute('SELECT * WHERE id = ' + q)",
   "binary_label": 1,
-  "cwe_ids": ["CWE-89"],
-  "severity": "HIGH",
-  "quality_tier": "gold",
-  "input_ids_qwen": [13, 298, ...]
+  "input_ids": [13, 298, ...]
 }
 ```
 
@@ -225,7 +221,7 @@ curl -X POST "http://localhost:8000/predict" \
 
 ## 🚀 Training Modes
 
-#### Scenario A: Semantic-Only (Qwen2.5-Coder-1.5B + LoRA)
+#### Scenario A: Semantic-Only (CodeBERT)
 ```bash
 python scripts/training/train.py \
   --mode semantic_only \
@@ -243,7 +239,7 @@ python scripts/training/train.py \
   --use-amp
 ```
 
-#### Scenario C: Multi-Modal Fusion (Qwen + GAT)
+#### Scenario C: Multi-Modal Fusion (CodeBERT + GAT)
 ```bash
 python scripts/training/train.py \
   --mode fusion \
@@ -284,9 +280,9 @@ python scripts/training/train.py \
 
 | Model Variant | Binary F1 | Binary MCC | AUC-ROC |
 |:---|:---:|:---:|:---:|
-| `graph_only` (GraphCodeBERT + GAT) | *TBD* | *TBD* | *TBD* |
-| `semantic_only` (Qwen2.5-Coder-1.5B) | *TBD* | *TBD* | *TBD* |
-| **`fusion` (Qwen2.5-Coder-1.5B + GAT)** | *TBD* | *TBD* | *TBD* |
+| `graph_only` (Pure Structural Graph + GAT) | *TBD* | *TBD* | *TBD* |
+| `semantic_only` (CodeBERT) | *TBD* | *TBD* | *TBD* |
+| **`fusion` (CodeBERT + GAT)** | *TBD* | *TBD* | *TBD* |
 
 ---
 
@@ -295,7 +291,7 @@ python scripts/training/train.py \
 ```text
 VulHunter/
 ├── configs/                     # Hyperparameter & architecture specs
-│   ├── model/default.yaml       # Qwen2.5 + 4-layer GAT + Gated Cross-Attention
+│   ├── model/default.yaml       # CodeBERT + 4-layer GAT + Gated Cross-Attention
 │   ├── train/                   # Training profiles (semantic.yaml, graph.yaml, fusion.yaml)
 │   └── kaggle/                  # Kaggle profiles
 ├── data/
@@ -306,7 +302,7 @@ VulHunter/
 │   ├── train_semantic_only.ipynb
 │   └── train_graph_only.ipynb
 ├── src/                         # Core VulHunter Library
-│   ├── semantic/encoder.py      # Qwen2.5 + LoRA, last-token pooling
+│   ├── semantic/encoder.py      # CodeBERT, last-token pooling
 │   ├── graph/encoder.py         # PyTorch GAT, unfreeze_top_layers
 │   ├── fusion/cross_attention.py# Gated bidirectional cross-attention + residual
 │   ├── multitask/model.py       # VulHunterModel (binary output)
@@ -341,8 +337,8 @@ pytest tests --cov=src --cov-report=term-missing
 ## 🛠️ Tech Stack
 
 - **Deep Learning**: [PyTorch 2.1+](https://pytorch.org/), [HuggingFace Transformers](https://huggingface.co/docs/transformers/index)
-- **Foundation Model**: [Qwen2.5-Coder](https://github.com/QwenLM/Qwen2.5-Coder) (1.5B Instruct)
-- **LoRA**: [PEFT](https://github.com/huggingface/peft)
+- **Foundation Model**: [CodeBERT](https://github.com/microsoft/CodeBERT) (1.5B Instruct)
+- **Full Fine-tuning**: [PEFT](https://github.com/huggingface/peft)
 - **Graph Neural Network**: Custom heterogeneous GAT
 - **Evaluation**: `scikit-learn`, `scipy`
 
@@ -357,5 +353,10 @@ Distributed under the **MIT License**.
 ### Acknowledgments
 - **CVEFixes**: [secureIT-project/CVEfixes](https://github.com/secureIT-project/CVEfixes) (Zenodo DOI: `10.5281/zenodo.13118970`)
 - **GitHub Security Advisories (GHSA)**: [GitHub Advisory Database](https://github.com/advisories)
-- **Qwen2.5-Coder**: Qwen Team, Alibaba Cloud
-- **GraphCodeBERT**: Microsoft Research
+- **CodeBERT**: CodeBERT Team, Alibaba Cloud
+- **Pure Structural Graph**: Microsoft Research
+
+
+
+
+

@@ -1,4 +1,4 @@
-"""Training Script — VulHunter Binary Classification (Kaggle 2xT4 ready).
+﻿"""Training Script — VulHunter Binary Classification (Kaggle 2xT4 ready).
 
 Baseline: single-stage end-to-end trên Master Dataset (gold CVEFixes + silver GHSA)
 với repository-disjoint 80/10/10, quality-aware weighting, tiered LR, warmup+cosine.
@@ -10,8 +10,8 @@ Hỗ trợ Kaggle 2xT4:
   - Hiệu quả cho data pre-tokenized read-only (/kaggle/input/...)
 
 3 training modes:
-  - semantic_only: Qwen2.5-Coder + LoRA
-  - graph_only:    GraphCodeBERT (unfreeze top-6) + GAT
+  - semantic_only: CodeBERT
+  - graph_only:    Pure Structural Graph (unfreeze top-6) + GAT
   - fusion:        Cross-modal attention với residual skip
 
 Usage:
@@ -51,17 +51,7 @@ from torch.utils.data.distributed import DistributedSampler
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-# Triệt tiêu bug peft trên Kaggle: is_torchao_available ném ImportError khi torchao < 0.16
-try:
-    import peft.import_utils
-    peft.import_utils.is_torchao_available = lambda: False
-except Exception:
-    pass
-try:
-    import peft.tuners.lora.torchao
-    peft.tuners.lora.torchao.is_torchao_available = lambda: False
-except Exception:
-    pass
+
 
 from src.multitask.model import VulHunterModel, ModelOutput  # noqa: E402
 from src.utils.dataset import VulHunterDataset, collate_fn  # noqa: E402
@@ -185,8 +175,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
                     losses = criterion(
                         binary_logits=output.binary_logits,
                         binary_targets=batch["binary_labels"].to(device),
-                        sample_weights=batch["sample_weights"].to(device),
-                    )
+                        )
                     loss = losses["total"] / grad_accum
                 assert scaler is not None
                 scaler.scale(loss).backward()
@@ -195,8 +184,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_accum=1, e
                 losses = criterion(
                     binary_logits=output.binary_logits,
                     binary_targets=batch["binary_labels"].to(device),
-                    sample_weights=batch["sample_weights"].to(device),
-                )
+                    )
                 loss = losses["total"] / grad_accum
                 loss.backward()
 
@@ -270,8 +258,7 @@ def evaluate(model, loader, criterion, device, is_parallel=False, use_amp=False)
         losses = criterion(
             binary_logits=output.binary_logits,
             binary_targets=batch["binary_labels"].to(device),
-            sample_weights=batch["sample_weights"].to(device),
-        )
+            )
         for k, v in losses.items():
             total[k] = total.get(k, 0.0) + v.item()
         n_batches += 1
@@ -717,3 +704,7 @@ if __name__ == "__main__":
         sys.stderr.flush()
         sys.stdout.flush()
         sys.exit(1)
+
+
+
+

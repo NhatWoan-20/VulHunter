@@ -1,4 +1,4 @@
-# 02 — State of the Art & Literature Review
+﻿# 02 — State of the Art & Literature Review
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
@@ -20,7 +20,7 @@ Automated vulnerability detection approaches in software engineering can be broa
 │  Semantic-Based  │   │   Graph-Based   │   │   Hybrid-Based  │
 │  (Transformers)  │   │   (GNNs / GAT)  │   │  (VulHunter)   │
 │  - CodeBERT     │   │  - Devign (GGNN)│   │  - Cross-Modal  │
-│  - Qwen-Coder   │   │  - LineVul (GAT)│   │    Attention    │
+│  - CodeBERT   │   │  - LineVul (GAT)│   │    Attention    │
 │  - DeepSeek     │   │  - Reveal (GGNN)│   │  - Residual     │
 └─────────────────┘   └─────────────────┘   └─────────────────┘
 ```
@@ -42,21 +42,21 @@ Automated vulnerability detection approaches in software engineering can be broa
 
 ### 3.1 Why Last-Token Pooling for Decoder-Only LLMs?
 
-Decoder-only models like Qwen2.5-Coder have a special `<|endoftext|>` token at the end of every sequence. Taking the last meaningful token's hidden state captures the entire sequence context without needing additional pooling operations. This is:
+Decoder-only models like CodeBERT have a special `<|endoftext|>` token at the end of every sequence. Taking the last meaningful token's hidden state captures the entire sequence context without needing additional pooling operations. This is:
 - **Simple:** No masking or learned parameters needed.
 - **Effective:** Proven in code generation tasks.
 - **Efficient:** Single forward pass, no additional computation.
 
-### 3.2 Why LoRA for Fine-Tuning?
+### 3.2 Why Full Fine-tuning for Fine-Tuning?
 
-Full fine-tuning of large language models is computationally expensive and risks catastrophic forgetting. LoRA (Low-Rank Adaptation):
+Full fine-tuning of large language models is computationally expensive and risks catastrophic forgetting. Full Fine-tuning (Low-Rank Adaptation):
 - **Trainable Parameters:** Only ~0.1-1% of total parameters (vs. 100% for full fine-tuning).
 - **VRAM Savings:** ~4-6GB reduction on 1.5B models.
-- **Rank-Stabilized LoRA (RSLoRA):** Used for better convergence stability.
+- **Rank-Stabilized Full Fine-tuning (RSFull Fine-tuning):** Used for better convergence stability.
 
-### 3.3 Why Unfreeze Top-6 GraphCodeBERT Layers?
+### 3.3 Why Unfreeze Top-6 Pure Structural Graph Layers?
 
-When using GraphCodeBERT for graph encoding, leaving all layers frozen can lead to:
+When using Pure Structural Graph for graph encoding, leaving all layers frozen can lead to:
 - **AUC Collapse:** Model outputs become random (AUC ≈ 0.5).
 - **Reason:** Frozen layers cannot adapt to the vulnerability detection task's representation needs.
 
@@ -87,3 +87,7 @@ This prevents noisy silver samples from overwhelming the gradient signal from go
 3. **Class Imbalance:** Vulnerability detection datasets are often imbalanced (more safe than vulnerable code). VulHunter uses **Focal Loss** to focus training on hard-to-classify examples.
 
 4. **Threshold Selection:** Fixed 0.5 threshold is suboptimal for imbalanced datasets. VulHunter uses **threshold tuning** on validation set to maximize F1 score.
+
+
+
+

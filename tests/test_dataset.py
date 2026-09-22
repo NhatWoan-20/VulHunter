@@ -1,4 +1,4 @@
-"""Unit tests for VulHunterDataset — lazy zero-RAM indexing and collation."""
+﻿"""Unit tests for VulHunterDataset ? lazy zero-RAM indexing and collation."""
 from __future__ import annotations
 
 import json
@@ -18,15 +18,11 @@ def dummy_dataset_files(tmp_path: Path):
             "sample_id": f"s_{i}",
             "code": f"def func_{i}():\n    x = {i}\n    return x\n",
             "binary_label": i % 2,
-            "severity": "HIGH" if i % 2 else "LOW",
-            "cwe_ids": ["CWE-89"] if i % 2 else [],
-            "input_ids_qwen": [100, 200, 300 + i],
-            "attention_mask_qwen": [1, 1, 1],
-            "token_line_ids_qwen": [0, 1, 2],
+            "input_ids": [100, 200, 300 + i],
+            "attention_mask": [1, 1, 1],
+            "token_line_ids": [0, 1, 2],
             "source_sink_labels": [-1, 1, 2],
-            "line_labels": [0, 1, 0],
-            "quality_tier": "gold",
-        }
+            "line_labels": [0, 1, 0],        }
         for i in range(10)
     ]
     data_path = tmp_path / "test_data.jsonl"
@@ -92,3 +88,6 @@ def test_dataloader_batching_with_lazy_dataset(dummy_dataset_files):
     assert b0["binary_labels"].shape[0] == 4
     assert "node_types" in b0
     assert "edge_index" in b0
+
+
+

@@ -1,8 +1,8 @@
-"""VulHunter Model — Binary vulnerability detection.
+﻿"""VulHunter Model — Binary vulnerability detection.
 
 Main model class tích hợp:
-    1. Semantic Encoder (LLM backbone, vd: Qwen2.5-Coder)
-    2. Graph Encoder (GraphCodeBERT + GAT)
+    1. Semantic Encoder (LLM backbone, vd: CodeBERT)
+    2. Graph Encoder (Pure Structural Graph + GAT)
     3. Cross-Modal Fusion (Bidirectional Cross-Attention)
     4. Binary prediction head
 
@@ -89,14 +89,14 @@ class VulHunterModel(nn.Module):
 
         # Khởi tạo encoders theo mode
         if mode in ("fusion", "semantic_only"):
+            encoder_type = semantic_config.pop("encoder_type", "codebert")
             self.semantic_encoder = SemanticEncoder(**semantic_config)
             logger.info("Khởi tạo SemanticEncoder")
 
         if mode in ("fusion", "graph_only"):
             graph_config.setdefault("output_dim", output_dim)
             self.graph_encoder = GraphEncoder(**graph_config)
-            logger.info("Khởi tạo GraphEncoder (unfreeze_top_n=%d)",
-                        graph_config.get("unfreeze_top_n", 0))
+            logger.info("Khởi tạo GraphEncoder")
 
         # Fusion module (chỉ cho fusion mode)
         if mode == "fusion":
@@ -110,7 +110,7 @@ class VulHunterModel(nn.Module):
         binary_cfg = head_config.get("binary", {})
         self.binary_head = BinaryHead(input_dim=output_dim, **binary_cfg)
 
-        # Đảm bảo trainable params (LoRA adapters, projection, heads) đều ở float32
+        # Đảm bảo trainable params (Full Fine-tuning adapters, projection, heads) đều ở float32
         # cho PyTorch AMP GradScaler compatibility (frozen backbone giữ ở FP16)
         for p in self.parameters():
             if p.requires_grad and p.dtype != torch.float32:
@@ -218,3 +218,7 @@ class VulHunterModel(nn.Module):
             fusion_config=model_cfg.get("fusion", {}),
             head_config=model_cfg.get("heads", {}),
         )
+
+
+
+

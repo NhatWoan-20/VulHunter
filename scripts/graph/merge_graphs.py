@@ -1,4 +1,4 @@
-"""Merge master program graphs into one heterogeneous graph per sample.
+﻿"""Merge master program graphs into one heterogeneous graph per sample.
 
 Reads data/processed/master_{ast,cfg,dfg,call}.jsonl (keyed by sample_id
 "{pair_id}:{role}") and writes data/processed/master_graphs.jsonl.
@@ -13,12 +13,10 @@ ROOT = Path(__file__).resolve().parents[2]
 GRAPH_TYPES = ["ast", "cfg", "dfg", "call"]
 INPUT_DIR = ROOT / "data" / "processed"
 OUTPUT = INPUT_DIR / "master_graphs.jsonl"
-REPORT = ROOT / "reports" / "preprocessing" / "master_merge_graphs.json"
 
 
 def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    REPORT.parent.mkdir(parents=True, exist_ok=True)
 
     rows_by_sid: dict[str, list[dict]] = defaultdict(list)
     for gtype in GRAPH_TYPES:
@@ -61,3 +59,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

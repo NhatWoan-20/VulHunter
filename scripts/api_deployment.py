@@ -1,7 +1,7 @@
-"""FastAPI Deployment Script for VulHunter (Simplified 3-Task API).
+﻿"""FastAPI Deployment Script for VulHunter (Simplified 3-Task API).
 
 This script provides a REST API to detect vulnerabilities in Python code snippets
-using the simplified VulHunter model (Binary, CWE, Severity).
+using the simplified VulHunter model (Binary).
 
 Usage:
     uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="VulHunter API",
-    description="End-to-End Vulnerability Detection API using Qwen2.5 1.5B & GraphCodeBERT",
+    description="End-to-End Vulnerability Detection API using CodeBERT 1.5B & Pure Structural Graph",
     version="1.0.0",
 )
 
@@ -65,7 +65,7 @@ async def load_model():
         if config.get("mode", "semantic_only") != "semantic_only":
             raise RuntimeError("The HTTP API currently serves semantic_only checkpoints; graph extraction is not exposed by this endpoint.")
         model_cfg = config.get("model", {})
-        tokenizer_name = model_cfg.get("semantic", {}).get("backbone", "Qwen/Qwen2.5-Coder-1.5B-Instruct")
+        tokenizer_name = model_cfg.get("semantic", {}).get("backbone", "CodeBERT/CodeBERT")
         TOKENIZER = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
         if TOKENIZER.pad_token is None:
             TOKENIZER.pad_token = TOKENIZER.eos_token
@@ -126,3 +126,6 @@ async def predict(request: CodeRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+

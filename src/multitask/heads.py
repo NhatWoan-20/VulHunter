@@ -1,7 +1,7 @@
-"""Prediction Heads — Task-specific prediction layers.
+﻿"""Prediction Heads — Task-specific prediction layers.
 
 Currently supports binary vulnerability detection (vulnerable vs. safe).
-Multi-task heads (CWE, Severity) sẽ được thêm sau khi hoàn thiện task chính.
+Multi-task heads sẽ được thêm sau khi hoàn thiện task chính.
 """
 from __future__ import annotations
 
@@ -42,3 +42,4 @@ class BinaryHead(nn.Module):
             Logits of shape ``(B, 1)``. Apply sigmoid for probabilities.
         """
         return self.classifier(x)
+

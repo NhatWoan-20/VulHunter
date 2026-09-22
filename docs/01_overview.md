@@ -1,4 +1,4 @@
-# 01 — Project Overview & Research Objectives
+﻿# 01 — Project Overview & Research Objectives
 
 > **Version: 5.0** — **Binary Classification Focus**
 > **Authoritative Specification**
@@ -39,7 +39,6 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 | 1 | **Binary Vulnerability Detection (Primary)** | Python function *f* → ŷ∈{0,1} + p∈[0,1] | `binary_label` |
 
 > [!NOTE]
-> **Roadmap:** Multi-task heads (CWE classification, Severity classification) will be added after the primary binary task is production-ready using curriculum learning approach.
 
 ---
 
@@ -74,6 +73,10 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 ## 7. Non-Functional Requirements
 
 - **Reproducibility:** Deterministic repository-disjoint splitting (seed 42), threshold tuning on validation set, version-pinned dependencies.
-- **Modularity:** Swappable LLM backbones (Qwen2.5-Coder) and GNN layers (GAT, GCN, Graph Transformer) behind encoder interfaces.
-- **Efficiency:** Gradient accumulation (eff. batch 16-32), FP16 mixed precision, LoRA fine-tuning for Qwen.
+- **Modularity:** Swappable LLM backbones (CodeBERT) and GNN layers (GAT, GCN, Graph Transformer) behind encoder interfaces.
+- **Efficiency:** Gradient accumulation (eff. batch 16-32), FP16 mixed precision, Full Fine-tuning fine-tuning for CodeBERT.
 - **Resource Efficient:** Fits Kaggle 2x T4 (16GB VRAM) with proper configuration.
+
+
+
+

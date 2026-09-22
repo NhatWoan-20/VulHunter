@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import difflib
 import hashlib
@@ -10,7 +10,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DB = ROOT / "data" / "raw" / "databases" / "cvefixes.db"
 OUT = ROOT / "data" / "raw" / "python_cvefixes_methods.jsonl"
-REPORT = ROOT / "reports" / "extraction" / "extract.json"
 
 
 def norm(code: str | None) -> str:
@@ -58,8 +57,6 @@ def main() -> None:
             f.cve_id,
             f.repo_url,
             r.repo_name,
-            cve.severity,
-            GROUP_CONCAT(DISTINCT cwc.cwe_id) AS cwe_ids
         FROM file_change fc
         JOIN method_change mb
           ON fc.file_change_id = mb.file_change_id
@@ -70,8 +67,6 @@ def main() -> None:
          AND ma.before_change IN (0, '0', 'False', 'false', 'FALSE')
         LEFT JOIN fixes f ON fc.hash = f.hash
         LEFT JOIN repository r ON f.repo_url = r.repo_url
-        LEFT JOIN cve ON f.cve_id = cve.cve_id
-        LEFT JOIN cwe_classification cwc ON f.cve_id = cwc.cve_id
         WHERE fc.programming_language = 'Python'
         GROUP BY
             fc.file_change_id, fc.hash, fc.filename, mb.name, mb.signature, mb.code, ma.code,
@@ -90,13 +85,11 @@ def main() -> None:
             safe = norm(r["safe_code"])
             if not vuln or not safe:
                 continue
-            severity = "UNKNOWN"
             rec = {
                 "sample_id": sample_id(r["file_change_id"], r["method_name"], r["cve_id"] or ""),
                 "source": "cvefixes",
                 "source_id": r["cve_id"],
                 "cve_id": r["cve_id"],
-                "severity": (r["severity"] or "UNKNOWN").strip().upper() if r["severity"] else "UNKNOWN",
                 "repository": repository_name(r["repo_name"], r["repo_url"]),
                 "sha": r["hash"],
                 "file_path": r["filename"],
@@ -106,7 +99,6 @@ def main() -> None:
                 "code": vuln,
                 "safe_code": safe,
                 "binary_label": 1,
-                "cwe_ids": [cwe.strip() for cwe in r["cwe_ids"].split(",") if cwe.strip()] if r["cwe_ids"] else [],
             }
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             rows += 1
@@ -118,7 +110,6 @@ def main() -> None:
 
     conn.close()
 
-    report = {
         "database": str(DB),
         "output": str(OUT),
         "rows": rows,
@@ -131,3 +122,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

@@ -1,4 +1,4 @@
-# Data Preprocessing Pipeline
+﻿# Data Preprocessing Pipeline
 
 > **Objective:** Clean, format, split, and enrich the Master Dataset with LLM tokens before training.
 
@@ -13,11 +13,12 @@ flowchart TD
     A(master_methods.jsonl) --> B[clean_comments.py]
     B --> C[normalize.py]
     C --> D[validate_ast.py]
-    D --> E[strip_docstrings.py]
-    E --> F[build_samples.py]
-    F --> G[split.py]
-    G --> H[tokenize_qwen.py]
-    H --> I(data/splits/*.jsonl)
+    D --> E[build_samples.py]
+    E --> F[strip_docstrings.py]
+    F --> G(master_graph_samples.jsonl)
+    E --> H[split.py]
+    H --> I[tokenization on-the-fly]
+    I --> J(data/splits/*.jsonl)
 ```
 
 ## Files Description
@@ -28,7 +29,7 @@ flowchart TD
 - **`strip_docstrings.py`**: Removes docstrings for similar reasons as above.
 - **`build_samples.py`**: Formats the cleaned code into structured samples, isolating the vulnerable code from the safe context.
 - **`split.py`**: Performs a **repository-disjoint** split (80% train, 10% validation, 10% test). This prevents data leakage where code from the same repository appears in both train and test sets.
-- **`tokenize_qwen.py`**: Tokenizes the code using the `Qwen2.5-Coder` tokenizer.
+- **`tokenization (on-the-fly)`**: Tokenizes the code using the `CodeBERT` tokenizer.
 
 ## Input / Output
 
@@ -46,11 +47,14 @@ To run the entire preprocessing pipeline sequentially, use the orchestration not
 python scripts/preprocessing/clean_comments.py
 python scripts/preprocessing/normalize.py
 python scripts/preprocessing/validate_ast.py
-python scripts/preprocessing/strip_docstrings.py
 python scripts/preprocessing/build_samples.py
+python scripts/preprocessing/strip_docstrings.py
 python scripts/preprocessing/split.py
-python scripts/preprocessing/tokenize_qwen.py
 ```
 
 > [!NOTE]
-> If you are training on Kaggle, this pipeline is typically run locally once via `notebooks/prepare_kaggle_dataset.py`, and the resulting `.jsonl` splits are uploaded as a Kaggle Dataset to avoid running tokenization on the Kaggle environment.
+> If you are training on Kaggle, this pipeline is typically run locally once via `notebooks/`, and the resulting `.jsonl` splits are uploaded as a Kaggle Dataset to avoid running tokenization on the Kaggle environment.
+
+
+
+
