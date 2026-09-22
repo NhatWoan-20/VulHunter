@@ -55,11 +55,11 @@ clean_comments.py                          (remove code comments)
 normalize.py                              (normalize whitespace/indentation)
 validate_ast.py                           (verify valid Python AST)
 build_samples.py                           (pair → vulnerable + safe role)
-  ▼ data/processed/master_semantic_samples.jsonl       (Docstrings retained for Semantic)
+  ▼ data/final/master_semantic_samples.jsonl       (Docstrings retained for Semantic)
 strip_docstrings.py                       (remove docstrings)
   ▼ data/processed/master_graph_samples.jsonl (For Graph Branch)
 build_ast.py → build_cfg.py → build_dfg.py → build_call.py → merge_graphs.py
-  ▼ data/processed/master_graphs.jsonl    (30,427 heterogeneous graphs)
+  ▼ data/final/master_graphs.jsonl    (30,427 heterogeneous graphs)
 tokenization (on-the-fly)                         (CodeBERT tokenization)
 split.py                                 (80/10/10 repo-disjoint)
   ▼ data/splits/{train,validation,test}.jsonl
@@ -146,6 +146,10 @@ Binary labels are balanced within every split (per-role vulnerable+safe twins).
 | PyCode-Vul test (3,563) | Final OOD benchmark | Evaluation only |
 
 PyCode-Vul is **evaluation-only**: never used for training or checkpoint selection.
+
+
+
+
 
 
 

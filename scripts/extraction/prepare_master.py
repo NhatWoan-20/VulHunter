@@ -1,4 +1,4 @@
-﻿"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) cho binary classification.
+"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) cho binary classification.
 
 Implements (docs/04_dataset.md § Pillar 1-3):
     - Strict noise / test-code cleansing: drop methods whose file path indicates tests, mock,
@@ -115,14 +115,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cvefixes", type=Path, default=DEFAULT_CVEFIXES)
     parser.add_argument("--ghsa", type=Path, default=DEFAULT_GHSA)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
 
     cvefixes = _load_jsonl(args.cvefixes) if args.cvefixes.exists() else []
     ghsa = _load_jsonl(args.ghsa) if args.ghsa.exists() else []
@@ -167,18 +165,10 @@ def main() -> None:
 
     labels = Counter(x.get("binary_label") for x in out_rows)
 
-    report = {
-        "input": {"cvefixes": str(args.cvefixes), "ghsa": str(args.ghsa)},
-        "output": str(args.output),
-        "total_pairs": len(out_rows),
-
-        "binary_labels": dict(labels),
-        "cross_dataset_shared_repos": len(shared_repos),
-        "shared_repos_sample": sorted(shared_repos)[:10],
-        **stats,
-    }
-    args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    logger.info("=== PREPARE MASTER COMPLETED ===")
+    logger.info("Total Pairs: %d", len(out_rows))
+    logger.info("Binary Labels: %s", dict(labels))
+    logger.info("Output saved to: %s", args.output)
 
 
 if __name__ == "__main__":

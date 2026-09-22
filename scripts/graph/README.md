@@ -36,10 +36,10 @@ flowchart TD
 
 ## Input / Output
 
-- **Input**: The cleaned but un-tokenized samples from `data/final/master_graph_samples.jsonl`.
+- **Input**: The cleaned but un-tokenized samples from `data/processed/master_graph_samples.jsonl`.
 - **Outputs**:
   - Intermediate graphs: `data/processed/master_{ast,cfg,dfg,call}.jsonl`
-  - Final merged graph dataset: `data/processed/master_graphs.jsonl`
+  - Final merged graph dataset: `data/final/master_graphs.jsonl`
 
 ## How to Run
 
@@ -58,4 +58,6 @@ python scripts/graph/merge_graphs.py
 
 > [!TIP]
 > Graph extraction can be CPU-intensive. The scripts process the dataset independently and handle cases where code cannot be parsed perfectly by dropping or falling back gracefully.
+
+
 

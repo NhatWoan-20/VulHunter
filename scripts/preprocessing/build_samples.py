@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INPUT = ROOT / "data" / "processed" / "master_validated_ast.jsonl"
-OUTPUT = ROOT / "data" / "processed" / "master_semantic_samples.jsonl"
+OUTPUT = ROOT / "data" / "final" / "master_semantic_samples.jsonl"
 
 
 def emit(out, src: dict, sample_id: str, code: str, label: int, role: str) -> None:
@@ -51,5 +51,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
 
 

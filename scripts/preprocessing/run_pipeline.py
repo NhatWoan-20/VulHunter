@@ -1,4 +1,4 @@
-"""End-to-End Preprocessing Pipeline cho Binary Vulnerability Detection.
+﻿"""End-to-End Preprocessing Pipeline cho Binary Vulnerability Detection.
 
 Chạy tuần tự các bước:
     1. Prepare master dataset (gold CVEFixes + silver GHSA)
@@ -89,10 +89,11 @@ def main() -> None:
     logger.info("  - data/splits/validation.jsonl")
     logger.info("  - data/splits/test.jsonl")
     if not args.skip_graph:
-        logger.info("  - data/processed/master_graphs.jsonl")
+        logger.info("  - data/final/master_graphs.jsonl")
     logger.info("")
     logger.info("Sẵn sàng cho training! Xem docs/ cho hướng dẫn chi tiết.")
 
 
 if __name__ == "__main__":
     main()
+

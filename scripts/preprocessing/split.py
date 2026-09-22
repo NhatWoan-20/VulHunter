@@ -1,4 +1,4 @@
-"""Split master dataset into train/validation/test — repository-disjoint, seed 42."""
+﻿"""Split master dataset into train/validation/test — repository-disjoint, seed 42."""
 from __future__ import annotations
 
 import json
@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[2]
-INPUT = ROOT / "data" / "processed" / "master_semantic_samples.jsonl"
+INPUT = ROOT / "data" / "final" / "master_semantic_samples.jsonl"
 OUTPUT = ROOT / "data" / "splits"
 
 TRAIN_RATIO = 0.8
@@ -80,5 +80,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
 
 

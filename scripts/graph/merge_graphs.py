@@ -1,7 +1,7 @@
 ﻿"""Merge master program graphs into one heterogeneous graph per sample.
 
 Reads data/processed/master_{ast,cfg,dfg,call}.jsonl (keyed by sample_id
-"{pair_id}:{role}") and writes data/processed/master_graphs.jsonl.
+"{pair_id}:{role}") and writes data/final/master_graphs.jsonl.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 GRAPH_TYPES = ["ast", "cfg", "dfg", "call"]
 INPUT_DIR = ROOT / "data" / "processed"
-OUTPUT = INPUT_DIR / "master_graphs.jsonl"
+OUTPUT = ROOT / "data" / "final" / "master_graphs.jsonl"
 
 
 def main() -> None:
@@ -52,11 +52,13 @@ def main() -> None:
             out.write(json.dumps({"sample_id": sid, "nodes": nodes, "edges": edges}, ensure_ascii=False) + "\n")
             merged += 1
 
-    data = {"input_files": [str(INPUT_DIR / f"master_{t}.jsonl") for t in GRAPH_TYPES], "output": str(OUTPUT), "merged_samples": merged, "samples_with_missing_graph_types": missing_types}
-    REPORT.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(data, ensure_ascii=False, indent=2))
+    print("=== MERGE GRAPHS COMPLETED ===")
+    print(f"Merged samples: {merged}")
+    print(f"Samples missing some graph types: {missing_types}")
+    print(f"Output saved to: {OUTPUT}")
 
 
 if __name__ == "__main__":
     main()
+
 

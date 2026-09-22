@@ -3,7 +3,7 @@ import json
 import textwrap
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
-INPUT = ROOT / "data" / "processed" / "master_semantic_samples.jsonl"
+INPUT = ROOT / "data" / "final" / "master_semantic_samples.jsonl"
 OUTPUT = ROOT / "data" / "processed" / "master_graph_samples.jsonl"
 
 
@@ -58,5 +58,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
 
 
