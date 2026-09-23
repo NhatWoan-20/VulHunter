@@ -31,7 +31,7 @@ python scripts/training/train.py \
     --config configs/train/fusion.yaml \
     --train-data /kaggle/input/vulhunter-pre-tokenized/train.jsonl \
     --val-data /kaggle/input/vulhunter-pre-tokenized/validation.jsonl \
-    --graph-data data/processed/master_graphs.jsonl
+    --graph-data data/processed/master_pdg.jsonl
 ```
 
 ### 2. Semantic-Only Mode (LLM Only)
@@ -55,7 +55,7 @@ python scripts/training/train.py \
     --config configs/train/graph.yaml \
     --train-data data/splits/train.jsonl \
     --val-data data/splits/validation.jsonl \
-    --graph-data data/processed/master_graphs.jsonl
+    --graph-data data/processed/master_pdg.jsonl
 ```
 
 > [!IMPORTANT]

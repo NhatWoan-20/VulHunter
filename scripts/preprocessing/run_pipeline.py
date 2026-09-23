@@ -6,7 +6,7 @@ Chạy tuần tự các bước:
     3. Clean comments
     4. Validate AST
     5. Build pair samples (vulnerable vs safe)
-    6. Build graphs (AST, CFG, DFG, Call)
+    6. Build graphs (PDG)
     7. Merge graphs
     8. Split train/val/test (repository-disjoint)
 
@@ -67,11 +67,7 @@ def main() -> None:
 
     if not args.skip_graph:
         graph_steps = [
-            ("Build AST graphs", "graph/build_ast.py"),
-            ("Build CFG graphs", "graph/build_cfg.py"),
-            ("Build DFG graphs", "graph/build_dfg.py"),
-            ("Build Call graphs", "graph/build_call.py"),
-            ("Merge graphs", "graph/merge_graphs.py"),
+            ("Build PDG graph", "graph/build_pdg.py"),
         ]
         for name, script in graph_steps:
             if not run_step(name, script):
@@ -89,7 +85,7 @@ def main() -> None:
     logger.info("  - data/splits/validation.jsonl")
     logger.info("  - data/splits/test.jsonl")
     if not args.skip_graph:
-        logger.info("  - data/final/master_graphs.jsonl")
+        logger.info("  - data/final/master_pdg.jsonl")
     logger.info("")
     logger.info("Sẵn sàng cho training! Xem docs/ cho hướng dẫn chi tiết.")
 

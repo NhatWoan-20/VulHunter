@@ -1,4 +1,4 @@
-"""Evaluation Script — Evaluate VulHunter binary classifier.
+﻿"""Evaluation Script — Evaluate VulHunter binary classifier.
 
 Usage:
     python scripts/evaluation/evaluate.py --checkpoint models/checkpoints/best.pt

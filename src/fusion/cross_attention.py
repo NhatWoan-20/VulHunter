@@ -1,4 +1,4 @@
-"""Cross-Modal Fusion — Bridge semantic and graph representations via cross-attention.
+﻿"""Cross-Modal Fusion — Bridge semantic and graph representations via cross-attention.
 
 This module implements bidirectional cross-attention fusion to combine the
 semantic understanding from LLMs with the structural understanding from GNNs.

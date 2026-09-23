@@ -161,14 +161,14 @@ python scripts/training/train.py \
 python scripts/training/train.py \
     --mode graph_only \
     --config configs/train/graph.yaml \
-    --graph-data data/processed/master_graphs.jsonl \
+    --graph-data data/processed/master_pdg.jsonl \
     --use-amp
 
 # Fusion (đề xuất chính)
 python scripts/training/train.py \
     --mode fusion \
     --config configs/train/fusion.yaml \
-    --graph-data data/processed/master_graphs.jsonl \
+    --graph-data data/processed/master_pdg.jsonl \
     --tune-threshold \
     --use-amp
 ```
@@ -179,7 +179,7 @@ python scripts/training/train.py \
 python scripts/evaluation/evaluate.py \
     --checkpoint models/checkpoints/best.pt \
     --test-data data/splits/test.jsonl \
-    --graph-data data/processed/master_graphs.jsonl \
+    --graph-data data/processed/master_pdg.jsonl \
     --output outputs/metrics/evaluation_report.json
 ```
 
@@ -231,7 +231,7 @@ python scripts/training/train.py \
 python scripts/training/train.py \
   --mode graph_only \
   --config configs/train/graph.yaml \
-  --graph-data data/processed/master_graphs.jsonl \
+  --graph-data data/processed/master_pdg.jsonl \
   --use-amp
 ```
 
@@ -241,7 +241,7 @@ python scripts/training/train.py \
   --mode fusion \
   --config configs/train/fusion.yaml \
   --model-config configs/kaggle/model_kaggle.yaml \
-  --graph-data data/processed/master_graphs.jsonl \
+  --graph-data data/processed/master_pdg.jsonl \
   --tune-threshold \
   --use-amp
 ```
@@ -308,7 +308,7 @@ VulHunter/
 │   ├── extraction/prepare_master.py  # Master dataset builder
 │   ├── preprocessing/           # Tokenize, comment strip, graph build, split
 │   │   └── run_pipeline.py      # ★ End-to-end pipeline orchestrator
-│   ├── graph/                   # AST, CFG, DFG, Call extraction
+│   ├── graph/                   # PDG extraction
 │   ├── training/train.py        # Distributed / AMP training runner
 │   ├── evaluation/evaluate.py   # Binary classification evaluation
 │   └── api_deployment.py        # FastAPI server

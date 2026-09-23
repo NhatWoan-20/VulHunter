@@ -20,7 +20,7 @@ Evaluate on the in-domain test split (Fusion mode requires graph data):
 python scripts/evaluation/evaluate.py \
     --checkpoint models/checkpoints/best.pt \
     --test-data data/splits/test.jsonl \
-    --graph-data data/processed/master_graphs.jsonl
+    --graph-data data/processed/master_pdg.jsonl
 ```
 
 Evaluate zero-shot on the external PyCode-Vul test set:

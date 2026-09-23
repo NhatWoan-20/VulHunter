@@ -1,1 +1,1 @@
-"""GHSA Data Collection Pipeline for VulHunter."""
+﻿"""GHSA Data Collection Pipeline for VulHunter."""

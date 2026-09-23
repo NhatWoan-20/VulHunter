@@ -10,7 +10,7 @@ This directory houses the foundational library code. It is designed to be highly
 Contains the **Semantic Encoder** (`encoder.py`). This module wraps a pre-trained Code LLM (specifically `CodeBERT`) to extract semantic token representations from raw source code. It includes integrated support for Gradient Checkpointing and FP16 support to enable efficient fine-tuning of large models on constrained hardware (like Kaggle 2x T4s).
 
 ### 2. `graph/`
-Contains the **Graph Encoder** (`encoder.py`). This implements a custom **Graph Attention Network (GAT)** designed to process heterogeneous program graphs (AST, CFG, DFG, Call Graph). It features edge-type-aware attention, allowing the network to distinguish between syntactic hierarchy and data-flow dependencies when aggregating neighborhood information.
+Contains the **Graph Encoder** (`encoder.py`). This implements a custom **Graph Attention Network (GAT)** designed to process heterogeneous program graphs (PDG Graph). It features edge-type-aware attention, allowing the network to distinguish between syntactic hierarchy and data-flow dependencies when aggregating neighborhood information.
 
 ### 3. `fusion/`
 Contains the **Cross-Modal Fusion** module (`cross_attention.py`). This module implements a Bidirectional Cross-Attention mechanism. It bridges the gap between the semantic LLM tokens and the structural GAT nodes, allowing the semantic context to attend to structural graphs and vice-versa, outputting a unified, gated representation.

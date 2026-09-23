@@ -59,7 +59,7 @@ build_samples.py                           (pair → vulnerable + safe role)
 strip_docstrings.py                       (remove docstrings)
   ▼ data/processed/master_graph_samples.jsonl (For Graph Branch)
 build_ast.py → build_cfg.py → build_dfg.py → build_call.py → merge_graphs.py
-  ▼ data/final/master_graphs.jsonl    (30,427 heterogeneous graphs)
+  ▼ data/final/master_pdg.jsonl    (30,427 heterogeneous graphs)
 tokenization (on-the-fly)                         (CodeBERT tokenization)
 split.py                                 (80/10/10 repo-disjoint)
   ▼ data/splits/{train,validation,test}.jsonl

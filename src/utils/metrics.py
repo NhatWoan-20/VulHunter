@@ -1,4 +1,4 @@
-"""Metrics — Evaluation metrics cho binary vulnerability detection.
+﻿"""Metrics — Evaluation metrics cho binary vulnerability detection.
 
 Cung cấp:
     - binary_metrics: Precision, Recall, F1, Accuracy, ROC-AUC, PR-AUC, MCC.

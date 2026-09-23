@@ -57,17 +57,17 @@ def get_data_root() -> Path:
     return root / "data" / "splits"
 
 def get_graph_data_path(data_root: Path | None = None) -> Path | None:
-    """Tự động tìm file master_graphs.jsonl (nếu có) trên Kaggle hoặc local."""
+    """Tự động tìm file master_pdg.jsonl (nếu có) trên Kaggle hoặc local."""
     dr = data_root or get_data_root()
-    cand = dr / "master_graphs.jsonl"
+    cand = dr / "master_pdg.jsonl"
     if cand.exists():
         return cand
     if is_kaggle() and Path("/kaggle/input").exists():
-        found = list(Path("/kaggle/input").rglob("master_graphs.jsonl"))
+        found = list(Path("/kaggle/input").rglob("master_pdg.jsonl"))
         if found:
             return found[0]
     root = get_project_root()
-    cand_processed = root / "data" / "processed" / "master_graphs.jsonl"
+    cand_processed = root / "data" / "processed" / "master_pdg.jsonl"
     if cand_processed.exists():
         return cand_processed
     return None

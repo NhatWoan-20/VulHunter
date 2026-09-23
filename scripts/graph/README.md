@@ -1,6 +1,6 @@
 ﻿# Program Graph Generation
 
-> **Objective:** Extract structural representations (AST, CFG, DFG, Call Graph) from source code to form heterogeneous graphs.
+> **Objective:** Extract structural representations (PDG Graph) from source code to form heterogeneous graphs.
 
 This directory handles the generation of program graphs necessary for the `graph_only` and `fusion` branches of VulHunter. It parses the Python code using the built-in `ast` module and explicitly extracts syntactic and semantic relationships between program elements (nodes).
 
@@ -23,7 +23,7 @@ flowchart TD
     C3 --> D
     C4 --> D
     
-    D --> E(master_graphs.jsonl)
+    D --> E(master_pdg.jsonl)
 ```
 
 ## Files Description
@@ -39,7 +39,7 @@ flowchart TD
 - **Input**: The cleaned but un-tokenized samples from `data/processed/master_graph_samples.jsonl`.
 - **Outputs**:
   - Intermediate graphs: `data/processed/master_{ast,cfg,dfg,call}.jsonl`
-  - Final merged graph dataset: `data/final/master_graphs.jsonl`
+  - Final merged graph dataset: `data/final/master_pdg.jsonl`
 
 ## How to Run
 

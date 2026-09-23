@@ -1,4 +1,4 @@
-"""Tests for model components — Graph encoder, Fusion, Heads, Losses, Metrics."""
+﻿"""Tests for model components — Graph encoder, Fusion, Heads, Losses, Metrics."""
 from __future__ import annotations
 
 import sys

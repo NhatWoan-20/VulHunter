@@ -1,4 +1,4 @@
-"""Tests for preprocessing scripts — clean_comments, normalize, strip_docstrings, split."""
+﻿"""Tests for preprocessing scripts — clean_comments, normalize, strip_docstrings, split."""
 from __future__ import annotations
 
 import json

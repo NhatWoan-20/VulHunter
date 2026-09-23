@@ -1,4 +1,4 @@
-"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) cho binary classification.
+﻿"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) cho binary classification.
 
 Implements (docs/04_dataset.md § Pillar 1-3):
     - Strict noise / test-code cleansing: drop methods whose file path indicates tests, mock,

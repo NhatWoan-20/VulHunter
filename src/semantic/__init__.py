@@ -1,1 +1,1 @@
-"""Semantic encoder module — LLM-based code understanding."""
+﻿"""Semantic encoder module — LLM-based code understanding."""

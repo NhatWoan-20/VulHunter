@@ -21,7 +21,7 @@ Usage:
         --mode fusion \
         --train-data data/splits/train.jsonl \
         --val-data data/splits/validation.jsonl \
-        --graph-data data/processed/master_graphs.jsonl \
+        --graph-data data/processed/master_pdg.jsonl \
         --use-amp
 """
 from __future__ import annotations
@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--mode", type=str, default="fusion", choices=["fusion", "semantic_only", "graph_only"])
     p.add_argument("--train-data", type=Path, default=ROOT / "data/splits/train.jsonl")
     p.add_argument("--val-data", type=Path, default=ROOT / "data/splits/validation.jsonl")
-    p.add_argument("--graph-data", type=Path, default=None)
+    p.add_argument("--graph-data", type=Path, default=ROOT / "data/final/master_pdg.jsonl")
     p.add_argument("--epochs", type=int, default=20, help="Max epochs; config overrides.")
     p.add_argument("--batch-size", type=int, default=8, help="Per-device batch size.")
     p.add_argument("--lr", type=float, default=1.5e-5)

@@ -1,4 +1,4 @@
-"""Graph Encoder — Learn structural representations from heterogeneous program graphs.
+﻿"""Graph Encoder — Learn structural representations from heterogeneous program graphs.
 
 This module implements a Graph Attention Network (GAT) that operates on heterogeneous
 program graphs containing AST, CFG, DFG, and Call Graph edges. It uses edge-type-aware
@@ -24,11 +24,9 @@ logger = logging.getLogger(__name__)
 
 # Edge type vocabulary matching the graph builders
 EDGE_TYPE_MAP = {
-    "AST_CHILD": 0,
-    "NEXT_STATEMENT": 1,
-    "CONTROL_FLOW": 2,
-    "DATA_FLOW": 3,
-    "CALL": 4,
+    "CONTROL_FLOW": 0,
+    "DATA_FLOW": 1,
+    "CALL": 2,
 }
 
 
@@ -88,7 +86,7 @@ class GATLayer(nn.Module):
     """Single Graph Attention layer with edge-type-aware attention.
 
     Implements multi-head attention where attention weights are conditioned
-    on the type of edge between nodes (AST, CFG, DFG, Call).
+    on the type of edge between nodes (PDG).
 
     Args:
         in_dim: Input feature dimension.
@@ -104,7 +102,7 @@ class GATLayer(nn.Module):
         in_dim: int,
         out_dim: int,
         num_heads: int = 8,
-        num_edge_types: int = 5,
+        num_edge_types: int = 3,
         dropout: float = 0.2,
         residual: bool = True,
     ) -> None:
@@ -259,7 +257,7 @@ class GraphEncoder(nn.Module):
         output_dim: int = 256,
         num_layers: int = 4,
         num_heads: int = 8,
-        num_edge_types: int = 5,
+        num_edge_types: int = 3,
         dropout: float = 0.2,
     ) -> None:
         super().__init__()

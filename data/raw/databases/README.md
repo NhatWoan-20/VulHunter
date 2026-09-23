@@ -1,4 +1,4 @@
-# Hướng dẫn tải và khởi tạo cơ sở dữ liệu CVEFixes (`cvefixes.db`)
+﻿# Hướng dẫn tải và khởi tạo cơ sở dữ liệu CVEFixes (`cvefixes.db`)
 
 Thư mục này dùng để lưu trữ file cơ sở dữ liệu SQLite `cvefixes.db`. File này được sử dụng trong bước trích xuất ban đầu (`scripts/extraction/extract.py`) để tạo ra tập dữ liệu chuẩn hóa `data/raw/python_cvefixes_methods.jsonl` (2,985 cặp hàm Python có nhãn).
 

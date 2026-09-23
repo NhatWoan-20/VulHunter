@@ -1,4 +1,4 @@
-"""VulHunter Model — Binary vulnerability detection.
+﻿"""VulHunter Model — Binary vulnerability detection.
 
 Main model class tích hợp:
     1. Semantic Encoder (LLM backbone, vd: CodeBERT)

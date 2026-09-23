@@ -1,4 +1,4 @@
-﻿# configs/kaggle/model_kaggle.yaml
+# configs/kaggle/model_kaggle.yaml
 # Tối ưu cho Kaggle 2x T4 16GB (Internet ON).
 # Binary classification: Qwen2.5-Coder-1.5B + LoRA + GraphCodeBERT + GAT.
 #   - LoRA r=16/α=32 thay vì unfreeze top layers (tiết kiệm VRAM ~4GB).
@@ -22,7 +22,7 @@ model:
     output_dim: 256
     num_layers: 4
     num_heads: 8
-    num_edge_types: 5
+    num_edge_types: 3
     dropout: 0.2
   fusion:
     hidden_dim: 256

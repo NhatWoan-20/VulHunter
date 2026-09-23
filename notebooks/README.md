@@ -1,4 +1,4 @@
-# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (2x T4)
+﻿# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (2x T4)
 
 > **Mục tiêu:** Chạy mô hình **VulHunter v4.0 (3 tasks)** trên **Kaggle Notebook `GPU T4 x2` + Internet ON** với **CodeBERT**.
 > **Lưu ý Cốt Lõi:** Toàn bộ quá trình Thu thập dữ liệu (Collection), Trích xuất (Extraction), Tiền xử lý (Preprocessing) và Tạo đồ thị (Graph Generation) **PHẢI ĐƯỢC CHẠY TRÊN MÁY LOCAL**. Kaggle chỉ được sử dụng cho bước cuối cùng là **Huấn luyện (Training)** và **Đánh giá (Evaluation)** nhằm tận dụng GPU.
@@ -30,7 +30,7 @@ python scripts/preprocessing/strip_docstrings.py
 python scripts/preprocessing/split.py
 python scripts/preprocessing/tokenization (on-the-fly)
 
-# 4. Xây dựng đồ thị cấu trúc (AST, CFG, DFG, Call Graph)
+# 4. Xây dựng đồ thị cấu trúc (PDG Graph)
 python scripts/graph/build_ast.py
 python scripts/graph/build_cfg.py
 python scripts/graph/build_dfg.py
@@ -47,7 +47,7 @@ Thay vì upload toàn bộ thư mục `data/` khổng lồ, chúng ta sử dụn
 python notebooks/ --with-graphs
 ```
 
-Script này sẽ copy các file chia tách (`train.jsonl`, `validation.jsonl`, `test.jsonl`) và `master_graphs.jsonl` ra thư mục `dist/kaggle_dataset/`.
+Script này sẽ copy các file chia tách (`train.jsonl`, `validation.jsonl`, `test.jsonl`) và `master_pdg.jsonl` ra thư mục `dist/kaggle_dataset/`.
 
 ---
 

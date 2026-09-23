@@ -1,4 +1,4 @@
-# Data Collection Pipeline
+﻿# Data Collection Pipeline
 
 > **Objective:** Fetch security advisories and extract vulnerable Python functions from GitHub (GHSA silver tier data).
 

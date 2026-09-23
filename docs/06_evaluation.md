@@ -24,7 +24,7 @@ Evaluation follows a **frozen-checkpoint** protocol:
 python scripts/evaluation/evaluate.py \
     --checkpoint models/checkpoints/best.pt \
     --test-data data/splits/test.jsonl \
-    --graph-data data/processed/master_graphs.jsonl \
+    --graph-data data/processed/master_pdg.jsonl \
     --output outputs/metrics/evaluation_report.json
 
 # With automatic threshold tuning (default)

@@ -1,4 +1,4 @@
-"""Dataset — PyTorch Dataset và collation utilities cho VulHunter binary classification.
+﻿"""Dataset — PyTorch Dataset và collation utilities cho VulHunter binary classification.
 
 Loads preprocessed JSONL data và convert thành tensors cho VulHunterModel.
 Handles variable-length sequences và graph structures.
@@ -199,10 +199,12 @@ class VulHunterDataset(Dataset):
                 result["node_types"] = ["unknown"]
                 result["node_texts"] = ["unknown"]
             edges = gdata.get("edges", [])
+            # Always filter to keep only PDG edges as defined in EDGE_TYPE_MAP
+            edges = [e for e in edges if e.get("type") in EDGE_TYPE_MAP]
             if edges:
                 src = [e["source"] - 1 for e in edges]
                 dst = [e["target"] - 1 for e in edges]
-                etype = [EDGE_TYPE_MAP.get(e.get("type", "AST_CHILD"), 0) for e in edges]
+                etype = [EDGE_TYPE_MAP[e["type"]] for e in edges]
                 result["edge_index"] = torch.tensor([src, dst], dtype=torch.long)
                 result["edge_type"] = torch.tensor(etype, dtype=torch.long)
             else:

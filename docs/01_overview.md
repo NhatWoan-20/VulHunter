@@ -13,7 +13,7 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 
 **VulHunter** addresses this by combining:
 1. **Semantic representations** from Code Large Language Models (capturing token-level context, API semantics, identifier naming).
-2. **Structural representations** from Program Graphs (AST, CFG, DFG, Call Graph, capturing execution flow and data dependencies).
+2. **Structural representations** from Program Graphs (PDG Graph, capturing execution flow and data dependencies).
 
 ---
 

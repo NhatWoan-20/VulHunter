@@ -1,4 +1,4 @@
-# Data Extraction & Master Dataset Preparation
+﻿# Data Extraction & Master Dataset Preparation
 
 > **Objective:** Extract gold-tier data from the CVEFixes database and unify it with silver-tier GHSA data to construct the final Master Dataset.
 

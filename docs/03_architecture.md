@@ -1,4 +1,4 @@
-# 03 — System Architecture
+﻿# 03 — System Architecture
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
@@ -16,7 +16,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
            ▼                                                   ▼
  ┌──────────────────────┐                            ┌──────────────────────┐
  │   Semantic Branch     │                            │     Graph Branch     │
- │  (CodeBERT +   │                            │ (AST+CFG+DFG+Call GAT)│
+ │  (CodeBERT +   │                            │ (PDG GAT)│
  │   Full Fine-tuning, r=16/α=32)  │                            │  Pure Structural Graph        │
  │  Last-token pooling  │                            │  unfreeze top-6      │
  └──────────┬───────────┘                            └──────────┬───────────┘

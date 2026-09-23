@@ -1,4 +1,4 @@
-"""End-to-End Orchestrator for GHSA Python Vulnerability Data Collection.
+﻿"""End-to-End Orchestrator for GHSA Python Vulnerability Data Collection.
 
 Runs Step 1 (fetch_advisories) followed by Step 2 (extract_functions).
 

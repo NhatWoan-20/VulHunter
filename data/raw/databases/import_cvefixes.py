@@ -1,4 +1,4 @@
-"""Tiện ích hỗ trợ chuyển đổi CVEfixes SQL/SQL.GZ sang cvefixes.db (SQLite).
+﻿"""Tiện ích hỗ trợ chuyển đổi CVEfixes SQL/SQL.GZ sang cvefixes.db (SQLite).
 
 Hỗ trợ:
   1. Đọc trực tiếp từ file nén .sql.gz và nạp vào SQLite (streaming, không tốn thêm 50GB ổ cứng).

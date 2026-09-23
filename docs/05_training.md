@@ -11,7 +11,7 @@ Training consumes `data/splits/{train,validation}.jsonl` from the **Master Datas
 per-role records keyed by `{source}:{pair}:{role}`, each carrying:
 
 - `input_ids` + `attention_mask`
-- For graph/fusion modes: per-sample heterogeneous graphs in `data/processed/master_graphs.jsonl`
+- For graph/fusion modes: per-sample heterogeneous graphs in `data/processed/master_pdg.jsonl`
 
 `VulHunterDataset` loads all fields; `collate_fn` pads `input_ids` → `(B, max_seq)`.
 
@@ -24,7 +24,7 @@ Three branches share identical data, seed, loss function, scheduler, and early s
 | Branch | Modalities | Purpose |
 |---|---|---|
 | `semantic_only` | CodeBERT (seq + pool) | Pure semantic baseline |
-| `graph_only` | GAT on AST+CFG+DFG+Call | Pure structural baseline |
+| `graph_only` | GAT on PDG | Pure structural baseline |
 | `fusion` (Proposed) | Semantic + Graph cross-attention | **Proposed hybrid** |
 
 ---
@@ -115,14 +115,14 @@ python scripts/training/train.py \
 python scripts/training/train.py \
     --mode graph_only \
     --config configs/train/graph.yaml \
-    --graph-data data/processed/master_graphs.jsonl \
+    --graph-data data/processed/master_pdg.jsonl \
     --use-amp
 
 # Fusion (proposed)
 python scripts/training/train.py \
     --mode fusion \
     --config configs/train/fusion.yaml \
-    --graph-data data/processed/master_graphs.jsonl \
+    --graph-data data/processed/master_pdg.jsonl \
     --tune-threshold \
     --use-amp
 ```
