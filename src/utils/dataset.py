@@ -1,4 +1,4 @@
-﻿"""Dataset — PyTorch Dataset và collation utilities cho VulHunter binary classification.
+"""Dataset — PyTorch Dataset và collation utilities cho VulHunter binary classification.
 
 Loads preprocessed JSONL data và convert thành tensors cho VulHunterModel.
 Handles variable-length sequences và graph structures.
@@ -189,10 +189,10 @@ class VulHunterDataset(Dataset):
         sid = sample.get("sample_id")
         if sid and sid in self.graph_data:
             gdata = self.graph_data[sid]
-            if "nodes" in gdata:
+            if "nodes" in gdata and gdata["nodes"]:
                 result["node_types"] = [n.get("type", "unknown") if isinstance(n, dict) else str(n) for n in gdata["nodes"]]
                 result["node_texts"] = [str(n.get("text") or n.get("label") or n.get("type") or "unknown") if isinstance(n, dict) else str(n) for n in gdata["nodes"]]
-            elif "node_types" in gdata:
+            elif "node_types" in gdata and gdata["node_types"]:
                 result["node_types"] = gdata["node_types"]
                 result["node_texts"] = gdata["node_types"]  # Fallback
             else:
