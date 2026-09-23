@@ -1,4 +1,4 @@
-﻿"""Graph Encoder — Learn structural representations from heterogeneous program graphs.
+"""Graph Encoder — Learn structural representations from heterogeneous program graphs.
 
 This module implements a Graph Attention Network (GAT) that operates on heterogeneous
 program graphs containing AST, CFG, DFG, and Call Graph edges. It uses edge-type-aware
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+import zlib
 
 import torch
 import torch.nn as nn
@@ -80,7 +81,38 @@ class NodeTypeEmbedding(nn.Module):
         return self.embedding(idx_tensor)
 
 
-
+class NodeTextEmbedding(nn.Module):
+    """Hashing-based embedding for node texts/labels.
+    
+    Uses deterministic CRC32 hashing to map any string to a fixed vocabulary size,
+    eliminating the need for a pre-built vocabulary.
+    
+    Args:
+        vocab_size: Number of hashing buckets.
+        embedding_dim: Dimension of text embedding.
+    """
+    
+    def __init__(self, vocab_size: int = 10000, embedding_dim: int = 128) -> None:
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        
+    def forward(self, node_texts: list[str]) -> torch.Tensor:
+        """Convert node text strings to embeddings.
+        
+        Args:
+            node_texts: List of strings, length ``N``.
+            
+        Returns:
+            Tensor of shape ``(N, embedding_dim)``.
+        """
+        # Determine device from embedding weight
+        device = self.embedding.weight.device
+        
+        # Calculate crc32 hash for each text
+        indices = [zlib.crc32(t.encode("utf-8")) % self.vocab_size for t in node_texts]
+        idx_tensor = torch.tensor(indices, dtype=torch.long, device=device)
+        return self.embedding(idx_tensor)
 
 class GATLayer(nn.Module):
     """Single Graph Attention layer with edge-type-aware attention.
@@ -253,6 +285,8 @@ class GraphEncoder(nn.Module):
     def __init__(
         self,
         node_feature_dim: int = 128,
+        text_feature_dim: int = 128,
+        text_vocab_size: int = 10000,
         hidden_dim: int = 256,
         output_dim: int = 256,
         num_layers: int = 4,
@@ -262,9 +296,10 @@ class GraphEncoder(nn.Module):
     ) -> None:
         super().__init__()
         self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
+        self.text_embedding = NodeTextEmbedding(vocab_size=text_vocab_size, embedding_dim=text_feature_dim)
 
         # Input projection
-        self.input_proj = nn.Linear(node_feature_dim, hidden_dim)
+        self.input_proj = nn.Linear(node_feature_dim + text_feature_dim, hidden_dim)
 
         # Stacked GAT layers
         self.layers = nn.ModuleList()
@@ -293,8 +328,9 @@ class GraphEncoder(nn.Module):
     def forward(
         self,
         node_types: list[str],
-        edge_index: torch.Tensor,
-        edge_type: torch.Tensor,
+        node_texts: list[str] | None = None,
+        edge_index: torch.Tensor = None,
+        edge_type: torch.Tensor = None,
         batch: Optional[torch.Tensor] = None,
         return_node_embeddings: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
@@ -302,6 +338,7 @@ class GraphEncoder(nn.Module):
 
         Args:
             node_types: List of node type strings for all nodes in the batch.
+            node_texts: List of node text strings for all nodes in the batch.
             edge_index: Edge indices, shape ``(2, E)`` in COO format.
             edge_type: Edge type indices, shape ``(E,)``.
             batch: Batch assignment vector, shape ``(N,)``. Maps each node
@@ -317,7 +354,16 @@ class GraphEncoder(nn.Module):
                 ``node_embeddings`` has shape ``(N, output_dim)``.
         """
         # Node type → embedding
-        x = self.node_embedding(node_types)  # (N, node_feature_dim)
+        x_type = self.node_embedding(node_types)  # (N, node_feature_dim)
+        
+        # Node text → embedding
+        if node_texts is not None:
+            x_text = self.text_embedding(node_texts)  # (N, text_feature_dim)
+        else:
+            x_text = torch.zeros(x_type.size(0), self.text_embedding.embedding.embedding_dim, device=x_type.device, dtype=x_type.dtype)
+            
+        # Combine structural and semantic features
+        x = torch.cat([x_type, x_text], dim=-1)
         x = self.input_proj(x)                # (N, hidden_dim)
 
         # Apply GAT layers
