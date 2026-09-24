@@ -97,6 +97,9 @@ class VulHunterModel(nn.Module):
             graph_config.setdefault("output_dim", output_dim)
             self.graph_encoder = GraphEncoder(**graph_config)
             logger.info("Khởi tạo GraphEncoder")
+            
+        if mode == "graph_only":
+            output_dim = graph_config.get("output_dim", output_dim)
 
         # Fusion module (chỉ cho fusion mode)
         if mode == "fusion":
