@@ -1,4 +1,4 @@
-﻿"""Extract Program Dependence Graph (PDG) from source code."""
+"""Extract Program Dependence Graph (PDG) from source code."""
 from __future__ import annotations
 
 import ast
@@ -129,6 +129,22 @@ class PDGBuilder(ast.NodeVisitor):
         if self._current_function is not None and callee is not None:
             self.edges.append({"source": self._current_function, "target": node_id, "type": "CALL"})
             
+        self.generic_visit(node)
+        
+    def visit_Compare(self, node: ast.Compare):
+        op_names = [type(op).__name__ for op in node.ops]
+        node_id = self._add_node(node, "Compare", label=" ".join(op_names))
+        self._add_cfg_edge(node_id)
+        self.generic_visit(node)
+
+    def visit_BinOp(self, node: ast.BinOp):
+        node_id = self._add_node(node, "BinOp", label=type(node.op).__name__)
+        self._add_cfg_edge(node_id)
+        self.generic_visit(node)
+
+    def visit_UnaryOp(self, node: ast.UnaryOp):
+        node_id = self._add_node(node, "UnaryOp", label=type(node.op).__name__)
+        self._add_cfg_edge(node_id)
         self.generic_visit(node)
         
     def generic_visit(self, node: ast.AST):
