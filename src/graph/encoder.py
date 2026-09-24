@@ -286,6 +286,9 @@ class GraphEncoder(nn.Module):
             nn.Dropout(dropout),
         )
 
+        # Project concatenated mean+max pooling back to output_dim
+        self.pool_proj = nn.Linear(output_dim * 2, output_dim)
+
 
 
     def forward(
@@ -325,16 +328,30 @@ class GraphEncoder(nn.Module):
         # Project to output dimension
         node_out = self.output_proj(x)  # (N, output_dim)
 
-        # Global pooling: mean over nodes per graph
+        # Global pooling: mean and max over nodes per graph
         if batch is not None:
             num_graphs = batch.max().item() + 1
-            graph_out = torch.zeros(num_graphs, node_out.size(1), device=node_out.device, dtype=node_out.dtype)
+            
+            # Mean pooling
+            graph_mean = torch.zeros(num_graphs, node_out.size(1), device=node_out.device, dtype=node_out.dtype)
             count = torch.zeros(num_graphs, 1, device=node_out.device, dtype=node_out.dtype)
-            graph_out.scatter_add_(0, batch.unsqueeze(-1).expand_as(node_out), node_out.to(graph_out.dtype))
+            graph_mean.scatter_add_(0, batch.unsqueeze(-1).expand_as(node_out), node_out.to(graph_mean.dtype))
             count.scatter_add_(0, batch.unsqueeze(-1), torch.ones_like(batch, dtype=node_out.dtype).unsqueeze(-1))
-            graph_out = graph_out / count.clamp(min=1)
+            graph_mean = graph_mean / count.clamp(min=1)
+            
+            # Max pooling
+            graph_max = torch.full((num_graphs, node_out.size(1)), -1e9, device=node_out.device, dtype=node_out.dtype)
+            # use amax for max pooling
+            graph_max.scatter_reduce_(0, batch.unsqueeze(-1).expand_as(node_out), node_out, reduce="amax", include_self=False)
+            graph_max = torch.where(count > 0, graph_max, torch.zeros_like(graph_max))
+            
+            graph_out = torch.cat([graph_mean, graph_max], dim=-1)
         else:
-            graph_out = node_out.mean(dim=0, keepdim=True)  # Single graph
+            graph_mean = node_out.mean(dim=0, keepdim=True)  # Single graph
+            graph_max = node_out.max(dim=0, keepdim=True)[0]
+            graph_out = torch.cat([graph_mean, graph_max], dim=-1)
+
+        graph_out = self.pool_proj(graph_out)
 
         if return_node_embeddings:
             return graph_out, node_out
