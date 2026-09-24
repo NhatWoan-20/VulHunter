@@ -164,11 +164,7 @@ class VulHunterModel(nn.Module):
             elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
                 edge_index = edge_index.view(2, -1)
             graph_pooled = self.graph_encoder(
-                node_types=node_types,
-                node_texts=node_texts,
-                edge_index=edge_index,
-                edge_type=edge_type,
-                batch=batch,
+                node_types, edge_index, edge_type, batch,
             )
             fused_pooled = graph_pooled
 
@@ -185,11 +181,7 @@ class VulHunterModel(nn.Module):
                 # DataParallel gave us (1, E) — reshape to (2, E//2)
                 edge_index = edge_index.view(2, -1)
             graph_pooled, node_emb = self.graph_encoder(
-                node_types=node_types,
-                node_texts=node_texts,
-                edge_index=edge_index,
-                edge_type=edge_type,
-                batch=batch,
+                node_types, edge_index, edge_type, batch,
                 return_node_embeddings=True,
             )
             # Cross-attend code tokens to graph nodes
