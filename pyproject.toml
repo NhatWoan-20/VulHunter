@@ -1,4 +1,4 @@
-﻿[build-system]
+[build-system]
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
@@ -33,6 +33,7 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.1.0",
+    "torch-geometric>=2.3.0",
     "transformers>=4.36.0",
     "tokenizers>=0.15.0",
     "safetensors>=0.4.0",

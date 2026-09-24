@@ -80,215 +80,58 @@ class NodeTypeEmbedding(nn.Module):
         idx_tensor = torch.tensor(indices, dtype=torch.long, device=self.embedding.weight.device)
         return self.embedding(idx_tensor)
 
-class GATLayer(nn.Module):
-    """Single Graph Attention layer with edge-type-aware attention.
-
-    Implements multi-head attention where attention weights are conditioned
-    on the type of edge between nodes (PDG).
-
-    Args:
-        in_dim: Input feature dimension.
-        out_dim: Output feature dimension (per head).
-        num_heads: Number of attention heads.
-        num_edge_types: Number of distinct edge types.
-        dropout: Dropout probability.
-        residual: Whether to add a residual connection.
-    """
-
-    def __init__(
-        self,
-        in_dim: int,
-        out_dim: int,
-        num_heads: int = 8,
-        num_edge_types: int = 3,
-        dropout: float = 0.2,
-        residual: bool = True,
-    ) -> None:
-        super().__init__()
-        self.num_heads = num_heads
-        self.out_dim = out_dim
-        self.residual = residual
-
-        # Linear projections for Q, K, V
-        self.W_q = nn.Linear(in_dim, out_dim * num_heads, bias=False)
-        self.W_k = nn.Linear(in_dim, out_dim * num_heads, bias=False)
-        self.W_v = nn.Linear(in_dim, out_dim * num_heads, bias=False)
-
-        # Edge-type-specific attention bias
-        self.edge_bias = nn.Embedding(num_edge_types, num_heads)
-
-        # Output projection
-        self.W_o = nn.Linear(out_dim * num_heads, in_dim if residual else out_dim * num_heads)
-
-        self.norm = nn.LayerNorm(in_dim if residual else out_dim * num_heads)
-        self.dropout = nn.Dropout(dropout)
-        self.attn_dropout = nn.Dropout(dropout)
-
-        # Residual projection if dimensions don't match
-        if residual and in_dim != out_dim * num_heads:
-            self.res_proj = nn.Linear(in_dim, in_dim)
-        else:
-            self.res_proj = None
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        edge_type: torch.Tensor,
-    ) -> torch.Tensor:
-        """Forward pass of the GAT layer.
-
-        Args:
-            x: Node features of shape ``(N, in_dim)``.
-            edge_index: Edge indices of shape ``(2, E)`` in COO format.
-            edge_type: Edge type indices of shape ``(E,)``.
-
-        Returns:
-            Updated node features of shape ``(N, in_dim)`` if residual,
-            else ``(N, out_dim * num_heads)``.
-        """
-        N = x.size(0)
-        H = self.num_heads
-        D = self.out_dim
-
-        # Project to Q, K, V
-        Q = self.W_q(x).view(N, H, D)  # (N, H, D)
-        K = self.W_k(x).view(N, H, D)
-        V = self.W_v(x).view(N, H, D)
-
-        # Guard: edge_index must be (2, E). DataParallel splits tensors on dim-0,
-        # so a (2, E) edge_index becomes (1, E) on each GPU → index-out-of-bounds.
-        # Also handles empty-edge graphs (E=0). In either case skip message passing.
-        no_edges = (
-            edge_index.dim() != 2
-            or edge_index.size(0) != 2
-            or edge_index.size(-1) == 0
-        )
-        if no_edges:
-            # No message passing: project identity through W_o then residual/norm
-            out_empty = torch.zeros(N, H * D, device=x.device, dtype=x.dtype)
-            out_empty = self.W_o(out_empty)
-            if self.residual:
-                residual = self.res_proj(x) if self.res_proj is not None else x
-                out_empty = residual + self.dropout(out_empty)
-            return self.norm(out_empty)
-
-        src, dst = edge_index[0], edge_index[1]  # src → dst edges
-
-        # Compute attention scores
-        q_dst = Q[dst]    # (E, H, D)
-        k_src = K[src]    # (E, H, D)
-        attn_scores = (q_dst * k_src).sum(dim=-1) / (D ** 0.5)  # (E, H)
-
-        # Add edge-type bias (ensure matching dtype under AMP)
-        e_bias = self.edge_bias(edge_type).to(attn_scores.dtype)
-        attn_scores = attn_scores + e_bias
-
-        # Softmax per destination node (sparse attention)
-        # Compute in float32 for numerical stability under AMP FP16, then cast back to x.dtype
-        attn_weights = self._sparse_softmax(attn_scores.float(), dst, N).to(x.dtype)
-        attn_weights = self.attn_dropout(attn_weights)
-
-        # Weighted aggregation
-        v_src = V[src]  # (E, H, D)
-        weighted = v_src * attn_weights.unsqueeze(-1)  # (E, H, D)
-
-        # Scatter-add to destination nodes
-        out = torch.zeros(N, H, D, device=x.device, dtype=x.dtype)
-        out.scatter_add_(0, dst.unsqueeze(-1).unsqueeze(-1).expand(-1, H, D), weighted.to(out.dtype))
-
-        # Reshape and project
-        out = out.view(N, H * D)  # (N, H*D)
-        out = self.W_o(out)       # (N, in_dim) or (N, H*D)
-
-        # Residual connection
-        if self.residual:
-            residual = self.res_proj(x) if self.res_proj is not None else x
-            out = residual + self.dropout(out)
-
-        out = self.norm(out)
-        return out
-
-    @staticmethod
-    def _sparse_softmax(scores: torch.Tensor, index: torch.Tensor, num_nodes: int) -> torch.Tensor:
-        """Compute softmax over groups defined by `index` (scatter-based).
-
-        Args:
-            scores: Attention scores of shape ``(E, H)``.
-            index: Destination node indices of shape ``(E,)``.
-            num_nodes: Total number of nodes ``N``.
-
-        Returns:
-            Softmax weights of shape ``(E, H)``.
-        """
-        scores_max = torch.zeros(num_nodes, scores.size(1), device=scores.device, dtype=scores.dtype)
-        scores_max.scatter_reduce_(0, index.unsqueeze(-1).expand_as(scores), scores, reduce="amax", include_self=False)
-        scores = scores - scores_max[index]
-
-        exp_scores = scores.exp()
-        exp_sum = torch.zeros(num_nodes, scores.size(1), device=scores.device, dtype=scores.dtype)
-        exp_sum.scatter_add_(0, index.unsqueeze(-1).expand_as(exp_scores), exp_scores)
-
-        return exp_scores / exp_sum[index].clamp(min=1e-12)
-
-
 class GraphEncoder(nn.Module):
-    """Heterogeneous Graph Neural Network encoder for program graphs.
+    """Heterogeneous Graph Neural Network encoder for program graphs using RGCN.
 
-    Stacks multiple GAT layers with edge-type-aware attention to learn
+    Stacks multiple RGCN layers with edge-type-aware convolutions to learn
     structural representations from combined AST + CFG + DFG + Call graphs.
 
     Args:
         node_feature_dim: Dimension of initial node features (from NodeTypeEmbedding).
-        hidden_dim: Hidden dimension for GAT layers.
+        hidden_dim: Hidden dimension for RGCN layers.
         output_dim: Final output embedding dimension.
-        num_layers: Number of stacked GAT layers.
-        num_heads: Number of attention heads per layer.
-        num_edge_types: Number of distinct edge types.
+        num_layers: Number of stacked RGCN layers.
+        num_heads: Ignored (kept for API compatibility).
+        num_edge_types: Number of distinct edge types (relations).
         dropout: Dropout probability.
     """
 
     def __init__(
         self,
         node_feature_dim: int = 128,
-        hidden_dim: int = 256,
-        output_dim: int = 256,
-        num_layers: int = 4,
-        num_heads: int = 8,
-        num_edge_types: int = 3,
-        dropout: float = 0.2,
+        hidden_dim: int = 128,
+        output_dim: int = 128,
+        num_layers: int = 3,
+        num_heads: int = 4,
+        num_edge_types: int = 5,
+        dropout: float = 0.5,
     ) -> None:
         super().__init__()
         self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
-
+        
         # Input projection
         self.input_proj = nn.Linear(node_feature_dim, hidden_dim)
 
-        # Stacked GAT layers
+        from torch_geometric.nn import RGCNConv
+        
+        # Stacked RGCN layers
         self.layers = nn.ModuleList()
+        in_dim = hidden_dim
         for _ in range(num_layers):
             self.layers.append(
-                GATLayer(
-                    in_dim=hidden_dim,
-                    out_dim=hidden_dim // num_heads,
-                    num_heads=num_heads,
-                    num_edge_types=num_edge_types,
-                    dropout=dropout,
-                    residual=True,
-                )
+                RGCNConv(in_dim, hidden_dim, num_relations=num_edge_types)
             )
+            in_dim = hidden_dim
 
-        # Output projection
+        self.dropout_layer = nn.Dropout(dropout)
+
+        # Output projection for pooled graph embedding (mean + max)
         self.output_proj = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, output_dim),
+            nn.LayerNorm(hidden_dim * 2),
+            nn.Linear(hidden_dim * 2, output_dim),
             nn.GELU(),
             nn.Dropout(dropout),
         )
-
-        # Project concatenated mean+max pooling back to output_dim
-        self.pool_proj = nn.Linear(output_dim * 2, output_dim)
-
 
 
     def forward(
@@ -299,60 +142,50 @@ class GraphEncoder(nn.Module):
         batch: Optional[torch.Tensor] = None,
         return_node_embeddings: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Encode a batched heterogeneous program graph.
-
-        Args:
-            node_types: List of node type strings for all nodes in the batch.
-            edge_index: Edge indices, shape ``(2, E)`` in COO format.
-            edge_type: Edge type indices, shape ``(E,)``.
-            batch: Batch assignment vector, shape ``(N,)``. Maps each node
-                to its graph index in the batch. Required for batched graphs.
-            return_node_embeddings: If True, also return per-node embeddings.
-
-        Returns:
-            If ``return_node_embeddings=False``:
-                Graph-level embedding of shape ``(B, output_dim)``
-                where ``B`` is batch size.
-            If ``return_node_embeddings=True``:
-                Tuple of (graph_embedding, node_embeddings) where
-                ``node_embeddings`` has shape ``(N, output_dim)``.
-        """
+        """Encode a batched heterogeneous program graph."""
+        
         # Node type → embedding
         x = self.node_embedding(node_types)  # (N, node_feature_dim)
-        x = self.input_proj(x)                # (N, hidden_dim)
+        x = self.input_proj(x)               # (N, hidden_dim)
 
-        # Apply GAT layers
+        # Ensure edge_index is in COO format (2, E)
+        if edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) != 2:
+            if edge_index.size(1) == 2:
+                edge_index = edge_index.t().contiguous()
+            else:
+                edge_index = edge_index.view(2, -1)
+                
+        # Handle empty graphs smoothly
+        no_edges = (
+            edge_index is None
+            or edge_index.dim() != 2
+            or edge_index.size(0) != 2
+            or edge_index.size(-1) == 0
+        )
+
         for layer in self.layers:
-            x = layer(x, edge_index, edge_type)  # (N, hidden_dim)
+            if no_edges:
+                x = F.relu(x) # skip message passing if graph has no edges
+            else:
+                x = F.relu(layer(x, edge_index, edge_type))
+            x = self.dropout_layer(x)
 
-        # Project to output dimension
-        node_out = self.output_proj(x)  # (N, output_dim)
+        node_out = x
+
+        from torch_geometric.nn import global_mean_pool, global_max_pool
 
         # Global pooling: mean and max over nodes per graph
         if batch is not None:
-            num_graphs = batch.max().item() + 1
-            
-            # Mean pooling
-            graph_mean = torch.zeros(num_graphs, node_out.size(1), device=node_out.device, dtype=node_out.dtype)
-            count = torch.zeros(num_graphs, 1, device=node_out.device, dtype=node_out.dtype)
-            graph_mean.scatter_add_(0, batch.unsqueeze(-1).expand_as(node_out), node_out.to(graph_mean.dtype))
-            count.scatter_add_(0, batch.unsqueeze(-1), torch.ones_like(batch, dtype=node_out.dtype).unsqueeze(-1))
-            graph_mean = graph_mean / count.clamp(min=1)
-            
-            # Max pooling
-            min_val = torch.finfo(node_out.dtype).min
-            graph_max = torch.full((num_graphs, node_out.size(1)), min_val, device=node_out.device, dtype=node_out.dtype)
-            # use amax for max pooling
-            graph_max.scatter_reduce_(0, batch.unsqueeze(-1).expand_as(node_out), node_out, reduce="amax", include_self=False)
-            graph_max = torch.where(count > 0, graph_max, torch.zeros_like(graph_max))
-            
+            batch = batch.view(-1)
+            graph_mean = global_mean_pool(node_out, batch)
+            graph_max = global_max_pool(node_out, batch)
             graph_out = torch.cat([graph_mean, graph_max], dim=-1)
         else:
             graph_mean = node_out.mean(dim=0, keepdim=True)  # Single graph
             graph_max = node_out.max(dim=0, keepdim=True)[0]
             graph_out = torch.cat([graph_mean, graph_max], dim=-1)
 
-        graph_out = self.pool_proj(graph_out)
+        graph_out = self.output_proj(graph_out)
 
         if return_node_embeddings:
             return graph_out, node_out
