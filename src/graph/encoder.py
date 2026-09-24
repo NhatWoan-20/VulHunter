@@ -340,7 +340,8 @@ class GraphEncoder(nn.Module):
             graph_mean = graph_mean / count.clamp(min=1)
             
             # Max pooling
-            graph_max = torch.full((num_graphs, node_out.size(1)), -1e9, device=node_out.device, dtype=node_out.dtype)
+            min_val = torch.finfo(node_out.dtype).min
+            graph_max = torch.full((num_graphs, node_out.size(1)), min_val, device=node_out.device, dtype=node_out.dtype)
             # use amax for max pooling
             graph_max.scatter_reduce_(0, batch.unsqueeze(-1).expand_as(node_out), node_out, reduce="amax", include_self=False)
             graph_max = torch.where(count > 0, graph_max, torch.zeros_like(graph_max))
