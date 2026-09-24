@@ -7,8 +7,7 @@ Chạy tuần tự các bước:
     4. Validate AST
     5. Build pair samples (vulnerable vs safe)
     6. Build graphs (PDG)
-    7. Merge graphs
-    8. Split train/val/test (repository-disjoint)
+    7. Split train/val/test (repository-disjoint)
 
 Usage:
     python scripts/preprocessing/run_pipeline.py [--skip-graph]
