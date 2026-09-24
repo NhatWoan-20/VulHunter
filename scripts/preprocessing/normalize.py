@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -9,7 +10,8 @@ OUTPUT = ROOT / "data" / "processed" / "master_normalized.jsonl"
 
 
 def normalize(code: str) -> str:
-    return code.replace("\r\n", "\n").replace("\r", "\n").replace("\t", "    ").strip("\n")
+    code = code.replace("\r\n", "\n").replace("\r", "\n").replace("\t", "    ")
+    return textwrap.dedent(code).strip("\n")
 
 
 def main() -> None:
