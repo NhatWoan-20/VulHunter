@@ -1,20 +1,18 @@
 # configs/kaggle/model_kaggle.yaml
 # Tối ưu cho Kaggle 2x T4 16GB (Internet ON).
-# Binary classification: Qwen2.5-Coder-1.5B + LoRA + GraphCodeBERT + GAT.
-#   - LoRA r=16/α=32 thay vì unfreeze top layers (tiết kiệm VRAM ~4GB).
-#   - Gradient checkpointing cho Qwen (quan trọng).
-#   - FP16 backbone + FP32 trainable parts (PyTorch AMP).
-#   - Last-token pooling cho decoder-only LLM.
-#   - Unfreeze top-6 GraphCodeBERT layers (chống collapse).
-#   - Dynamic padding giảm VRAM theo max-len trong batch.
+# Binary classification: CodeBERT (125M) + Full Fine-Tuning + PDG (RGCN).
+#   - Full fine-tuning cho CodeBERT (~125M params) nhẹ nhàng trên 16GB VRAM.
+#   - CLS pooling cho RoBERTa/encoder-only architecture.
+#   - FP16 AMP để tăng tốc độ huấn luyện và tiết kiệm bộ nhớ.
+#   - Residual skip (alpha=0.3) bảo tồn tín hiệu ngữ nghĩa khi đồ thị thưa/nhiễu.
 model:
   semantic:
-    backbone: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+    backbone: "microsoft/codebert-base"
     output_dim: 256
-    freeze_layers: 28          # Freeze toàn bộ nếu dùng LoRA
+    freeze_layers: 0           # Full fine-tuning cho mô hình 125M
     dropout: 0.1
-    pooling: "last"            # ★ Last-token pooling cho decoder-only
-    gradient_checkpointing: true  # ★ Quan trọng: tiết kiệm VRAM ~3GB
+    pooling: "cls"             # ★ [CLS] pooling cho encoder-only
+    gradient_checkpointing: false
     use_fp16: true
   graph:
     node_feature_dim: 128
@@ -33,4 +31,3 @@ model:
     residual_alpha: 0.3        # ★ 30% semantic residual skip
   heads:
     binary: {hidden_dim: 128, dropout: 0.3}
-

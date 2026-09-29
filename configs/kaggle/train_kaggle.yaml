@@ -1,4 +1,4 @@
-﻿# configs/kaggle/train_kaggle.yaml
+# configs/kaggle/train_kaggle.yaml
 # Tối ưu cho Kaggle 2x T4 16GB + Internet ON.
 # Binary classification với tiered LR, threshold tuning, AMP FP16.
 training:
@@ -8,14 +8,14 @@ training:
   pin_memory: true
   use_amp: true            # fp16 mixed precision
   optimizer: "adamw"
-  learning_rate: 2.0e-5    # Backbone (LoRA)
+  learning_rate: 2.0e-5    # Backbone (CodeBERT Full Fine-Tuning)
   graph_learning_rate: 1.0e-4
   head_learning_rate: 2.0e-4
   weight_decay: 0.01
   max_grad_norm: 1.0
   warmup_ratio: 0.1
   scheduler: "cosine"
-  epochs: 8                # ~2-3h trên 2xT4 với 1.5B + LoRA
+  epochs: 8                # ~1-2h trên 2xT4 với CodeBERT 125M
   batch_size: 2            # per-device; eff = 2*4*2 = 16
   gradient_accumulation_steps: 4
   focal_alpha: 0.5

@@ -1,15 +1,15 @@
 """Graph Encoder — Learn structural representations from heterogeneous program graphs.
 
-This module implements a Graph Attention Network (GAT) that operates on heterogeneous
-program graphs containing AST, CFG, DFG, and Call Graph edges. It uses edge-type-aware
-attention to learn different structural patterns.
+This module implements a Relational Graph Convolutional Network (RGCN) that operates
+on heterogeneous program dependence graphs containing Control Flow, Data Flow, and Call
+edges. It uses relation-aware graph convolutions to learn distinct structural patterns.
 
 Architecture:
-    Node Features → Embedding → [GATConv × N layers] → Global Pooling → Graph Embedding
+    Node Features → Embedding → [RGCNConv × N layers] → Global Pooling → Graph Embedding
 
 Example:
     >>> encoder = GraphEncoder(node_feature_dim=128, hidden_dim=256, output_dim=256)
-    >>> graph_emb, node_emb = encoder(x, edge_index, edge_type, batch)
+    >>> graph_emb = encoder(node_types, edge_index, edge_type, batch)
 """
 from __future__ import annotations
 

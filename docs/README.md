@@ -1,8 +1,8 @@
-﻿<h1 align="center">🛡️ VulHunter</h1>
+<h1 align="center">🛡️ VulHunter</h1>
 
 <p align="center">
   <strong>Hybrid Multi-Modal Binary Vulnerability Detection for Python</strong><br/>
-  <em>CodeBERT (Semantic View) + Pure Structural Graph (GAT) (Structural View) + Gated Bidirectional Cross-Attention (Fusion)</em>
+  <em>CodeBERT (Semantic View) + Program Dependence Graph (RGCN) (Structural View) + Gated Bidirectional Cross-Attention (Fusion)</em>
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/PyTorch-2.1%2B-red?logo=pytorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Transformers-4.36%2B-yellow?logo=huggingface&logoColor=white" alt="Transformers">
   <img src="https://img.shields.io/badge/Kaggle-2xT4-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
-  <img src="https://img.shields.io/badge/Tests-61%2F61%20Passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-Passed-brightgreen" alt="Tests">
   <a href="https://doi.org/10.5281/zenodo.13118970"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.13118970-blue" alt="DOI"></a>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
 </p>
@@ -33,12 +33,10 @@
 
 Traditional vulnerability detectors rely either on purely syntactic sequence representations (LLMs/Transformers) which can miss non-local data-flow constraints, or purely on graph structures (AST/CFG/GNNs) which discard rich identifier semantics and comments. **VulHunter bridges this gap** by fusing two complementary representations:
 
-1. **Semantic Perception**: Pretrained **CodeBERT** + Full Fine-tuning for token semantics and control keywords.
-2. **Structural Perception**: **Pure Structural Graph** + Custom **Graph Attention Network (GAT)** processing 5 heterogeneous program graph edge types.
+1. **Semantic Perception**: Pretrained **CodeBERT** (Full Fine-tuning) for token semantics and control keywords.
+2. **Structural Perception**: **Program Dependence Graph (PDG)** + Heterogeneous Graph Neural Network (**RGCN**) processing heterogeneous program graph edge types (control-flow, data-flow, call).
 3. **Cross-Modal Fusion**: A **gated bidirectional cross-attention** mechanism with residual skip that dynamically balances semantic and structural signals.
-4. **Binary Supervision**: Focal loss với quality-tier sample weighting.
-
-> [!NOTE]
+4. **Binary Supervision**: Focal Loss giải quyết mất cân bằng mẫu.
 
 ---
 
@@ -46,9 +44,8 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
 
 - **Single Task Focus**: Binary vulnerability detection (vulnerable=1 / safe=0) — đơn giản, hiệu quả.
 - **3 Training Modes**: `semantic_only`, `graph_only`, `fusion` — train song song để so sánh.
-- **Full Fine-tuning Fine-Tuning**: Hiệu quả cho CodeBERT với VRAM thấp (~4GB savings).
-- **Last-Token Pooling**: Tối ưu cho decoder-only LLM.
-- **Unfreeze Top-6 Pure Structural Graph**: Chống AUC=0.5 collapse.
+- **Full Fine-Tuning**: Tối ưu trực tiếp toàn bộ backbone CodeBERT (~125M params) với FP16.
+- **CLS Pooling**: Sử dụng vector [CLS] tiêu chuẩn của kiến trúc encoder-only RoBERTa.
 - **Threshold Tuning**: Auto-find optimal F1 threshold trên val set.
 - **MLOps Ready**: FastAPI deployment script.
 - **Strict Leakage Prevention**: 80/10/10 split grouped strictly by GitHub repository.
@@ -64,12 +61,12 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
                  ┌───────────────────────┴───────────────────────┐
                  ▼                                               ▼
        [Semantic Branch]                                [Structural Branch]
-     CodeBERT                  Heterogeneous Program Graph
-     + Full Fine-tuning (r=16, α=32)                           (AST + CFG + DFG + Call)
-     Last-token pooling
+     CodeBERT (125M)                           Heterogeneous Program Graph
+     + Full Fine-tuning                               (AST + CFG + DFG + Call)
+     CLS pooling
                  │                                               │
-        Per-token sequence                              Pure Structural Graph (unfreeze
-        representations                                top-6) + 4-layer GAT
+        Per-token sequence                              NodeType Embedding + 
+        representations                                 Stacked RGCN Layers
                  │                                               │
                  └───────────────────────┬───────────────────────┘
                                          ▼
@@ -78,8 +75,7 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
                                          │
                                          ▼
                                 Binary Prediction Head
-                                  (Focal Loss với
-                                   quality-tier weights)
+                                     (Focal Loss)
                                          │
                                          ▼
                               P(vulnerable) ∈ [0, 1]
@@ -93,11 +89,11 @@ Configuration wiring được tách riêng ở `configs/model/default.yaml` và 
 
 VulHunter trains trên consolidated **Master Dataset** kết hợp:
 
-| Source Tier | Raw Samples | Cleaned Pairs | Role Samples | Quality Weight |
-|:---|:---|:---:|:---:|:---:|
-| **CVEFixes (Gold)** | Zenodo SQL dump | **2,985** | 5,958 | $w = 1.00$ |
-| **GHSA (Silver)** | GitHub Security Advisories | **12,366** | 24,496 | $w = 0.85$ |
-| **Master (Unified)** | Gold + Silver | **15,351** | **30,454** | Quality-weighted |
+| Source | Raw Samples | Cleaned Pairs | Role Samples |
+|:---|:---|:---:|:---:|
+| **CVEFixes** | Zenodo SQL dump | **2,985** | 5,958 |
+| **GHSA** | GitHub Security Advisories | **12,366** | 24,496 |
+| **Master (Unified)** | CVEFixes + GHSA | **15,351** | **30,454** |
 
 Split: **80/10/10 repository-disjoint** (strict repo-disjoint).
 
@@ -197,21 +193,25 @@ curl -X POST "http://localhost:8000/predict" \
 
 ## ☁️ Run on Kaggle (2x T4 GPUs)
 
+> **Tự động clone:** Các notebooks sẽ tự động clone VulHunter từ GitHub khi chạy. Không cần upload dataset!
+
 ### Workflow
 
-1. **Upload Dataset (Local, Once)**:
-   ```powershell
-   python notebooks/ --zip
-   # Generates dist/kaggle_dataset/ ready cho Kaggle Datasets
-   ```
-2. **Launch Kaggle Notebook**:
+1. **Launch Kaggle Notebook**:
    - Accelerator: **GPU T4 x2**
    - Internet: **ON** | Persistence: **ON**
-   - Add Input: `vulhunter-pre-tokenized`
-3. **Run Notebooks**:
+   - Add Input: `vulhunter-pre-tokenized` (dataset đã tokenized sẵn)
+   - *Lưu ý: Nếu không có dataset, notebooks sẽ tự clone repo và bạn cần chạy preprocessing*
+
+2. **Run Notebooks** (tự động clone):
    - `notebooks/train_fusion.ipynb` — Fusion mode (chính)
    - `notebooks/train_semantic_only.ipynb` — Semantic baseline
    - `notebooks/train_graph_only.ipynb` — Graph baseline
+
+3. **Sau khi clone thành công**, notebook sẽ:
+   - Cài đặt dependencies tự động
+   - Import modules và hiển thị "All imports OK"
+   - Sẵn sàng để train
 
 ---
 
@@ -235,7 +235,7 @@ python scripts/training/train.py \
   --use-amp
 ```
 
-#### Scenario C: Multi-Modal Fusion (CodeBERT + GAT)
+#### Scenario C: Multi-Modal Fusion (CodeBERT + RGCN)
 ```bash
 python scripts/training/train.py \
   --mode fusion \
@@ -276,9 +276,9 @@ python scripts/training/train.py \
 
 | Model Variant | Binary F1 | Binary MCC | AUC-ROC |
 |:---|:---:|:---:|:---:|
-| `graph_only` (Pure Structural Graph + GAT) | *TBD* | *TBD* | *TBD* |
+| `graph_only` (PDG + RGCN) | *TBD* | *TBD* | *TBD* |
 | `semantic_only` (CodeBERT) | *TBD* | *TBD* | *TBD* |
-| **`fusion` (CodeBERT + GAT)** | *TBD* | *TBD* | *TBD* |
+| **`fusion` (CodeBERT + RGCN)** | *TBD* | *TBD* | *TBD* |
 
 ---
 
@@ -287,7 +287,7 @@ python scripts/training/train.py \
 ```text
 VulHunter/
 ├── configs/                     # Hyperparameter & architecture specs
-│   ├── model/default.yaml       # CodeBERT + 4-layer GAT + Gated Cross-Attention
+│   ├── model/default.yaml       # CodeBERT + RGCN + Gated Cross-Attention
 │   ├── train/                   # Training profiles (semantic.yaml, graph.yaml, fusion.yaml)
 │   └── kaggle/                  # Kaggle profiles
 ├── data/
@@ -298,8 +298,8 @@ VulHunter/
 │   ├── train_semantic_only.ipynb
 │   └── train_graph_only.ipynb
 ├── src/                         # Core VulHunter Library
-│   ├── semantic/encoder.py      # CodeBERT, last-token pooling
-│   ├── graph/encoder.py         # PyTorch GAT, unfreeze_top_layers
+│   ├── semantic/encoder.py      # CodeBERT, CLS pooling
+│   ├── graph/encoder.py         # Heterogeneous RGCN Graph Encoder
 │   ├── fusion/cross_attention.py# Gated bidirectional cross-attention + residual
 │   ├── multitask/model.py       # VulHunterModel (binary output)
 │   ├── multitask/heads.py       # BinaryHead
@@ -333,9 +333,9 @@ pytest tests --cov=src --cov-report=term-missing
 ## 🛠️ Tech Stack
 
 - **Deep Learning**: [PyTorch 2.1+](https://pytorch.org/), [HuggingFace Transformers](https://huggingface.co/docs/transformers/index)
-- **Foundation Model**: [CodeBERT](https://github.com/microsoft/CodeBERT) (1.5B Instruct)
-- **Full Fine-tuning**: [PEFT](https://github.com/huggingface/peft)
-- **Graph Neural Network**: Custom heterogeneous GAT
+- **Foundation Model**: [CodeBERT](https://github.com/microsoft/CodeBERT) (125M, `microsoft/codebert-base`)
+- **Fine-tuning**: Full Fine-Tuning
+- **Graph Neural Network**: Relational Graph Convolutional Network (RGCN) via PyG
 - **Evaluation**: `scikit-learn`, `scipy`
 
 ---
@@ -349,10 +349,4 @@ Distributed under the **MIT License**.
 ### Acknowledgments
 - **CVEFixes**: [secureIT-project/CVEfixes](https://github.com/secureIT-project/CVEfixes) (Zenodo DOI: `10.5281/zenodo.13118970`)
 - **GitHub Security Advisories (GHSA)**: [GitHub Advisory Database](https://github.com/advisories)
-- **CodeBERT**: CodeBERT Team, Alibaba Cloud
-- **Pure Structural Graph**: Microsoft Research
-
-
-
-
-
+- **CodeBERT**: Microsoft Research

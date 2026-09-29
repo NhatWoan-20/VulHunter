@@ -1,4 +1,4 @@
-﻿# VulHunter Source Library (`src/`)
+# VulHunter Source Library (`src/`)
 
 > **Objective:** Core PyTorch neural network modules, data handling utilities for the VulHunter project.
 
@@ -10,15 +10,15 @@ This directory houses the foundational library code. It is designed to be highly
 Contains the **Semantic Encoder** (`encoder.py`). This module wraps a pre-trained Code LLM (specifically `CodeBERT`) to extract semantic token representations from raw source code. It includes integrated support for Gradient Checkpointing and FP16 support to enable efficient fine-tuning of large models on constrained hardware (like Kaggle 2x T4s).
 
 ### 2. `graph/`
-Contains the **Graph Encoder** (`encoder.py`). This implements a custom **Graph Attention Network (GAT)** designed to process heterogeneous program graphs (PDG Graph). It features edge-type-aware attention, allowing the network to distinguish between syntactic hierarchy and data-flow dependencies when aggregating neighborhood information.
+Contains the **Graph Encoder** (`encoder.py`). This implements a **Relational Graph Convolutional Network (RGCN)** designed to process heterogeneous program graphs (PDG Graph). It features relation-aware convolutions, allowing the network to distinguish between control-flow, data-flow, and call dependencies when aggregating neighborhood information.
 
 ### 3. `fusion/`
-Contains the **Cross-Modal Fusion** module (`cross_attention.py`). This module implements a Bidirectional Cross-Attention mechanism. It bridges the gap between the semantic LLM tokens and the structural GAT nodes, allowing the semantic context to attend to structural graphs and vice-versa, outputting a unified, gated representation.
+Contains the **Cross-Modal Fusion** module (`cross_attention.py`). This module implements a Bidirectional Cross-Attention mechanism. It bridges the gap between semantic tokens and structural graph representations, allowing the semantic context to attend to structural graphs and vice-versa, outputting a unified, gated representation.
 
 ### 4. `multitask/`
 The apex of the model architecture.
 - **`heads.py`**: Defines lightweight, task-specific prediction layers (Binary) that branch off from the fused representation.
-- **`model.py`**: Defines the `VulHunterModel`, which composes the semantic encoder, graph encoder, fusion module, and the 3 task heads into a single, end-to-end trainable PyTorch `nn.Module`.
+- **`model.py`**: Defines the `VulHunterModel`, which composes the semantic encoder, graph encoder, fusion module, and the binary task head into a single, end-to-end trainable PyTorch `nn.Module`.
 
 ### 5. `explainability/` (Archived)
 Handles the post-hoc translation of model predictions into human-readable, actionable security reports.

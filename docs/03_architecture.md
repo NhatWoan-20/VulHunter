@@ -1,4 +1,4 @@
-﻿# 03 — System Architecture
+# 03 — System Architecture
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
@@ -15,10 +15,10 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
            ┌─────────────────────────┴─────────────────────────┐
            ▼                                                   ▼
  ┌──────────────────────┐                            ┌──────────────────────┐
- │   Semantic Branch     │                            │     Graph Branch     │
- │  (CodeBERT +   │                            │ (PDG GAT)│
- │   Full Fine-tuning, r=16/α=32)  │                            │  Pure Structural Graph        │
- │  Last-token pooling  │                            │  unfreeze top-6      │
+ │   Semantic Branch    │                            │     Graph Branch     │
+ │    (CodeBERT 125M    │                            │    (PDG with RGCN)   │
+ │  + Full Fine-tuning  │                            │  NodeType Embedding  │
+ │     CLS pooling      │                            │  + Stacked RGCN      │
  └──────────┬───────────┘                            └──────────┬───────────┘
              │ H_sem ∈ ℝ^(B×L×D) + h_sem ∈ ℝ^(B×D) pool      │ H_graph ∈ ℝ^(B×N×D) / h_graph ∈ ℝ^(B×D)
              │                                                   │
@@ -32,8 +32,8 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
                                       │ h_fused ∈ ℝ^(B×D)
                                       ▼
                        ┌──────────────────────────────┐
-                       │    Binary Prediction Head     │
-                       │      (Focal Loss)           │
+                       │    Binary Prediction Head    │
+                       │      (Focal Loss)            │
                        └──────────────┬───────────────┘
                                       │ p(vulnerable) ∈ [0, 1]
                                       ▼
@@ -50,24 +50,22 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 
 | Property | Value |
 |---|---|
-| **Backbone** | `CodeBERT/CodeBERT` |
-| **Context Length** | 2,048 tokens |
-| **Pooling** | **Last-token pooling** (optimal for decoder-only LLMs) |
-| **Fine-tuning** | **Full Fine-tuning** (r=16, α=32, dropout=0.05, RSFull Fine-tuning enabled) |
-| **Target Modules** | `q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj` |
-| **Gradient Checkpointing** | Optional (enable for VRAM < 14GB) |
+| **Backbone** | `microsoft/codebert-base` (125M) |
+| **Context Length** | 512 tokens |
+| **Pooling** | **[CLS] pooling** (RoBERTa encoder architecture) |
+| **Fine-tuning** | **Full Fine-Tuning** with FP16 |
+| **Projection** | Linear projection to D=256 with LayerNorm & GELU |
 | **Output** | `h_sem ∈ ℝ^D` (pooled representation, D=256) |
 
 ### 2.2 Graph Encoder (`src/graph/encoder.py`)
 
 | Property | Value |
 |---|---|
-| **Architecture** | 4-layer GAT, H=8 attention heads |
-| **Node Features** | `d_node=128` |
+| **Architecture** | Stacked RGCN layers |
+| **Node Features** | `d_node=128` (NodeTypeEmbedding over AST node types) |
 | **Hidden/Output Dim** | 256 |
-| **Edge Types (5)** | `AST_CHILD`, `NEXT_STATEMENT`, `CONTROL_FLOW`, `DATA_FLOW`, `CALL` (`EDGE_TYPE_MAP`) |
-| **Readout** | Mean-pool over nodes → `h_graph ∈ ℝ^D` |
-| **Pure Structural Graph** | Unfreeze top-6 layers (critical to avoid AUC=0.5 collapse) |
+| **Edge Types (3)** | `CONTROL_FLOW`, `DATA_FLOW`, `CALL` (`EDGE_TYPE_MAP`) |
+| **Readout** | Mean + Max pool over nodes → Linear projection → `h_graph ∈ ℝ^D` |
 
 ### 2.3 Cross-Modal Fusion (`src/fusion/cross_attention.py`)
 
@@ -75,7 +73,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 |---|---|
 | **Mechanism** | Bidirectional multi-head cross-attention |
 | **Combine Mode** | `gated` (options: `concat`, `mean`) |
-| **Residual Skip** | `h_fused = LayerNorm(h_sem + α * h_cross)` where α=0.3 |
+| **Residual Skip** | `h_fused = (1-α) * h_cross + α * h_sem` where α=0.3 |
 | **Layers** | 2 cross-attention layers |
 | **Heads** | 8 |
 | **Output** | `h_fused ∈ ℝ^D` (same dimension as semantic/graph outputs) |
@@ -87,7 +85,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 | **Input** | `h_fused ∈ ℝ^D` |
 | **Architecture** | MLP: Linear(D→128) → GELU → Dropout → Linear(128→64) → GELU → Dropout → Linear(64→1) |
 | **Output** | Logit ŷ ∈ ℝ¹ |
-| **Loss Function** | Focal Loss (α=0.5, γ=2.0) with quality-tier sample weighting |
+| **Loss Function** | Focal Loss (α=0.5, γ=2.0) |
 
 ---
 
@@ -98,16 +96,16 @@ VulHunter supports three modes, selected via `--mode` flag:
 | Mode | Semantic Encoder | Graph Encoder | Fusion | Use Case |
 |---|---|---|---|---|
 | `semantic_only` | ✓ CodeBERT | ✗ | ✗ | Semantic baseline |
-| `graph_only` | ✗ | ✓ Pure Structural Graph + GAT | ✗ | Structural baseline |
-| `fusion` (Proposed) | ✓ CodeBERT | ✓ Pure Structural Graph + GAT | ✓ Gated Cross-Attn | **Main approach** |
+| `graph_only` | ✗ | ✓ RGCN on PDG | ✗ | Structural baseline |
+| `fusion` (Proposed) | ✓ CodeBERT | ✓ RGCN on PDG | ✓ Gated Cross-Attn | **Main approach** |
 
 ---
 
 ## 4. Data Flow
 
 1. **Input:** Python function code string
-2. **Semantic Branch:** Tokenize with CodeBERT tokenizer → Full Fine-tuning fine-tuned CodeBERT → last-token pooling → `h_sem`
-3. **Graph Branch:** Parse AST/CFG/DFG/Call → heterogeneous graph → Pure Structural Graph + GAT → mean pool → `h_graph`
+2. **Semantic Branch:** Tokenize with CodeBERT tokenizer → Full Fine-tuned CodeBERT → [CLS] pooling → `h_sem`
+3. **Graph Branch:** Parse AST/CFG/DFG/Call into PDG → NodeType Embedding + RGCN → mean/max pool → `h_graph`
 4. **Fusion:** Cross-attend `h_sem` and `h_graph` → residual skip → `h_fused`
 5. **Prediction:** Binary head → logit → sigmoid → `p(vulnerable)`
 
@@ -120,15 +118,22 @@ All hyperparameters are centralized in `configs/model/default.yaml`:
 ```yaml
 model:
   semantic:
-    backbone: "CodeBERT/CodeBERT"
+    backbone: "microsoft/codebert-base"
     output_dim: 256
-    freeze_layers: 28
+    dropout: 0.1
     pooling: "cls"
   graph:
-
+    node_feature_dim: 128
+    hidden_dim: 256
+    output_dim: 256
     num_layers: 4
-    num_heads: 8
+    num_edge_types: 3
+    dropout: 0.2
   fusion:
+    hidden_dim: 256
+    num_heads: 8
+    num_layers: 2
+    dropout: 0.1
     combine: "gated"
     residual_alpha: 0.3
   heads:

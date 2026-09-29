@@ -1,4 +1,4 @@
-﻿"""Semantic Encoder — CodeBERT for Vulnerability Detection.
+"""Semantic Encoder — CodeBERT for Vulnerability Detection.
 
 Architecture:
     Code String -> Tokenizer -> Transformer Backbone -> [CLS]/mean pooling -> Projection -> Embedding
@@ -17,7 +17,7 @@ class SemanticEncoder(nn.Module):
     """CodeBERT semantic encoder (Full Fine-Tuning).
     
     Phù hợp cho các baseline semantic-only với context ngắn (512 tokens).
-    Không sử dụng Full Fine-tuning vì mô hình đủ nhỏ (~125M params) để full-finetune.
+    Không sử dụng PEFT/LoRA vì mô hình đủ nhỏ (~125M params) để full-finetune.
     """
     def __init__(
         self,

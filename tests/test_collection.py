@@ -1,4 +1,4 @@
-﻿"""Unit and Integration Tests for GHSA Collection Pipeline.
+"""Unit and Integration Tests for GHSA Collection Pipeline.
 
 Validates:
 1. AST function extraction on complex Python code.
@@ -107,7 +107,7 @@ def test_schema_compatibility_and_50_samples() -> None:
             if len(samples) >= 50:
                 break
 
-    logger.info("Loaded %d samples from gold baseline.", len(samples))
+    logger.info("Loaded %d samples from CVEFixes baseline.", len(samples))
     cvefixes_required_keys = {
         "sample_id",
         "cve_id",

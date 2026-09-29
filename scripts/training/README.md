@@ -1,4 +1,4 @@
-﻿# Model Training
+# Model Training
 
 > **Objective:** Train the multi-task, multi-modal VulHunter model.
 
@@ -7,8 +7,8 @@ This directory contains the central training script for the project. It orchestr
 ## Files Description
 
 - **`train.py`**: The master training script. It handles:
-  - **3 Operating Modes**: `semantic_only` (LLM only), `graph_only` (GAT only), and `fusion` (Cross-Attention between LLM and GAT).
-  - **Binary Optimization**: Jointly optimizes binary loss head (Binary) weighted by sample quality (gold/silver).
+  - **3 Operating Modes**: `semantic_only` (CodeBERT only), `graph_only` (RGCN only), and `fusion` (Cross-Attention between CodeBERT and RGCN).
+  - **Binary Optimization**: Optimizes binary classification head with Focal Loss.
   - **Hardware Acceleration**: Mixed Precision (AMP FP16), and Gradient Checkpointing, optimized for Kaggle 2x T4 (16GB) DataParallel setups.
 
 ## Configuration
@@ -46,8 +46,8 @@ python scripts/training/train.py \
     --val-data /kaggle/input/vulhunter-pre-tokenized/validation.jsonl
 ```
 
-### 3. Graph-Only Mode (GAT Only)
-Trains only the Graph Attention Network. Does not use the LLM backbone.
+### 3. Graph-Only Mode (RGCN Only)
+Trains only the Relational Graph Convolutional Network. Does not use the CodeBERT backbone.
 
 ```bash
 python scripts/training/train.py \

@@ -1,4 +1,4 @@
-﻿# 05 — Training & Optimization
+# 05 — Training & Optimization
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
@@ -24,30 +24,23 @@ Three branches share identical data, seed, loss function, scheduler, and early s
 | Branch | Modalities | Purpose |
 |---|---|---|
 | `semantic_only` | CodeBERT (seq + pool) | Pure semantic baseline |
-| `graph_only` | GAT on PDG | Pure structural baseline |
+| `graph_only` | RGCN on PDG | Pure structural baseline |
 | `fusion` (Proposed) | Semantic + Graph cross-attention | **Proposed hybrid** |
 
 ---
 
-## 3. Quality-Aware Weighted Binary Focal Loss
+## 3. Binary Focal Loss
 
-Per-sample loss scales the focal loss by the **quality tier** so noisier GHSA diffs perturb gradients less:
+To address class imbalance, VulHunter utilizes Binary Focal Loss:
 
-$$\mathcal{L}_{\text{sample}} = w_{\text{tier}} \cdot \mathcal{L}_{\text{binary}}$$
+$$\mathcal{L}_{\text{focal}} = -\alpha_t (1 - p_t)^\gamma \log(p_t)$$
 
-### 3.1 Quality-Tier Weights
-
-| Tier | Source | $w_{\text{tier}}$ |
-|---|---|---|
-| `gold` | CVEFixes (reviewed diffs) | **1.0** |
-| `silver` | GHSA (auto-derived diffs) | **0.85** |
-
-### 3.2 Focal Loss Hyperparameters
+### 3.1 Focal Loss Hyperparameters
 
 | Parameter | Value | Purpose |
 |---|---|---|
 | α (alpha) | 0.5 | Balanced weighting (auto-tuned based on pos/neg ratio) |
-| γ (gamma) | 2.0 | Focus on hard examples |
+| γ (gamma) | 2.0 | Focuses gradient updates on hard examples |
 
 ---
 
@@ -59,9 +52,9 @@ Different components have different learning rates:
 
 | Component | Learning Rate | Reason |
 |---|---|---|
-| Backbone (Full Fine-tuning) | 2e-5 | Preserve pre-trained knowledge |
-| Graph Encoder | 1e-4 | Randomly initialized, needs more adaptation |
-| Binary Head | 2e-4 | Task-specific head, fastest adaptation |
+| Backbone (Full Fine-tuning) | 2e-5 | Fine-tune CodeBERT Transformer layers |
+| Graph Encoder | 1e-4 | Randomly initialized RGCN layers |
+| Binary Head | 2e-4 | Task-specific prediction head |
 
 ### 4.2 Training Schedule
 
@@ -152,7 +145,6 @@ Upload `notebooks/train_fusion.ipynb`, `notebooks/train_semantic_only.ipynb`, or
 The current architecture is designed to support this transition:
 - `BinaryHead` is already modular
 - `ModelOutput` can be extended with additional logits
-- Quality-tier weighting already in place
 
 
 

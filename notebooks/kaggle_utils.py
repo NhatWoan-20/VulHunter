@@ -1,9 +1,9 @@
-﻿"""
-kaggle_utils.py — Helper cho Kaggle (Internet ON, 2x T4, 1.5B Full Fine-Tune).
+"""
+kaggle_utils.py — Helper cho Kaggle (Internet ON, 2x T4, CodeBERT Full Fine-Tune).
 
 Giả định Kaggle:
   - Internet luôn bật  -> pull tokenizer/model trực tiếp từ HF, không cần snapshot
-  - 2x T4 16GB        -> CodeBERT-1.5B full fine-tune vừa vặn 16GB.
+  - 2x T4 16GB        -> CodeBERT (125M) full fine-tune vừa vặn 16GB.
   - Data đã chia sẵn  -> /kaggle/input/<dataset>/train.jsonl \(raw code\) mount read-only,
                         dùng thẳng không cần copy 370MB hay re-tokenize.
 """
@@ -83,7 +83,7 @@ def get_model_cache_dir() -> Path:
     return Path("/tmp/hf_cache") if is_kaggle() else get_project_root() / "models" / "hf_cache"
 
 # ---------------------------------------------------------------------------
-# 2. GPU — 2x T4 (1.5B Full Fine-Tune)
+# 2. GPU — 2x T4 (CodeBERT Full Fine-Tune)
 # ---------------------------------------------------------------------------
 def print_gpu_info():
     try:
@@ -113,7 +113,7 @@ def print_gpu_info():
 def estimate_vram(backbone: str, dual: bool = True) -> str:
     # DataParallel vẫn replicate model mỗi GPU nên per-GPU VRAM không giảm
     t = {
-        "CodeBERT/CodeBERT": "1.5B: ~11GB/GPU fp16+ckpt bs2 — vừa 16GB T4",
+        "microsoft/codebert-base": "125M: ~4-6GB/GPU fp16 bs8 — hoàn toàn vừa 16GB T4",
     }
     return t.get(backbone, "—")
 
@@ -143,7 +143,7 @@ def setup_multi_gpu(model, prefer_data_parallel: bool = True):
     Notes:
         - DataParallel vẫn replicate toàn bộ model trên mỗi GPU, nên giảm batch
           lại mới có hiệu quả: loader_batch = batch_size * n_gpus.
-        - Với CodeBERT-1.5B + Full Fine-tuning + GAT fusion ở bs=2 per-GPU đã vừa 14GB/GPU.
+        - Với CodeBERT + RGCN fusion ở bs=4-8 per-GPU đã hoàn toàn vừa 16GB/GPU.
         - Nếu vẫn OOM, bật gradient_checkpointing: True trong model config.
     """
     import torch
@@ -212,7 +212,7 @@ def print_inspect(info: dict):
 # ---------------------------------------------------------------------------
 def setup_kaggle_env():
     print("=" * 60)
-    print(f" VulHunter Kaggle Setup {'[KAGGLE 2xT4 1.5B Internet ON]' if is_kaggle() else '[LOCAL]'}")
+    print(f" VulHunter Kaggle Setup {'[KAGGLE 2xT4 CodeBERT Internet ON]' if is_kaggle() else '[LOCAL]'}")
     print("=" * 60)
     root = get_project_root()
     data_root = get_data_root()

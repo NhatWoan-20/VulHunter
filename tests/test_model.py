@@ -1,4 +1,4 @@
-﻿"""Tests for model components — Graph encoder, Fusion, Heads, Losses, Metrics."""
+"""Tests for model components — Graph encoder, Fusion, Heads, Losses, Metrics."""
 from __future__ import annotations
 
 import sys
@@ -11,7 +11,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.graph.encoder import GraphEncoder, NodeTypeEmbedding, GATLayer, EDGE_TYPE_MAP
+from src.graph.encoder import GraphEncoder, NodeTypeEmbedding, EDGE_TYPE_MAP
 from src.fusion.cross_attention import CrossModalFusion, CrossAttentionBlock
 from src.multitask.heads import BinaryHead
 from src.utils.losses import BinaryClassificationLoss, FocalLoss
@@ -33,34 +33,14 @@ class TestNodeTypeEmbedding:
         assert result.shape == (1, 32)
 
 
-class TestGATLayer:
-    """Tests for a single GAT layer."""
-
-    def test_forward_shape(self):
-        layer = GATLayer(in_dim=64, out_dim=8, num_heads=8, num_edge_types=5)
-        x = torch.randn(10, 64)
-        edge_index = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 4]], dtype=torch.long)
-        edge_type = torch.tensor([0, 1, 2, 3], dtype=torch.long)
-        out = layer(x, edge_index, edge_type)
-        assert out.shape == (10, 64)  # Residual keeps same dim
-
-    def test_no_edges(self):
-        layer = GATLayer(in_dim=64, out_dim=8, num_heads=8)
-        x = torch.randn(5, 64)
-        edge_index = torch.zeros(2, 0, dtype=torch.long)
-        edge_type = torch.zeros(0, dtype=torch.long)
-        out = layer(x, edge_index, edge_type)
-        assert out.shape == (5, 64)
-
-
 class TestGraphEncoder:
-    """Tests for the full graph encoder."""
+    """Tests for the full heterogeneous graph encoder (RGCN)."""
 
     def test_forward_shape(self):
         encoder = GraphEncoder(node_feature_dim=32, hidden_dim=64, output_dim=64, num_layers=2, num_heads=4)
         node_types = ["FunctionDef", "Assign", "Name", "Call", "Return"]
         edge_index = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 4]], dtype=torch.long)
-        edge_type = torch.tensor([0, 1, 2, 3], dtype=torch.long)
+        edge_type = torch.tensor([0, 1, 2, 0], dtype=torch.long)
         batch = torch.tensor([0, 0, 0, 0, 0], dtype=torch.long)
 
         out = encoder(node_types, edge_index, edge_type, batch)
@@ -70,10 +50,18 @@ class TestGraphEncoder:
         encoder = GraphEncoder(node_feature_dim=32, hidden_dim=64, output_dim=64, num_layers=2, num_heads=4)
         node_types = ["FunctionDef", "Assign", "Name"]
         edge_index = torch.tensor([[0, 1], [1, 2]], dtype=torch.long)
-        edge_type = torch.tensor([0, 3], dtype=torch.long)
+        edge_type = torch.tensor([0, 1], dtype=torch.long)
 
         graph_out, node_out = encoder(node_types, edge_index, edge_type, return_node_embeddings=True)
         assert node_out.shape == (3, 64)
+
+    def test_no_edges(self):
+        encoder = GraphEncoder(node_feature_dim=32, hidden_dim=64, output_dim=64, num_layers=2)
+        node_types = ["FunctionDef", "Assign"]
+        edge_index = torch.zeros(2, 0, dtype=torch.long)
+        edge_type = torch.zeros(0, dtype=torch.long)
+        out = encoder(node_types, edge_index, edge_type)
+        assert out.shape == (1, 64)
 
 
 

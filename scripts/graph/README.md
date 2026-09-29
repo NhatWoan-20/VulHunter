@@ -1,63 +1,31 @@
-﻿# Program Graph Generation
+# Program Dependence Graph Generation
 
-> **Objective:** Extract structural representations (PDG Graph) from source code to form heterogeneous graphs.
+> **Objective:** Extract structural representations (Program Dependence Graph — PDG) from source code into heterogeneous graphs for RGCN.
 
-This directory handles the generation of program graphs necessary for the `graph_only` and `fusion` branches of VulHunter. It parses the Python code using the built-in `ast` module and explicitly extracts syntactic and semantic relationships between program elements (nodes).
+This directory handles the generation of program dependence graphs necessary for the `graph_only` and `fusion` branches of VulHunter. It parses Python source code via AST analysis and constructs nodes (statements, variables, calls) and heterogeneous edges (Control Flow, Data Flow, and Call relations).
 
 ## Workflow
 
 ```mermaid
-flowchart TD
-    A(master_graph_samples.jsonl) --> B1[build_ast.py]
-    A --> B2[build_cfg.py]
-    A --> B3[build_dfg.py]
-    A --> B4[build_call.py]
-    
-    B1 --> C1(master_ast.jsonl)
-    B2 --> C2(master_cfg.jsonl)
-    B3 --> C3(master_dfg.jsonl)
-    B4 --> C4(master_call.jsonl)
-    
-    C1 --> D{merge_graphs.py}
-    C2 --> D
-    C3 --> D
-    C4 --> D
-    
-    D --> E(master_pdg.jsonl)
+flowchart LR
+    A[data/processed/master_graph_samples.jsonl] -->|build_pdg.py (PDGBuilder)| B(data/final/master_pdg.jsonl)
 ```
 
 ## Files Description
 
-- **`build_ast.py`**: Extracts the Abstract Syntax Tree (AST), capturing the hierarchical syntactic structure of the code.
-- **`build_cfg.py`**: Extracts the Control Flow Graph (CFG), mapping the execution paths (e.g., branching in `if`/`else` blocks, loops).
-- **`build_dfg.py`**: Extracts the Data Flow Graph (DFG), tracking how variables and data states propagate through the code.
-- **`build_call.py`**: Extracts the Function Call Graph, capturing interactions between different function calls within the snippet.
-- **`merge_graphs.py`**: Combines the four individual graph outputs into a single heterogeneous graph per sample. Note that it concatenates them as a **disjoint union** (adding an ID offset to each subgraph's nodes) rather than aligning/merging identical nodes, relying on the Graph Attention Network (GAT) to process the independent components.
+- **`build_pdg.py`**: Unified single-pass builder (`PDGBuilder`) that parses source code using Python's `ast` visitor pattern. It extracts:
+  - **Node Types**: Statement and expression types (`FunctionDef`, `Assign`, `If`, `Call`, `Name`, etc.) mapped via `NodeTypeEmbedding`.
+  - **CONTROL_FLOW Edges** (`type: 0`): Captures statement execution ordering, conditional branching (`if`/`else`), loops (`for`, `while`), and return statements.
+  - **DATA_FLOW Edges** (`type: 1`): Tracks def-use chains where variables defined in assignments or parameters flow into read/load contexts.
+  - **CALL Edges** (`type: 2`): Maps caller function scopes to invoked function calls.
 
 ## Input / Output
 
-- **Input**: The cleaned but un-tokenized samples from `data/processed/master_graph_samples.jsonl`.
-- **Outputs**:
-  - Intermediate graphs: `data/processed/master_{ast,cfg,dfg,call}.jsonl`
-  - Final merged graph dataset: `data/final/master_pdg.jsonl`
+- **Input**: The cleaned samples from `data/processed/master_graph_samples.jsonl`.
+- **Output**: Heterogeneous graph dataset `data/final/master_pdg.jsonl`.
 
 ## How to Run
 
-Generate each graph component, then merge them:
-
 ```bash
-# 1. Build individual graphs
-python scripts/graph/build_ast.py
-python scripts/graph/build_cfg.py
-python scripts/graph/build_dfg.py
-python scripts/graph/build_call.py
-
-# 2. Merge into heterogeneous graphs
-python scripts/graph/merge_graphs.py
+python scripts/graph/build_pdg.py
 ```
-
-> [!TIP]
-> Graph extraction can be CPU-intensive. The scripts process the dataset independently and handle cases where code cannot be parsed perfectly by dropping or falling back gracefully.
-
-
-

@@ -1,31 +1,29 @@
-﻿# 04 — Data Engineering & Splitting: The Master Dataset Strategy
+# 04 — Data Engineering & Splitting: The Master Dataset Strategy
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
 
 This document defines the unified training corpus: a single **Master Dataset** built by
-merging the gold **CVEFixes** corpus with the silver **GHSA** corpus, expanded per-role,
+merging the **CVEFixes** corpus with the **GHSA** corpus, expanded per-role,
 and split repository-disjoint.
 
 ---
 
 ## 1. Data Sources
 
-### 1.1 CVEFixes (Gold Tier)
+### 1.1 CVEFixes
 
 - **Source:** [secureIT-project/CVEfixes](https://github.com/secureIT-project/CVEfixes) (Zenodo DOI: `10.5281/zenodo.13118970`)
 - **Format:** SQLite database extracted via `scripts/extraction/extract.py`
 - **Output:** `data/raw/python_cvefixes_methods.jsonl`
 - **Content:** Python function-level vulnerability-fixing pairs from CVEs
-- **Quality:** Human-reviewed, high-quality (weight = 1.0)
 
-### 1.2 GitHub Security Advisories (Silver Tier)
+### 1.2 GitHub Security Advisories (GHSA)
 
 - **Source:** GitHub Advisory Database via GraphQL API
 - **Extraction:** `scripts/collection/fetch_advisories.py` + `scripts/collection/extract_functions.py`
 - **Output:** `data/raw/ghsa/ghsa_methods.jsonl`
 - **Content:** Python function-level vulnerability-fixing pairs from GHSA
-- **Quality:** Automatically extracted (weight = 0.85)
 
 ---
 
@@ -58,16 +56,16 @@ build_samples.py                           (pair → vulnerable + safe role)
   ▼ data/final/master_semantic_samples.jsonl       (Docstrings retained for Semantic)
 strip_docstrings.py                       (remove docstrings)
   ▼ data/processed/master_graph_samples.jsonl (For Graph Branch)
-build_ast.py → build_cfg.py → build_dfg.py → build_call.py → merge_graphs.py
-  ▼ data/final/master_pdg.jsonl    (30,427 heterogeneous graphs)
-tokenization (on-the-fly)                         (CodeBERT tokenization)
-split.py                                 (80/10/10 repo-disjoint)
+build_pdg.py                              (construct PDG graph with AST, CFG, DFG, Call edges)
+  ▼ data/final/master_pdg.jsonl
+tokenization (on-the-fly)                 (CodeBERT tokenization)
+split.py                                  (80/10/10 repo-disjoint)
   ▼ data/splits/{train,validation,test}.jsonl
 ```
 
 ---
 
-## 3. Noise Filtering & Quality Tiers
+## 3. Noise Filtering
 
 ### 3.1 Strict Noise & Test-Code Cleansing
 
@@ -79,7 +77,6 @@ GHSA fix commits contain non-application code; such methods are dropped:
 | Build / config | `setup.py`, `fabfile.py`, `tasks.py` |
 
 Applied during `prepare_master.py`: **4,683 GHSA methods removed** (27.5%).
-CVEFixes gold intact (already reviewed).
 
 
 

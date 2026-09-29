@@ -21,7 +21,7 @@ model:
     hidden_dim: 256
     output_dim: 256            # Must equal semantic.output_dim for fusion
     num_layers: 4
-    num_heads: 8               # GAT attention heads
+    num_heads: 8               # Kept for compatibility / multi-head attention in fusion
     num_edge_types: 3
     dropout: 0.2
   # ─── Cross-modal fusion (src/fusion/cross_attention.py) ───

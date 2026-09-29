@@ -1,8 +1,8 @@
-﻿# Data Collection Pipeline
+# Data Collection Pipeline
 
-> **Objective:** Fetch security advisories and extract vulnerable Python functions from GitHub (GHSA silver tier data).
+> **Objective:** Fetch security advisories and extract vulnerable Python functions from GitHub (GHSA data).
 
-This directory contains scripts to crawl the GitHub Advisory Database (GHSA) and extract the exact Python functions modified in fix commits. This forms the "silver" tier of the VulHunter Master Dataset.
+This directory contains scripts to crawl the GitHub Advisory Database (GHSA) and extract the exact Python functions modified in fix commits to augment the VulHunter Master Dataset.
 
 ## Pipeline Architecture
 
@@ -33,7 +33,7 @@ flowchart LR
 - **Input**: Requires a GitHub Personal Access Token (`GITHUB_TOKEN`) with read access to public repositories.
 - **Output**:
   - `data/raw/ghsa/advisories.jsonl`: Raw advisories metadata.
-  - `data/raw/ghsa/ghsa_methods.jsonl`: The extracted function pairs (vulnerable/safe) representing the silver-tier dataset.
+  - `data/raw/ghsa/ghsa_methods.jsonl`: The extracted function pairs (vulnerable/safe) from GHSA.
 
 ## How to Run
 

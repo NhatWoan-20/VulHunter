@@ -1,4 +1,4 @@
-﻿# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (2x T4)
+# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (2x T4)
 
 > **Mục tiêu:** Chạy mô hình **VulHunter v4.0 (3 tasks)** trên **Kaggle Notebook `GPU T4 x2` + Internet ON** với **CodeBERT**.
 > **Lưu ý Cốt Lõi:** Toàn bộ quá trình Thu thập dữ liệu (Collection), Trích xuất (Extraction), Tiền xử lý (Preprocessing) và Tạo đồ thị (Graph Generation) **PHẢI ĐƯỢC CHẠY TRÊN MÁY LOCAL**. Kaggle chỉ được sử dụng cho bước cuối cùng là **Huấn luyện (Training)** và **Đánh giá (Evaluation)** nhằm tận dụng GPU.
@@ -86,11 +86,11 @@ Upload file `notebooks/train_fusion.ipynb` hoặc `notebooks/train_semantic_only
 
 ---
 
-## 4. Tại sao cấu hình 1.5B Full Fine-Tune trên 2x T4?
+## 4. Tại sao cấu hình CodeBERT Full Fine-Tune trên 2x T4?
 
 | Đặc điểm của Kaggle | Tối ưu của VulHunter |
 |---|---|
-| **2x T4 16GB VRAM** | Bằng cách chuyển sang CodeBERT, mô hình có thể được Full Fine-Tune trực tiếp với `fp16`, `gradient_checkpointing` và batch size nhỏ. Không cần Full Fine-tuning phức tạp. (T4 hỗ trợ FP16 tốt hơn P100 rất nhiều và không gặp lỗi "no kernel image"). |
+| **2x T4 16GB VRAM** | Mô hình CodeBERT (~125M params) có thể được Full Fine-Tune trực tiếp với `fp16`, `gradient_checkpointing` và batch size phù hợp mà không cần đến PEFT/LoRA. (T4 hỗ trợ FP16 rất tốt và ổn định). |
 | **Internet ON** | Không cần tốn dung lượng Kaggle Dataset để lưu trữ weight nguyên bản của mô hình. `transformers` sẽ tự động tải weights từ HuggingFace vào cache. |
 
 ---

@@ -1,4 +1,4 @@
-﻿# 06 — Evaluation & Metrics
+# 06 — Evaluation & Metrics
 
 > **Version: 5.0** — Binary Classification Focus
 > **Authoritative Specification**
@@ -12,7 +12,7 @@ Evaluation follows a **frozen-checkpoint** protocol:
 | Tier | Benchmark | Data | Purpose |
 |---|---|---|---|
 | **In-Domain** | Unified Test Set | `data/splits/test.jsonl` (10% Master, repo-disjoint) | Overall performance |
-| **Gold Sanity** | CVEFixes-only Test | test restricted to `data_source=="cvefixes"` | Gold-only baseline |
+| **CVEFixes Subset** | CVEFixes Test | test restricted to `data_source=="cvefixes"` | CVEFixes benchmark subset |
 | **Out-of-Domain** | PyCode-Vul | External benchmark | Zero-shot generalization |
 
 ---

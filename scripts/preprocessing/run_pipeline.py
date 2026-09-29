@@ -1,7 +1,7 @@
-﻿"""End-to-End Preprocessing Pipeline cho Binary Vulnerability Detection.
+"""End-to-End Preprocessing Pipeline cho Binary Vulnerability Detection.
 
 Chạy tuần tự các bước:
-    1. Prepare master dataset (gold CVEFixes + silver GHSA)
+    1. Prepare master dataset (CVEFixes + GHSA)
     2. Strip docstrings
     3. Clean comments
     4. Validate AST

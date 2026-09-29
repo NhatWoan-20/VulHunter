@@ -1,4 +1,4 @@
-﻿# 01 — Project Overview & Research Objectives
+# 01 — Project Overview & Research Objectives
 
 > **Version: 5.0** — **Binary Classification Focus**
 > **Authoritative Specification**
@@ -28,7 +28,6 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 ### Research Hypotheses (H)
 
 - **H1:** The Cross-Modal Fusion model achieves a higher binary F1-score and MCC compared to both the Semantic-only and Graph-only baselines on repository-disjoint test splits.
-- **H2:** Quality-aware sample weighting (gold=1.0, silver=0.85) improves generalization without degrading performance.
 
 ---
 
@@ -48,7 +47,7 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 - **Granularity:** Function-level samples (complete function definitions); each pair expands into a vulnerable and a safe role sample.
 - **Learning Paradigm:** Supervised single-task learning (binary classification).
 - **Supervision Rule:** Vulnerable parent version is used for inference; fixed child version provides supervision labels only.
-- **Training corpus:** a single Master Dataset (gold CVEFixes + silver GHSA), quality-weighted; PyCode-Vul is excluded from training.
+- **Training corpus:** a single Master Dataset (CVEFixes + GHSA); PyCode-Vul is excluded from training.
 
 ---
 
@@ -56,8 +55,8 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 
 | Dataset | Use |
 |---|---|
-| CVEFixes (2,985 pairs) | **Gold** half of the Master training corpus (w=1.0) |
-| GHSA (12,366 pairs after cleansing) | **Silver** half of the Master training corpus (w=0.85) |
+| CVEFixes (2,985 pairs) | Component of the Master training corpus |
+| GHSA (12,366 pairs after cleansing) | Component of the Master training corpus |
 | Master Dataset (`data/raw/master_methods.jsonl`, 15,351 pairs → 30,454 per-role samples) | Train/val/in-domain test (80/10/10 cross-dataset repository-disjoint, seed 42) |
 | PyCode-Vul (14,248 / 3,563) | **Evaluation only**, final OOD benchmark, never in `data/splits/` |
 

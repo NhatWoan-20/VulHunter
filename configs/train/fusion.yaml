@@ -1,5 +1,5 @@
-﻿# ─── Training Configuration (Fusion Mode) ───
-# Binary classification với cross-modal fusion (CodeBERT + Pure Structural Graph).
+# ─── Training Configuration (Fusion Mode) ───
+# Binary classification với cross-modal fusion (CodeBERT + Heterogeneous PDG RGCN).
 training:
   seed: 42
   device: "auto"
@@ -7,7 +7,7 @@ training:
   pin_memory: true
   optimizer: "adamw"
   learning_rate: 2.0e-5         # Backbone
-  graph_learning_rate: 1.0e-4    # GAT + Pure Structural Embeddings
+  graph_learning_rate: 1.0e-4    # RGCN + NodeTypeEmbedding
   head_learning_rate: 2.0e-4     # Binary head
   weight_decay: 0.01
   max_grad_norm: 1.0
@@ -35,7 +35,7 @@ training:
 # ─── Model overrides cho fusion mode ───
 model:
   semantic:
-    pooling: "last"
+    pooling: "cls"
     gradient_checkpointing: false  # Bật true nếu OOM trên T4
   fusion:
     combine: "gated"

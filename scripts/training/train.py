@@ -1,7 +1,7 @@
-﻿"""Training Script — VulHunter Binary Classification (Kaggle 2xT4 ready).
+"""Training Script — VulHunter Binary Classification (Kaggle 2xT4 ready).
 
-Baseline: single-stage end-to-end trên Master Dataset (gold CVEFixes + silver GHSA)
-với repository-disjoint 80/10/10, quality-aware weighting, tiered LR, warmup+cosine.
+Baseline: single-stage end-to-end trên Master Dataset (CVEFixes + GHSA)
+với repository-disjoint 80/10/10, tiered LR, warmup+cosine.
 
 Hỗ trợ Kaggle 2xT4:
   - DataParallel tự bật khi phát hiện >=2 GPUs (x ~1.7-1.9 throughput)
@@ -11,7 +11,7 @@ Hỗ trợ Kaggle 2xT4:
 
 3 training modes:
   - semantic_only: CodeBERT
-  - graph_only:    Pure Structural Graph (unfreeze top-6) + GAT
+  - graph_only:    Heterogeneous Graph Encoder (RGCN)
   - fusion:        Cross-modal attention với residual skip
 
 Usage:

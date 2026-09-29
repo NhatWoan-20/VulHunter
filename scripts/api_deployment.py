@@ -1,4 +1,4 @@
-﻿"""FastAPI Deployment Script for VulHunter (Simplified 3-Task API).
+"""FastAPI Deployment Script for VulHunter (Simplified 3-Task API).
 
 This script provides a REST API to detect vulnerabilities in Python code snippets
 using the simplified VulHunter model (Binary).
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="VulHunter API",
-    description="End-to-End Vulnerability Detection API using CodeBERT 1.5B & Pure Structural Graph",
+    description="End-to-End Vulnerability Detection API using CodeBERT (125M)",
     version="1.0.0",
 )
 
@@ -65,7 +65,7 @@ async def load_model():
         if config.get("mode", "semantic_only") != "semantic_only":
             raise RuntimeError("The HTTP API currently serves semantic_only checkpoints; graph extraction is not exposed by this endpoint.")
         model_cfg = config.get("model", {})
-        tokenizer_name = model_cfg.get("semantic", {}).get("backbone", "CodeBERT/CodeBERT")
+        tokenizer_name = model_cfg.get("semantic", {}).get("backbone", "microsoft/codebert-base")
         TOKENIZER = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
         if TOKENIZER.pad_token is None:
             TOKENIZER.pad_token = TOKENIZER.eos_token
@@ -107,7 +107,6 @@ async def predict(request: CodeRequest):
             outputs = MODEL(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                tasks=["binary"]
             )
         
         # Binary prediction

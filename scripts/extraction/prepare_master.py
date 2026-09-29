@@ -1,4 +1,4 @@
-﻿"""Build the unified Master Dataset (gold CVEFixes + silver GHSA) cho binary classification.
+"""Build the unified Master Dataset (CVEFixes + GHSA) cho binary classification.
 
 Implements (docs/04_dataset.md § Pillar 1-3):
     - Strict noise / test-code cleansing: drop methods whose file path indicates tests, mock,
@@ -111,7 +111,7 @@ def _load_jsonl(path: Path) -> list[dict]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Merge gold CVEFixes and silver GHSA into the Master Dataset.")
+    parser = argparse.ArgumentParser(description="Merge CVEFixes and GHSA into the Master Dataset.")
     parser.add_argument("--cvefixes", type=Path, default=DEFAULT_CVEFIXES)
     parser.add_argument("--ghsa", type=Path, default=DEFAULT_GHSA)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)

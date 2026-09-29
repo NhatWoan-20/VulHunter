@@ -1,8 +1,8 @@
 """VulHunter Model — Binary vulnerability detection.
 
 Main model class tích hợp:
-    1. Semantic Encoder (LLM backbone, vd: CodeBERT)
-    2. Graph Encoder (Pure Structural Graph + GAT)
+    1. Semantic Encoder (CodeBERT backbone: microsoft/codebert-base)
+    2. Graph Encoder (Heterogeneous PDG + RGCN)
     3. Cross-Modal Fusion (Bidirectional Cross-Attention)
     4. Binary prediction head
 
@@ -176,7 +176,7 @@ class VulHunterModel(nn.Module):
             sem_pooled, sem_seq = self.semantic_encoder(input_ids, attention_mask, return_sequence=True)
             # Graph branch
             # Fix: DataParallel splits edge_index (2,E) along dim-0 → (1,E) per GPU.
-            # Reconstruct to (2, E//2) so the GAT layer sees the correct COO format.
+            # Reconstruct to (2, E//2) so the RGCN layer sees the correct COO format.
             if edge_index is not None and edge_index.dim() == 1:
                 # edge_index was squeezed to 1-D somehow — treat as no edges
                 edge_index = edge_index.new_zeros(2, 0)
