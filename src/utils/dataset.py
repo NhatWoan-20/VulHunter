@@ -170,7 +170,15 @@ class VulHunterDataset(Dataset):
         result: dict = {"sample_id": sample.get("sample_id", str(idx))}
 
         # ── Semantic features ──
-        if self.tokenizer and "code" in sample:
+        if "input_ids" in sample:
+            ids = sample["input_ids"]
+            result["input_ids"] = ids if isinstance(ids, torch.Tensor) else torch.tensor(ids, dtype=torch.long)
+            if "attention_mask" in sample:
+                mask = sample["attention_mask"]
+                result["attention_mask"] = mask if isinstance(mask, torch.Tensor) else torch.tensor(mask, dtype=torch.long)
+            else:
+                result["attention_mask"] = torch.ones_like(result["input_ids"])
+        elif self.tokenizer and "code" in sample:
             encoded = self.tokenizer(
                 sample["code"],
                 truncation=True,

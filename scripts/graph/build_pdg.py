@@ -6,7 +6,11 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-INPUT = ROOT / "data" / "processed" / "master_graph_samples.jsonl"
+INPUT = ROOT / "data" / "processed" / "master_graph_ready.jsonl"
+if not INPUT.exists():
+    _alt = ROOT / "data" / "processed" / "master_graph_samples.jsonl"
+    if _alt.exists():
+        INPUT = _alt
 OUTPUT = ROOT / "data" / "final" / "master_pdg.jsonl"
 
 
@@ -167,8 +171,11 @@ def main() -> None:
                 skipped += 1
                 continue
                 
-            out = {k: row.get(k) for k in ["sample_id", "pair_id", "role", "cve_id", "repository", "file_path", "function_name", "signature", "binary_label"]}
-            out.update({"graph_type": "pdg", "nodes": graph["nodes"], "edges": graph["edges"]})
+            out = {
+                "sample_id": row.get("sample_id"),
+                "binary_label": row.get("binary_label", row.get("label"))
+            }
+            out.update({"nodes": graph["nodes"], "edges": graph["edges"]})
             fout.write(json.dumps(out, ensure_ascii=False) + "\n")
             rows += 1
 

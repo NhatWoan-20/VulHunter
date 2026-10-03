@@ -1,4 +1,4 @@
-﻿"""Tests for preprocessing scripts — clean_comments, normalize, strip_docstrings, split."""
+"""Tests for preprocessing scripts — clean_comments, normalize, strip_docstrings, split."""
 from __future__ import annotations
 
 import json
@@ -52,7 +52,7 @@ class TestNormalize:
     """Tests for the normalize function."""
 
     def test_replaces_tabs(self):
-        assert normalize("\tx = 1") == "    x = 1"
+        assert normalize("a = 0\n\tx = 1") == "a = 0\n    x = 1"
 
     def test_normalizes_line_endings(self):
         result = normalize("x = 1\r\ny = 2\rz = 3")

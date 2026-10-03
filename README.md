@@ -256,9 +256,8 @@ python scripts/training/train.py \
 
 ## 📊 Benchmarks & Evaluation
 
-Đánh giá theo multi-tier protocol:
+Đánh giá theo in-domain test protocol:
 1. **In-Domain**: Held-out 10% test split từ Master Dataset (repo-disjoint).
-2. **Out-of-Domain** (future): Zero-shot trên PyCode-Vul.
 
 ### Metric Targets (binary classification)
 
@@ -305,8 +304,8 @@ VulHunter/
 │   ├── multitask/heads.py       # BinaryHead
 │   └── utils/                   # Datasets, focal loss, metrics
 ├── scripts/
-│   ├── extraction/prepare_master.py  # Master dataset builder
-│   ├── preprocessing/           # Tokenize, comment strip, graph build, split
+│   ├── extraction/merge_all_sources.py  # Unified master dataset builder
+│   ├── preprocessing/           # Clean, normalize, AST validate, split
 │   │   └── run_pipeline.py      # ★ End-to-end pipeline orchestrator
 │   ├── graph/                   # PDG extraction
 │   ├── training/train.py        # Distributed / AMP training runner

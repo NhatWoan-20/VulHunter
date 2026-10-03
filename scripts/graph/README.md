@@ -8,7 +8,7 @@ This directory handles the generation of program dependence graphs necessary for
 
 ```mermaid
 flowchart LR
-    A[data/processed/master_graph_samples.jsonl] -->|build_pdg.py (PDGBuilder)| B(data/final/master_pdg.jsonl)
+    A[data/processed/master_graph_ready.jsonl] -->|build_pdg.py (PDGBuilder)| B(data/final/master_pdg.jsonl)
 ```
 
 ## Files Description
@@ -21,7 +21,7 @@ flowchart LR
 
 ## Input / Output
 
-- **Input**: The cleaned samples from `data/processed/master_graph_samples.jsonl`.
+- **Input**: The cleaned samples from `data/processed/master_graph_ready.jsonl`.
 - **Output**: Heterogeneous graph dataset `data/final/master_pdg.jsonl`.
 
 ## How to Run

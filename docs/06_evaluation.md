@@ -13,7 +13,6 @@ Evaluation follows a **frozen-checkpoint** protocol:
 |---|---|---|---|
 | **In-Domain** | Unified Test Set | `data/splits/test.jsonl` (10% Master, repo-disjoint) | Overall performance |
 | **CVEFixes Subset** | CVEFixes Test | test restricted to `data_source=="cvefixes"` | CVEFixes benchmark subset |
-| **Out-of-Domain** | PyCode-Vul | External benchmark | Zero-shot generalization |
 
 ---
 

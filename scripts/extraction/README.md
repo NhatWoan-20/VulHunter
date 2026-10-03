@@ -1,46 +1,45 @@
 # Data Extraction & Master Dataset Preparation
 
-> **Objective:** Extract data from the CVEFixes database and unify it with GHSA data to construct the final Master Dataset.
+> **Objective:** Unify paired sources (CVEFixes, GHSA) and large-scale single-sample datasets (benign, vulnerable) into a single canonical Master Dataset (`master_samples.jsonl`).
 
-This directory handles the extraction of the CVEFixes dataset from a local SQLite database and merges it with the GHSA dataset collected via the `collection` pipeline. It ensures a unified schema for downstream preprocessing.
+This directory handles merging all raw sources into a unified single-sample format with global SHA-1 fingerprint deduplication and noise cleansing.
 
 ## Workflow
 
 ```mermaid
 flowchart TD
-    A[(cvefixes.db)] -->|extract.py| B(python_cvefixes_methods.jsonl)
-    C(ghsa_methods.jsonl) --> D{prepare_master.py}
-    B --> D
-    D -->|Merge & Clean| E(master_methods.jsonl)
+    A[python_cvefixes_methods.jsonl<br/>(2,985 pairs)] -->|Explode to singles| M{merge_all_sources.py}
+    B[ghsa_methods.jsonl<br/>(17,049 pairs)] -->|Explode to singles| M
+    C[large/benign_samples.jsonl<br/>(90,000 singles)] -->|Canonicalize| M
+    D[large/vulnerable_samples.jsonl<br/>(15,000 singles)] -->|Canonicalize| M
+    M -->|Noise Filter + Global SHA-1 Dedup| E[data/raw/master_samples.jsonl<br/>(~101k samples)]
 ```
 
 ## Files Description
 
-- **`extract.py`**: Connects to the local `cvefixes.db` SQLite database. It extracts vulnerable and safe versions of Python functions, computing initial line-level labels using `difflib`.
-- **`prepare_master.py`**: The unification script. It takes both datasets (`python_cvefixes_methods.jsonl` and `ghsa_methods.jsonl`) and merges them into a single canonical format. Crucially, it performs strict cleansing by discarding noise (e.g., test files, mock objects, setup scripts) and normalizes repository names to ensure accurate repository-disjoint splitting later on.
+- **`merge_all_sources.py`**: The authoritative dataset unification script. It:
+  1. Explodes paired records (`code` + `safe_code`) into individual vulnerable (`binary_label=1`) and safe (`binary_label=0`) records.
+  2. Ingests pre-single large benign and vulnerable records.
+  3. Filters noise paths (test, mock, setup scaffolding).
+  4. Applies global SHA-1 fingerprint deduplication on normalized code whitespace.
+  5. Enforces valid length constraints (`20 <= len(code) <= 50,000`).
 
 ## Input / Output
 
 - **Inputs**:
-  - `data/raw/databases/cvefixes.db`: The downloaded CVEFixes SQLite database.
-  - `data/raw/ghsa/ghsa_methods.jsonl`: The output from the collection pipeline.
+  - `data/raw/python_cvefixes_methods.jsonl`
+  - `data/raw/ghsa/ghsa_methods.jsonl`
+  - `data/raw/large/benign_samples.jsonl`
+  - `data/raw/large/vulnerable_samples.jsonl`
 - **Output**:
-  - `data/raw/master_methods.jsonl`: The unified Master Dataset containing both CVEFixes and GHSA samples.
+  - `data/raw/master_samples.jsonl`: The unified Master Dataset (~101,414 single-sample records).
 
 ## How to Run
 
-1. First, ensure `cvefixes.db` is present (see `data/raw/databases/README.md` for download instructions).
-2. Run the extraction script to generate the CVEFixes data:
-
 ```bash
-python scripts/extraction/extract.py
+# Run merge directly
+python scripts/extraction/merge_all_sources.py
+
+# Or dry-run to inspect statistics without writing
+python scripts/extraction/merge_all_sources.py --dry-run
 ```
-
-3. Merge CVEFixes and GHSA sources to create the Master Dataset:
-
-```bash
-python scripts/extraction/prepare_master.py
-```
-
-> [!IMPORTANT]
-> The `prepare_master.py` script applies strict heuristic filters to remove non-production code (like `tests/`, `conftest.py`, `setup.py`). This guarantees the model learns from application logic rather than test scaffolding.

@@ -1,7 +1,10 @@
-﻿"""Evaluate a trained CVEFixes model on held-out PyCode-Vul data.
+"""Evaluate a trained VulHunter model on an external held-out CSV dataset.
 
 This script is intentionally isolated from the training pipeline. It never writes
 external samples into data/splits and is only used after a checkpoint exists.
+
+Note: No external benchmark dataset is bundled with this project. To use this script,
+place the CSV file(s) in `data/raw/external/` before running.
 
 Examples:
     python scripts/evaluation/evaluate_external.py --checkpoint models/checkpoints/best.pt --split test
@@ -32,7 +35,7 @@ logger = logging.getLogger("evaluate_external")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate on PyCode-Vul without training on it.")
+    parser = argparse.ArgumentParser(description="Evaluate on an external held-out dataset without training on it.")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--split", choices=["train", "test"], default="test")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data" / "raw" / "external")
@@ -44,7 +47,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def convert_external_csv(path: Path, output: Path) -> int:
-    """Convert one PyCode-Vul CSV into evaluation-only canonical JSONL."""
+    """Convert one external CSV into evaluation-only canonical JSONL."""
     csv.field_size_limit(100_000_000)
     output.parent.mkdir(parents=True, exist_ok=True)
     count = 0
@@ -111,16 +114,16 @@ def evaluate(model: VulHunterModel, loader: DataLoader, device: torch.device) ->
 def main() -> None:
     args = parse_args()
     device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available() else "cpu") if args.device == "auto" else torch.device(args.device)
-    source_name = f"PyCode_Vul-{args.split}-set.csv"
+    source_name = f"external-{args.split}-set.csv"
     source_path = args.data_dir / source_name
-    canonical_path = ROOT / "data" / "external_eval" / f"pycode_vul_{args.split}.jsonl"
+    canonical_path = ROOT / "data" / "external_eval" / f"external_{args.split}.jsonl"
     count = convert_external_csv(source_path, canonical_path)
     logger.info("Converted %d external samples; no samples enter training splits.", count)
     dataset = VulHunterDataset(canonical_path, tokenizer_name=args.tokenizer, max_length=2048)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
     results = evaluate(load_model(args.checkpoint, device), loader, device)
     results.update({"data_policy": "external_evaluation_only", "source": str(source_path), "checkpoint": str(args.checkpoint), "device": str(device)})
-    output = args.output or ROOT / "outputs" / "metrics" / f"pycode_vul_{args.split}_evaluation.json"
+    output = args.output or ROOT / "outputs" / "metrics" / f"external_{args.split}_evaluation.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("External evaluation report saved to %s", output)

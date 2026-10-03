@@ -1,16 +1,16 @@
-﻿# Evaluation & Benchmark
+# Evaluation & Benchmark
 
-> **Objective:** Rigorously evaluate trained checkpoints on in-domain test sets and external zero-shot benchmarks.
+> **Objective:** Rigorously evaluate trained checkpoints on the in-domain test set.
 
 This directory contains scripts to assess model performance across all tasks.
 
 ## Files Description
 
-- **`evaluate.py`**: The primary evaluation script for the in-domain Master Dataset test split. It loads a trained checkpoint (`best.pt`) and computes comprehensive metrics for all 3 tasks:
+- **`evaluate.py`**: The primary evaluation script for the in-domain Master Dataset test split. It loads a trained checkpoint (`best.pt`) and computes comprehensive metrics:
   - Binary Classification (F1, MCC, AUC, Accuracy)
   It outputs a detailed JSON report to `outputs/metrics/evaluation_report.json`.
 
-- **`evaluate_external.py`**: Evaluates model generalization on a held-out, out-of-domain dataset (PyCode-Vul). Since PyCode-Vul lacks program graphs, this script only evaluates the semantic branch of the model (or `semantic_only` checkpoints). It tokenizes the raw source code on the fly using `CodeBERT` and tests binary and CWE capabilities.
+- **`evaluate_external.py`**: Reserved script for evaluating model generalization on a held-out, out-of-domain CSV dataset. Currently unused (no external benchmark is included in the project). If an external CSV dataset is provided in `data/raw/external/`, this script converts it to canonical JSONL format and evaluates the model's semantic branch.
 
 ## How to Run
 
@@ -21,14 +21,6 @@ python scripts/evaluation/evaluate.py \
     --checkpoint models/checkpoints/best.pt \
     --test-data data/splits/test.jsonl \
     --graph-data data/processed/master_pdg.jsonl
-```
-
-Evaluate zero-shot on the external PyCode-Vul test set:
-
-```bash
-python scripts/evaluation/evaluate_external.py \
-    --checkpoint models/checkpoints/best.pt \
-    --split test
 ```
 
 > [!NOTE]

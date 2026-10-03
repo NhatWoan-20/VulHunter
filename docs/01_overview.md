@@ -23,7 +23,6 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 
 - **RQ1 (Modality Value):** Does combining semantic representations with structural program graphs outperform either modality alone (Semantic-only vs. Graph-only vs. Fusion)?
 - **RQ2 (Cross-Modal Fusion):** Does bidirectional cross-attention effectively capture token-to-node structural alignments better than simple concatenation or early fusion?
-- **RQ3 (External Generalization):** Can a model trained on the repository-disjoint Master Dataset generalize zero-shot to the held-out external PyCode-Vul benchmark?
 
 ### Research Hypotheses (H)
 
@@ -47,7 +46,7 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 - **Granularity:** Function-level samples (complete function definitions); each pair expands into a vulnerable and a safe role sample.
 - **Learning Paradigm:** Supervised single-task learning (binary classification).
 - **Supervision Rule:** Vulnerable parent version is used for inference; fixed child version provides supervision labels only.
-- **Training corpus:** a single Master Dataset (CVEFixes + GHSA); PyCode-Vul is excluded from training.
+- **Training corpus:** a single Master Dataset (CVEFixes + GHSA + Large Scale Benign & Vulnerable).
 
 ---
 
@@ -55,16 +54,17 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 
 | Dataset | Use |
 |---|---|
-| CVEFixes (2,985 pairs) | Component of the Master training corpus |
-| GHSA (12,366 pairs after cleansing) | Component of the Master training corpus |
-| Master Dataset (`data/raw/master_methods.jsonl`, 15,351 pairs → 30,454 per-role samples) | Train/val/in-domain test (80/10/10 cross-dataset repository-disjoint, seed 42) |
-| PyCode-Vul (14,248 / 3,563) | **Evaluation only**, final OOD benchmark, never in `data/splits/` |
+| CVEFixes (~2,985 pairs) | Component of the Master training corpus |
+| GHSA (~17,049 pairs) | Component of the Master training corpus |
+| Large Benign (~90,000 samples) | Component of the Master training corpus |
+| Large Vulnerable (~15,000 samples) | Component of the Master training corpus |
+| Master Dataset (`data/raw/master_samples.jsonl`, 101,336 training samples) | Train/val/in-domain test (80/10/10 cross-dataset repository-disjoint, seed 42) |
 
 ---
 
 ## 6. Success Criteria
 
-- **Binary:** Fusion F1 > Semantic-only and Graph-only on both in-domain test and PyCode-Vul OOD.
+- **Binary:** Fusion F1 > Semantic-only and Graph-only on the in-domain test split (repository-disjoint).
 - **Metrics:** ROC-AUC > 0.75, F1 > 0.60, Precision > 0.70, Recall > 0.65.
 
 ---
