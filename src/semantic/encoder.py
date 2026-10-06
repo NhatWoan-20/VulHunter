@@ -149,11 +149,10 @@ class SemanticEncoder(nn.Module):
             else:
                 pooled = outputs.last_hidden_state[:, 0, :]
 
-        proj_dtype = next(self.projection.parameters()).dtype
-        pooled_out = self.projection(pooled.to(proj_dtype))
+        pooled_out = self.projection(pooled)
 
         if return_sequence:
-            seq_out = self.projection(outputs.last_hidden_state.to(proj_dtype))
+            seq_out = self.projection(outputs.last_hidden_state)
             return pooled_out, seq_out
 
         return pooled_out
