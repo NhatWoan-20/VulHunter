@@ -109,14 +109,11 @@ class GraphEncoder(nn.Module):
         super().__init__()
         self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
         
-        # Input projection
-        self.input_proj = nn.Linear(node_feature_dim, hidden_dim)
-
         from torch_geometric.nn import RGCNConv
         
         # Stacked RGCN layers
         self.layers = nn.ModuleList()
-        in_dim = hidden_dim
+        in_dim = node_feature_dim
         for _ in range(num_layers):
             self.layers.append(
                 RGCNConv(in_dim, hidden_dim, num_relations=num_edge_types)
@@ -146,7 +143,6 @@ class GraphEncoder(nn.Module):
         
         # Node type → embedding
         x = self.node_embedding(node_types)  # (N, node_feature_dim)
-        x = self.input_proj(x)               # (N, hidden_dim)
 
         # Ensure edge_index is in COO format (2, E)
         if edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) != 2:
@@ -168,7 +164,6 @@ class GraphEncoder(nn.Module):
                 x = F.relu(x) # skip message passing if graph has no edges
             else:
                 x = F.relu(layer(x, edge_index, edge_type))
-            x = self.dropout_layer(x)
 
         node_out = x
 
