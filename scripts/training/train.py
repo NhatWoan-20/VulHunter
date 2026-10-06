@@ -35,6 +35,7 @@ import random
 import sys
 import time
 from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 
 # Tránh phân mảnh bộ nhớ CUDA trên GPU 16GB (Kaggle T4)
@@ -454,9 +455,11 @@ def main() -> None:
     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True) if is_ddp else None
     val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False) if is_ddp else None
 
-    train_loader = DataLoader(train_dataset, batch_size=loader_batch_size, shuffle=(train_sampler is None), sampler=train_sampler, collate_fn=collate_fn,
+    # ⚡ pad_to_multiple_of=8: tối đa hóa Tensor Cores (aligned với optimized notebook DataCollatorWithPadding)
+    _collate = partial(collate_fn, pad_to_multiple_of=8)
+    train_loader = DataLoader(train_dataset, batch_size=loader_batch_size, shuffle=(train_sampler is None), sampler=train_sampler, collate_fn=_collate,
                               num_workers=num_workers, pin_memory=torch.cuda.is_available(), persistent_workers=num_workers > 0)
-    val_loader = DataLoader(val_dataset, batch_size=loader_batch_size, shuffle=False, sampler=val_sampler, collate_fn=collate_fn,
+    val_loader = DataLoader(val_dataset, batch_size=loader_batch_size, shuffle=False, sampler=val_sampler, collate_fn=_collate,
                             num_workers=num_workers, pin_memory=torch.cuda.is_available(), persistent_workers=num_workers > 0)
     logger.info("Train: %d | Val: %d", len(train_dataset), len(val_dataset))
 
@@ -506,7 +509,20 @@ def main() -> None:
         param_groups.append({"params": head_params, "lr": head_lr})
     if not param_groups:
         param_groups.append({"params": [p for p in model.parameters() if p.requires_grad], "lr": backbone_lr})
-    optimizer = torch.optim.AdamW(param_groups, weight_decay=float(tcfg.get("weight_decay", 0.01)))
+    weight_decay = float(tcfg.get("weight_decay", 0.01))
+    # ⚡ Fused AdamW: kernel-fused, nhanh hơn ~10% trên GPU (aligned với adamw_torch_fused của optimized notebook)
+    _use_fused = (
+        torch.cuda.is_available()
+        and device.type == "cuda"
+        and hasattr(torch.optim, "AdamW")
+        and "fused" in torch.optim.AdamW.__init__.__code__.co_varnames
+    )
+    if _use_fused:
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=weight_decay, fused=True)
+        logger.info("⚡ Fused AdamW enabled (PyTorch %s)", torch.__version__)
+    else:
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=weight_decay)
+        logger.info("ℹ️  Standard AdamW (fused not available, PyTorch %s)", torch.__version__)
     logger.info("Optimizer: %d semantic params (lr %.1e) + %d graph params (lr %.1e) + %d head params (lr %.1e)",
                 len(backbone_params), backbone_lr, len(graph_params), graph_lr, len(head_params), head_lr)
 

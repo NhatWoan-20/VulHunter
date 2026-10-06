@@ -227,12 +227,24 @@ class VulHunterDataset(Dataset):
         return result
 
 
-def collate_fn(batch: list[dict]) -> dict:
-    """Collate variable-length samples, padding token↔line và source/sink."""
+def collate_fn(batch: list[dict], pad_to_multiple_of: int = 8) -> dict:
+    """Collate variable-length samples, padding token↔line và source/sink.
+
+    Args:
+        batch: List of sample dicts from VulHunterDataset.
+        pad_to_multiple_of: Pad sequence length to a multiple of this value.
+            Default 8 để tối đa hóa Tensor Cores trên GPU (A100/T4/V100).
+            Tương đương DataCollatorWithPadding(pad_to_multiple_of=8) của HuggingFace.
+    """
     result: dict = {}
 
     if "input_ids" in batch[0]:
-        max_len = max(s["input_ids"].size(0) for s in batch)
+        raw_max = max(s["input_ids"].size(0) for s in batch)
+        # Pad lên bội số của pad_to_multiple_of để tối ưu Tensor Cores
+        if pad_to_multiple_of > 1:
+            max_len = ((raw_max + pad_to_multiple_of - 1) // pad_to_multiple_of) * pad_to_multiple_of
+        else:
+            max_len = raw_max
         input_ids = torch.zeros(len(batch), max_len, dtype=torch.long)
         attention_mask = torch.zeros(len(batch), max_len, dtype=torch.long)
         for i, s in enumerate(batch):

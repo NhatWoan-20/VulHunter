@@ -1,4 +1,4 @@
-﻿# Hướng dẫn tải và khởi tạo cơ sở dữ liệu CVEFixes (`cvefixes.db`)
+# Hướng dẫn tải và khởi tạo cơ sở dữ liệu CVEFixes (`cvefixes.db`)
 
 Thư mục này dùng để lưu trữ file cơ sở dữ liệu SQLite `cvefixes.db`. File này được sử dụng trong bước trích xuất ban đầu (`scripts/extraction/extract.py`) để tạo ra tập dữ liệu chuẩn hóa `data/raw/python_cvefixes_methods.jsonl` (2,985 cặp hàm Python có nhãn).
 
@@ -136,7 +136,7 @@ python scripts/extraction/extract.py
 
 ## 4. Giải phóng dung lượng ổ đĩa (Khuyến nghị)
 
-Toàn bộ pipeline tiếp theo của VulHunter (tạo Master dataset bằng [`scripts/extraction/prepare_master.py`](file:///c:/Users/NhQu/Documents/VulHunter/scripts/extraction/prepare_master.py), tiền xử lý, trích xuất đồ thị AST/CFG, và huấn luyện mô hình) chỉ đọc dữ liệu từ `data/raw/python_cvefixes_methods.jsonl`.
+Toàn bộ pipeline tiếp theo của VulHunter (tạo Master dataset bằng [`scripts/extraction/merge_all_sources.py`](file:///c:/Users/NhQu/Documents/GitHub/VulHunter/scripts/extraction/merge_all_sources.py), tiền xử lý, trích xuất đồ thị AST/CFG, và huấn luyện mô hình) chỉ đọc dữ liệu từ `data/raw/python_cvefixes_methods.jsonl`.
 
 Vì vậy, sau khi `extract.py` chạy thành công:
 1.  Bạn có thể **xóa file `cvefixes.db`** (~51.7 GB) và file `CVEfixes_v1.0.8.sql` nếu muốn tiết kiệm không gian đĩa cứng.
