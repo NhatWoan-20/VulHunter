@@ -1,4 +1,4 @@
-﻿"""Cross-Modal Fusion — Bridge semantic and graph representations via cross-attention.
+"""Cross-Modal Fusion — Bridge semantic and graph representations via cross-attention.
 
 This module implements bidirectional cross-attention fusion to combine the
 semantic understanding from LLMs with the structural understanding from GNNs.
@@ -309,7 +309,7 @@ class CrossModalFusion(nn.Module):
             raise ValueError(f"Unknown combine strategy: {self.combine}")
 
         # Residual skip: tránh fusion phá hỏng semantic signal khi graph rỗng/noisy
-        if residual_alpha > 0 and input_was_2d:
+        if residual_alpha > 0:
             fused = (1.0 - residual_alpha) * fused + residual_alpha * semantic_only_residual
 
         return fused.squeeze(1) if input_was_2d else fused

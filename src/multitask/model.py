@@ -172,29 +172,27 @@ class VulHunterModel(nn.Module):
             fused_pooled = graph_pooled
 
         elif self.mode == "fusion":
-            # Semantic branch
-            sem_pooled, sem_seq = self.semantic_encoder(input_ids, attention_mask, return_sequence=True)
+            # Semantic branch (chỉ lấy pooled output, bỏ qua sequence để tránh nhiễu)
+            sem_pooled = self.semantic_encoder(input_ids, attention_mask, return_sequence=False)
+            
             # Graph branch
-            # Fix: DataParallel splits edge_index (2,E) along dim-0 → (1,E) per GPU.
-            # Reconstruct to (2, E//2) so the RGCN layer sees the correct COO format.
             if edge_index is not None and edge_index.dim() == 1:
-                # edge_index was squeezed to 1-D somehow — treat as no edges
                 edge_index = edge_index.new_zeros(2, 0)
             elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
-                # DataParallel gave us (1, E) — reshape to (2, E//2)
                 edge_index = edge_index.view(2, -1)
-            graph_pooled, node_emb = self.graph_encoder(
+                
+            graph_pooled = self.graph_encoder(
                 node_types, edge_index, edge_type, batch,
-                return_node_embeddings=True,
+                return_node_embeddings=False,
             )
-            # Cross-attend code tokens to graph nodes
-            # residual_alpha giữ semantic signal khi graph rỗng/noisy.
-            fused_seq = self.fusion(
-                sem_seq, node_emb, attention_mask, batch,
+            
+            # 🚀 LATE FUSION (Vector-level) thay vì Token-level
+            # Giảm nhiễu, tăng độ ổn định và tận dụng tối đa sức mạnh của CodeBERT
+            fused_pooled = self.fusion(
+                sem_pooled, graph_pooled, 
+                semantic_mask=None, graph_batch=None,
                 residual_alpha=self._fusion_residual_alpha,
             )
-            mask = attention_mask.unsqueeze(-1).to(fused_seq.dtype)
-            fused_pooled = (fused_seq * mask).sum(1) / mask.sum(1).clamp(min=1)
 
         output.fused_embedding = fused_pooled
 
