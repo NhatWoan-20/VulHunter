@@ -224,6 +224,20 @@ class CrossModalFusion(nn.Module):
                 nn.Linear(hidden_dim * 2, hidden_dim),
                 nn.Sigmoid(),
             )
+        elif combine == "film":
+            # FiLM generators: graph -> gamma, beta
+            self.film_gamma = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+            self.film_beta = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+            # Tùy chọn: Thêm một LayerNorm cho semantic trước khi áp dụng FiLM
+            self.film_norm = nn.LayerNorm(hidden_dim)
         # "mean" requires no extra parameters
 
     def forward(
@@ -305,11 +319,27 @@ class CrossModalFusion(nn.Module):
             combined = torch.cat([semantic, graph], dim=-1)
             gate_value = self.gate(combined)
             fused = gate_value * semantic + (1 - gate_value) * graph
+        elif self.combine == "film":
+            # Lấy vector cuối (mean) của graph nếu nó là dạng sequence
+            graph_cond = graph.mean(dim=1) if graph.dim() == 3 else graph
+            
+            gamma = self.film_gamma(graph_cond)
+            beta = self.film_beta(graph_cond)
+            
+            # Nếu semantic là 3D, expand gamma, beta
+            if semantic.dim() == 3:
+                gamma = gamma.unsqueeze(1)
+                beta = beta.unsqueeze(1)
+                
+            semantic_normed = self.film_norm(semantic)
+            # FiLM Modulation: Fused = (1 + Gamma) * Semantic + Beta
+            fused = (1.0 + gamma) * semantic_normed + beta
         else:
             raise ValueError(f"Unknown combine strategy: {self.combine}")
 
         # Residual skip: tránh fusion phá hỏng semantic signal khi graph rỗng/noisy
-        if residual_alpha > 0:
+        # Không áp dụng cho FiLM vì FiLM bản chất đã là modulation trên nền Semantic
+        if residual_alpha > 0 and self.combine != "film":
             fused = (1.0 - residual_alpha) * fused + residual_alpha * semantic_only_residual
 
         return fused.squeeze(1) if input_was_2d else fused
