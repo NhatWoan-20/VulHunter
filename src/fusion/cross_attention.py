@@ -236,7 +236,13 @@ class CrossModalFusion(nn.Module):
                 nn.ReLU(),
                 nn.Linear(hidden_dim, hidden_dim),
             )
-            # Tùy chọn: Thêm một LayerNorm cho semantic trước khi áp dụng FiLM
+            # Khởi tạo trọng số lớp cuối về 0 để ban đầu gamma = 0, beta = 0 (Identity mapping)
+            nn.init.zeros_(self.film_gamma[-1].weight)
+            nn.init.zeros_(self.film_gamma[-1].bias)
+            nn.init.zeros_(self.film_beta[-1].weight)
+            nn.init.zeros_(self.film_beta[-1].bias)
+
+            # LayerNorm cho semantic trước khi áp dụng FiLM
             self.film_norm = nn.LayerNorm(hidden_dim)
         # "mean" requires no extra parameters
 
@@ -322,15 +328,17 @@ class CrossModalFusion(nn.Module):
         elif self.combine == "film":
             # Lấy vector cuối (mean) của graph nếu nó là dạng sequence
             graph_cond = graph.mean(dim=1) if graph.dim() == 3 else graph
-            
-            gamma = self.film_gamma(graph_cond)
+
+            # Bounded modulation: tanh giới hạn gamma trong (-1, 1) -> (1 + gamma) trong (0, 2)
+            # Ngăn chặn hoàn toàn hiện tượng bùng nổ gradient / activation trong FP16
+            gamma = torch.tanh(self.film_gamma(graph_cond))
             beta = self.film_beta(graph_cond)
-            
+
             # Nếu semantic là 3D, expand gamma, beta
             if semantic.dim() == 3:
                 gamma = gamma.unsqueeze(1)
                 beta = beta.unsqueeze(1)
-                
+
             semantic_normed = self.film_norm(semantic)
             # FiLM Modulation: Fused = (1 + Gamma) * Semantic + Beta
             fused = (1.0 + gamma) * semantic_normed + beta
@@ -342,4 +350,6 @@ class CrossModalFusion(nn.Module):
         if residual_alpha > 0 and self.combine != "film":
             fused = (1.0 - residual_alpha) * fused + residual_alpha * semantic_only_residual
 
-        return fused.squeeze(1) if input_was_2d else fused
+        if input_was_2d and fused.dim() == 3:
+            fused = fused.squeeze(1)
+        return fused
