@@ -80,10 +80,10 @@ class VulHunterModel(nn.Module):
             raise ValueError(f"mode phải là một trong {self.VALID_MODES}, got '{mode}'")
         self.mode = mode
 
-        semantic_config = semantic_config or {}
-        graph_config = graph_config or {}
-        fusion_config = fusion_config or {}
-        head_config = head_config or {}
+        semantic_config = dict(semantic_config) if semantic_config else {}
+        graph_config = dict(graph_config) if graph_config else {}
+        fusion_config = dict(fusion_config) if fusion_config else {}
+        head_config = dict(head_config) if head_config else {}
 
         output_dim = semantic_config.get("output_dim", 256)
 
