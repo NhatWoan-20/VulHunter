@@ -11,7 +11,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.graph.encoder import GraphEncoder, NodeTypeEmbedding, EDGE_TYPE_MAP
+from src.graph.encoder import GraphEncoder, NodeTypeEmbedding, NodeTextEmbedding, NodeCodeBERTEmbedding, EDGE_TYPE_MAP
 from src.fusion.cross_attention import CrossModalFusion, CrossAttentionBlock
 from src.multitask.heads import BinaryHead
 from src.utils.losses import BinaryClassificationLoss, FocalLoss
@@ -33,6 +33,21 @@ class TestNodeTypeEmbedding:
         assert result.shape == (1, 32)
 
 
+class TestNodeTextEmbedding:
+    """Tests for Solution 1: Enriched Node Features."""
+
+    def test_hash_embedding(self):
+        emb = NodeTextEmbedding(vocab_size=1024, embedding_dim=32, output_dim=32)
+        texts = ["def vulnerable_func(x):", "strcpy(dest, src)", "free(ptr)"]
+        result = emb(texts)
+        assert result.shape == (3, 32)
+
+    def test_empty_or_unknown(self):
+        emb = NodeTextEmbedding(vocab_size=1024, embedding_dim=32, output_dim=32)
+        result = emb(["unknown", ""])
+        assert result.shape == (2, 32)
+
+
 class TestGraphEncoder:
     """Tests for the full heterogeneous graph encoder (RGCN)."""
 
@@ -45,6 +60,34 @@ class TestGraphEncoder:
 
         out = encoder(node_types, edge_index, edge_type, batch)
         assert out.shape == (1, 64)  # 1 graph, output_dim=64
+
+    def test_forward_with_enriched_node_texts(self):
+        """Verify Solution 1: GraphEncoder with node_texts."""
+        encoder = GraphEncoder(
+            node_feature_dim=32, hidden_dim=64, output_dim=64,
+            num_layers=2, node_encoder_type="hash",
+        )
+        node_types = ["FunctionDef", "Assign", "Name"]
+        node_texts = ["def foo():", "x = malloc(10)", "return x"]
+        edge_index = torch.tensor([[0, 1], [1, 2]], dtype=torch.long)
+        edge_type = torch.tensor([0, 1], dtype=torch.long)
+
+        out = encoder(node_types, edge_index, edge_type, node_texts=node_texts)
+        assert out.shape == (1, 64)
+
+    def test_forward_hybrid_mode(self):
+        """Verify Hybrid mode: Using Solution 1 (hash) and Solution 2 (CodeBERT) simultaneously."""
+        encoder = GraphEncoder(
+            node_feature_dim=32, hidden_dim=64, output_dim=64,
+            num_layers=2, node_encoder_type="both", combine_mode="add",
+        )
+        node_types = ["FunctionDef", "Assign", "Name"]
+        node_texts = ["def foo():", "x = malloc(10)", "return x"]
+        edge_index = torch.tensor([[0, 1], [1, 2]], dtype=torch.long)
+        edge_type = torch.tensor([0, 1], dtype=torch.long)
+
+        out = encoder(node_types, edge_index, edge_type, node_texts=node_texts)
+        assert out.shape == (1, 64)
 
     def test_with_node_embeddings(self):
         encoder = GraphEncoder(node_feature_dim=32, hidden_dim=64, output_dim=64, num_layers=2, num_heads=4)
@@ -64,12 +107,10 @@ class TestGraphEncoder:
         assert out.shape == (1, 64)
 
 
-
-
 class TestCrossModalFusion:
     """Tests for the cross-modal fusion module."""
 
-    @pytest.mark.parametrize("combine", ["mean", "concat", "gated"])
+    @pytest.mark.parametrize("combine", ["mean", "concat", "gated", "film"])
     def test_forward_2d(self, combine: str):
         fusion = CrossModalFusion(hidden_dim=64, num_heads=4, num_layers=1, combine=combine)
         sem = torch.randn(4, 64)

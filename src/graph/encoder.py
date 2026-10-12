@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 import zlib
+import re
 
 import torch
 import torch.nn as nn
@@ -80,11 +81,172 @@ class NodeTypeEmbedding(nn.Module):
         idx_tensor = torch.tensor(indices, dtype=torch.long, device=self.embedding.weight.device)
         return self.embedding(idx_tensor)
 
+
+class NodeTextEmbedding(nn.Module):
+    """Giải pháp 1: Learnable hash-based embedding cho AST/PDG node code texts.
+
+    Trích xuất tokens, identifiers và operators từ chuỗi text của node code,
+    băm sang bảng embedding lớn (vocab_size), pooling và chiếu sang không gian node feature.
+
+    Args:
+        vocab_size: Số lượng bucket băm (mặc định 16384).
+        embedding_dim: Số chiều embedding băm.
+        output_dim: Số chiều vector trả về (khớp với node_feature_dim).
+        max_tokens_per_node: Số subtoken tối đa được trích xuất cho mỗi node.
+        dropout: Tỷ lệ dropout.
+    """
+
+    def __init__(
+        self,
+        vocab_size: int = 16384,
+        embedding_dim: int = 128,
+        output_dim: int = 128,
+        max_tokens_per_node: int = 16,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.max_tokens_per_node = max_tokens_per_node
+        self.output_dim = output_dim
+        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+        self.proj = nn.Sequential(
+            nn.Linear(embedding_dim, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.Dropout(dropout),
+        )
+        self._token_re = re.compile(r"[a-zA-Z_]\w+|\d+|[^\s\w]")
+
+    def forward(self, node_texts: list[str]) -> torch.Tensor:
+        """Biến đổi danh sách text của node thành tensor đặc trưng.
+
+        Args:
+            node_texts: List chuỗi code text của N nodes.
+
+        Returns:
+            Tensor hình dạng (N, output_dim).
+        """
+        num_nodes = len(node_texts)
+        device = self.embedding.weight.device
+        if num_nodes == 0:
+            return torch.zeros((0, self.output_dim), device=device)
+
+        token_ids = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.long, device=device)
+        mask = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.float32, device=device)
+
+        for i, text in enumerate(node_texts):
+            if not text or text == "unknown":
+                continue
+            toks = self._token_re.findall(str(text))[: self.max_tokens_per_node]
+            for j, tok in enumerate(toks):
+                h = (zlib.crc32(tok.encode("utf-8", errors="ignore")) % (self.vocab_size - 1)) + 1
+                token_ids[i, j] = h
+                mask[i, j] = 1.0
+
+        tok_embs = self.embedding(token_ids)  # (N, max_tokens, embedding_dim)
+        mask_sum = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+        pooled = (tok_embs * mask.unsqueeze(-1)).sum(dim=1) / mask_sum  # (N, embedding_dim)
+
+        return self.proj(pooled)
+
+
+class NodeCodeBERTEmbedding(nn.Module):
+    """Giải pháp 2: Shared Backbone / Pretrained CodeBERT word embeddings cho AST nodes.
+
+    Tận dụng trực tiếp bảng word embeddings được pre-trained của CodeBERT (50,265 tokens)
+    để biểu diễn các từ khóa, biến, hàm quan trọng, sau đó chiếu sang node_feature_dim.
+
+    Args:
+        shared_word_embeddings: Lớp nn.Embedding của CodeBERT (chia sẻ trọng số với Semantic branch).
+        codebert_dim: Chiều không gian của CodeBERT (mặc định 768).
+        output_dim: Chiều output của node feature.
+        max_tokens_per_node: Số subtoken tối đa.
+        dropout: Tỷ lệ dropout.
+    """
+
+    def __init__(
+        self,
+        shared_word_embeddings: Optional[nn.Embedding] = None,
+        codebert_dim: int = 768,
+        output_dim: int = 128,
+        max_tokens_per_node: int = 16,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        self.codebert_dim = codebert_dim
+        self.output_dim = output_dim
+        self.max_tokens_per_node = max_tokens_per_node
+        if shared_word_embeddings is not None:
+            self.word_embeddings = shared_word_embeddings
+        else:
+            self.word_embeddings = nn.Embedding(50265, codebert_dim, padding_idx=1)
+
+        self.proj = nn.Sequential(
+            nn.Linear(codebert_dim, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.Dropout(dropout),
+        )
+        self._tokenizer = None
+        self._token_re = re.compile(r"[a-zA-Z_]\w+|\d+|[^\s\w]")
+
+    def _get_tokenizer(self):
+        if self._tokenizer is None:
+            try:
+                from transformers import AutoTokenizer
+                self._tokenizer = AutoTokenizer.from_pretrained("microsoft/codebert-base", use_fast=True)
+            except Exception:
+                self._tokenizer = False
+        return self._tokenizer if self._tokenizer is not False else None
+
+    def forward(self, node_texts: list[str]) -> torch.Tensor:
+        """Biến đổi danh sách text của node thành đặc trưng ngữ nghĩa CodeBERT."""
+        num_nodes = len(node_texts)
+        device = self.word_embeddings.weight.device
+        if num_nodes == 0:
+            return torch.zeros((0, self.output_dim), device=device)
+
+        tok = self._get_tokenizer()
+        if tok is not None:
+            try:
+                clean_texts = [str(t) if (t and t != "unknown") else "<s>" for t in node_texts]
+                encoded = tok(
+                    clean_texts,
+                    max_length=self.max_tokens_per_node,
+                    padding=True,
+                    truncation=True,
+                    return_tensors="pt",
+                )
+                input_ids = encoded["input_ids"].to(device)
+                attn_mask = encoded["attention_mask"].to(device).unsqueeze(-1).float()
+                embs = self.word_embeddings(input_ids)
+                pooled = (embs * attn_mask).sum(dim=1) / attn_mask.sum(dim=1).clamp(min=1.0)
+                return self.proj(pooled)
+            except Exception as e:
+                logger.warning("Tokenize node_texts lỗi, chuyển sang băm CodeBERT subwords: %s", e)
+
+        # Fallback nhanh sang băm vào dải vocab của CodeBERT
+        token_ids = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.long, device=device)
+        mask = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.float32, device=device)
+        for i, text in enumerate(node_texts):
+            if not text or text == "unknown":
+                continue
+            toks = self._token_re.findall(str(text))[: self.max_tokens_per_node]
+            for j, t in enumerate(toks):
+                token_ids[i, j] = (zlib.crc32(t.encode("utf-8", errors="ignore")) % 50260) + 2
+                mask[i, j] = 1.0
+
+        embs = self.word_embeddings(token_ids)
+        mask_sum = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+        pooled = (embs * mask.unsqueeze(-1)).sum(dim=1) / mask_sum
+        return self.proj(pooled)
+
+
 class GraphEncoder(nn.Module):
     """Heterogeneous Graph Neural Network encoder for program graphs using RGCN.
 
     Stacks multiple RGCN layers with edge-type-aware convolutions to learn
     structural representations from combined AST + CFG + DFG + Call graphs.
+    Hỗ trợ làm giàu Node features với nội dung code qua Hash Embedding (GP 1)
+    hoặc Shared Pretrained CodeBERT Backbone (GP 2).
 
     Args:
         node_feature_dim: Dimension of initial node features (from NodeTypeEmbedding).
@@ -94,6 +256,10 @@ class GraphEncoder(nn.Module):
         num_heads: Ignored (kept for API compatibility).
         num_edge_types: Number of distinct edge types (relations).
         dropout: Dropout probability.
+        node_encoder_type: Loại encoder cho node text: "hash" (GP1), "shared_codebert" (GP2), "none".
+        text_vocab_size: Kích thước từ điển băm khi dùng node_encoder_type="hash".
+        shared_word_embeddings: Tham chiếu lớp word embedding của CodeBERT khi dùng GP2.
+        combine_mode: Phương pháp kết hợp Type + Text: "add" hoặc "concat".
     """
 
     def __init__(
@@ -105,12 +271,58 @@ class GraphEncoder(nn.Module):
         num_heads: int = 4,
         num_edge_types: int = 5,
         dropout: float = 0.5,
+        node_encoder_type: str = "hash",
+        text_vocab_size: int = 16384,
+        shared_word_embeddings: Optional[nn.Embedding] = None,
+        combine_mode: str = "add",
     ) -> None:
         super().__init__()
+        self.node_feature_dim = node_feature_dim
+        self.node_encoder_type = node_encoder_type
+        self.combine_mode = combine_mode
+
+        # 1. Type embedding
         self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
-        
+
+        # 2. Text embedding (Giải pháp 1, Giải pháp 2, hoặc Hybrid cả hai)
+        if node_encoder_type in ("hash", "both", "hybrid"):
+            self.node_hash_embedding = NodeTextEmbedding(
+                vocab_size=text_vocab_size,
+                embedding_dim=node_feature_dim,
+                output_dim=node_feature_dim,
+                dropout=dropout * 0.5,
+            )
+        else:
+            self.node_hash_embedding = None
+
+        if node_encoder_type in ("shared_codebert", "both", "hybrid"):
+            self.node_codebert_embedding = NodeCodeBERTEmbedding(
+                shared_word_embeddings=shared_word_embeddings,
+                codebert_dim=768,
+                output_dim=node_feature_dim,
+                dropout=dropout * 0.5,
+            )
+        else:
+            self.node_codebert_embedding = None
+
+        # 3. Combine layer
+        num_emb_components = 1  # Base NodeTypeEmbedding
+        if self.node_hash_embedding is not None:
+            num_emb_components += 1
+        if self.node_codebert_embedding is not None:
+            num_emb_components += 1
+
+        if combine_mode == "concat" and num_emb_components > 1:
+            self.combine_proj = nn.Sequential(
+                nn.Linear(node_feature_dim * num_emb_components, node_feature_dim),
+                nn.LayerNorm(node_feature_dim),
+                nn.Dropout(dropout * 0.5),
+            )
+        else:
+            self.combine_proj = nn.LayerNorm(node_feature_dim)
+
         from torch_geometric.nn import RGCNConv
-        
+
         # Stacked RGCN layers
         self.layers = nn.ModuleList()
         in_dim = node_feature_dim
@@ -130,19 +342,40 @@ class GraphEncoder(nn.Module):
             nn.Dropout(dropout),
         )
 
-
     def forward(
         self,
         node_types: list[str],
         edge_index: torch.Tensor,
         edge_type: torch.Tensor,
         batch: Optional[torch.Tensor] = None,
+        node_texts: Optional[list[str]] = None,
         return_node_embeddings: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Encode a batched heterogeneous program graph."""
-        
-        # Node type → embedding
-        x = self.node_embedding(node_types)  # (N, node_feature_dim)
+
+        # 1. Base Node Type Embedding
+        type_emb = self.node_embedding(node_types)  # (N, node_feature_dim)
+
+        # 2. Enriched Node Features (Giải pháp 1, Giải pháp 2 hoặc Hybrid Cả Hai)
+        if node_texts is not None and len(node_texts) == len(node_types):
+            text_embs = []
+            if self.node_hash_embedding is not None:
+                text_embs.append(self.node_hash_embedding(node_texts))
+            if self.node_codebert_embedding is not None:
+                text_embs.append(self.node_codebert_embedding(node_texts))
+
+            if text_embs:
+                if self.combine_mode == "concat":
+                    x = self.combine_proj(torch.cat([type_emb] + text_embs, dim=-1))
+                else:
+                    combined_sum = type_emb
+                    for em in text_embs:
+                        combined_sum = combined_sum + em
+                    x = self.combine_proj(combined_sum)
+            else:
+                x = type_emb
+        else:
+            x = type_emb
 
         # Ensure edge_index is in COO format (2, E)
         if edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) != 2:
@@ -150,7 +383,7 @@ class GraphEncoder(nn.Module):
                 edge_index = edge_index.t().contiguous()
             else:
                 edge_index = edge_index.view(2, -1)
-                
+
         # Handle empty graphs smoothly
         no_edges = (
             edge_index is None
@@ -161,7 +394,7 @@ class GraphEncoder(nn.Module):
 
         for layer in self.layers:
             if no_edges:
-                x = F.relu(x) # skip message passing if graph has no edges
+                x = F.relu(x)  # skip message passing if graph has no edges
             else:
                 x = F.relu(layer(x, edge_index, edge_type))
 

@@ -95,6 +95,13 @@ class VulHunterModel(nn.Module):
 
         if mode in ("fusion", "graph_only"):
             graph_config.setdefault("output_dim", output_dim)
+            # Giải pháp 2 & Hybrid (1 + 2): Chia sẻ CodeBERT word_embeddings cho GraphEncoder
+            if graph_config.get("node_encoder_type") in ("shared_codebert", "both", "hybrid") and hasattr(self, "semantic_encoder"):
+                try:
+                    graph_config["shared_word_embeddings"] = self.semantic_encoder.backbone.embeddings.word_embeddings
+                    logger.info("Liên kết shared CodeBERT word_embeddings cho GraphEncoder (Giải pháp 2 / Hybrid)")
+                except Exception as e:
+                    logger.warning("Không thể trích xuất word_embeddings từ semantic_encoder: %s", e)
             self.graph_encoder = GraphEncoder(**graph_config)
             logger.info("Khởi tạo GraphEncoder")
             
@@ -106,8 +113,13 @@ class VulHunterModel(nn.Module):
             fusion_config.setdefault("hidden_dim", output_dim)
             # Extract residual_alpha before passing to constructor (not an init param)
             self._fusion_residual_alpha = float(fusion_config.pop("residual_alpha", 0.3))
+            # Giải pháp 3: Cho phép cấu hình fusion_level: "token" (token-level) hoặc "pooled" (late fusion)
+            self.fusion_level = fusion_config.pop("fusion_level", "token")
             self.fusion = CrossModalFusion(**fusion_config)
-            logger.info("Khởi tạo CrossModalFusion (residual_alpha=%.2f)", self._fusion_residual_alpha)
+            logger.info(
+                "Khởi tạo CrossModalFusion (fusion_level=%s, residual_alpha=%.2f)",
+                self.fusion_level, self._fusion_residual_alpha,
+            )
 
         # Binary prediction head (task chính)
         binary_cfg = head_config.get("binary", {})
@@ -167,32 +179,60 @@ class VulHunterModel(nn.Module):
             elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
                 edge_index = edge_index.view(2, -1)
             graph_pooled = self.graph_encoder(
-                node_types, edge_index, edge_type, batch,
+                node_types=node_types,
+                edge_index=edge_index,
+                edge_type=edge_type,
+                batch=batch,
+                node_texts=node_texts,
             )
             fused_pooled = graph_pooled
 
         elif self.mode == "fusion":
-            # Semantic branch (chỉ lấy pooled output, bỏ qua sequence để tránh nhiễu)
-            sem_pooled = self.semantic_encoder(input_ids, attention_mask, return_sequence=False)
-            
-            # Graph branch
+            # Graph branch (Giải pháp 1 & 2: truyền node_texts)
             if edge_index is not None and edge_index.dim() == 1:
                 edge_index = edge_index.new_zeros(2, 0)
             elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
                 edge_index = edge_index.view(2, -1)
                 
             graph_pooled = self.graph_encoder(
-                node_types, edge_index, edge_type, batch,
+                node_types=node_types,
+                edge_index=edge_index,
+                edge_type=edge_type,
+                batch=batch,
+                node_texts=node_texts,
                 return_node_embeddings=False,
             )
-            
-            # 🚀 LATE FUSION (Vector-level) thay vì Token-level
-            # Giảm nhiễu, tăng độ ổn định và tận dụng tối đa sức mạnh của CodeBERT
-            fused_pooled = self.fusion(
-                sem_pooled, graph_pooled, 
-                semantic_mask=None, graph_batch=None,
-                residual_alpha=self._fusion_residual_alpha,
-            )
+
+            # Giải pháp 3: Token-level Fusion vs Vector-level Late Fusion
+            if getattr(self, "fusion_level", "token") == "token":
+                # Lấy cả sequence (B, L, D) từ CodeBERT
+                sem_pooled, sem_sequence = self.semantic_encoder(
+                    input_ids, attention_mask, return_sequence=True
+                )
+                # Token-level modulation / fusion: graph context điều biến toàn bộ sequence 512 tokens
+                fused_seq = self.fusion(
+                    semantic=sem_sequence,
+                    graph=graph_pooled,
+                    semantic_mask=attention_mask,
+                    residual_alpha=self._fusion_residual_alpha,
+                )
+                # Pooling lại sau khi đã fuse ở cấp độ token
+                if getattr(self.semantic_encoder, "pooling", "last") == "mean":
+                    mask_expanded = attention_mask.unsqueeze(-1).to(fused_seq.dtype)
+                    fused_pooled = (fused_seq * mask_expanded).sum(1) / mask_expanded.sum(1).clamp(min=1e-9)
+                else:
+                    # 'last' -> CLS token tại vị trí 0
+                    fused_pooled = fused_seq[:, 0, :]
+            else:
+                # Vector-level / Late fusion
+                sem_pooled = self.semantic_encoder(input_ids, attention_mask, return_sequence=False)
+                fused_pooled = self.fusion(
+                    semantic=sem_pooled,
+                    graph=graph_pooled,
+                    semantic_mask=None,
+                    graph_batch=None,
+                    residual_alpha=self._fusion_residual_alpha,
+                )
 
         output.fused_embedding = fused_pooled
 

@@ -306,6 +306,12 @@ class CrossModalFusion(nn.Module):
         semantic_only_residual = semantic
         input_was_2d = semantic.dim() == 2 and graph.dim() == 2
 
+        # Chuẩn hoá sang dạng 3D sequence để các cross-attention block hoạt động nhất quán
+        if semantic.dim() == 2:
+            semantic = semantic.unsqueeze(1)
+        if graph.dim() == 2:
+            graph = graph.unsqueeze(1)
+
         # Apply cross-attention blocks
         for block in self.blocks:
             semantic, graph = block(semantic, graph, semantic_mask, graph_mask)
@@ -326,7 +332,7 @@ class CrossModalFusion(nn.Module):
             gate_value = self.gate(combined)
             fused = gate_value * semantic + (1 - gate_value) * graph
         elif self.combine == "film":
-            # Lấy vector cuối (mean) của graph nếu nó là dạng sequence
+            # Lấy vector điều kiện (mean) của graph
             graph_cond = graph.mean(dim=1) if graph.dim() == 3 else graph
 
             # Bounded modulation: tanh giới hạn gamma trong (-1, 1) -> (1 + gamma) trong (0, 2)
@@ -345,10 +351,19 @@ class CrossModalFusion(nn.Module):
         else:
             raise ValueError(f"Unknown combine strategy: {self.combine}")
 
-        # Residual skip: tránh fusion phá hỏng semantic signal khi graph rỗng/noisy
-        # Không áp dụng cho FiLM vì FiLM bản chất đã là modulation trên nền Semantic
-        if residual_alpha > 0 and self.combine != "film":
-            fused = (1.0 - residual_alpha) * fused + residual_alpha * semantic_only_residual
+        # Residual skip (Giải pháp 3): Giữ lại tín hiệu mạnh của Semantic khi graph rỗng/noise
+        # Với FiLM: Áp dụng additive residual skip nhẹ để bảo vệ semantic representation
+        if residual_alpha > 0:
+            res = semantic_only_residual
+            if fused.dim() == 3 and res.dim() == 2:
+                res = res.unsqueeze(1)
+            elif fused.dim() == 2 and res.dim() == 3:
+                res = res.mean(dim=1)
+
+            if self.combine == "film":
+                fused = fused + residual_alpha * res
+            else:
+                fused = (1.0 - residual_alpha) * fused + residual_alpha * res
 
         if input_was_2d and fused.dim() == 3:
             fused = fused.squeeze(1)
