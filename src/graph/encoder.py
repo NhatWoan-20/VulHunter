@@ -7,6 +7,13 @@ edges. It uses relation-aware graph convolutions to learn distinct structural pa
 Architecture:
     Node Features → Embedding → [RGCNConv × N layers] → Global Pooling → Graph Embedding
 
+v2 Improvements:
+    - Vulnerability-aware node features (is_source, is_sink, is_sanitizer) → thêm 3 binary dims
+    - NodeTextEmbedding với full code snippet text (không chỉ type label)
+    - Giảm dropout mặc định 0.5 → 0.2 cho stability với graph thưa
+    - GraphNodeClassifier auxiliary head (node-level supervision)
+    - Robust edge handling
+
 Example:
     >>> encoder = GraphEncoder(node_feature_dim=128, hidden_dim=256, output_dim=256)
     >>> graph_emb = encoder(node_types, edge_index, edge_type, batch)
@@ -240,6 +247,85 @@ class NodeCodeBERTEmbedding(nn.Module):
         return self.proj(pooled)
 
 
+class VulnerabilityNodeFeatures(nn.Module):
+    """Giải pháp 4 (mới): Vulnerability-aware node features.
+
+    Chiếu các binary flags is_source, is_sink, is_sanitizer lên không gian
+    embedding node, sau đó cộng vào node representation chính.
+
+    Args:
+        output_dim: Chiều output khớp với node_feature_dim.
+        dropout: Dropout.
+    """
+
+    def __init__(self, output_dim: int = 128, dropout: float = 0.1) -> None:
+        super().__init__()
+        # 3 binary features: [is_source, is_sink, is_sanitizer]
+        self.proj = nn.Sequential(
+            nn.Linear(3, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.Dropout(dropout),
+        )
+        # Khởi tạo với trọng số nhỏ để ban đầu không ảnh hưởng nhiều
+        nn.init.normal_(self.proj[0].weight, std=0.02)
+        nn.init.zeros_(self.proj[0].bias)
+
+    def forward(self, is_source: list[bool], is_sink: list[bool], is_sanitizer: list[bool]) -> torch.Tensor:
+        """Chuyển đổi vulnerability flags thành node embedding bổ sung.
+
+        Args:
+            is_source, is_sink, is_sanitizer: Lists of bool per node.
+
+        Returns:
+            Tensor (N, output_dim).
+        """
+        N = len(is_source)
+        device = self.proj[0].weight.device
+        if N == 0:
+            return torch.zeros((0, self.proj[0].out_features), device=device)
+
+        flags = torch.tensor(
+            [[float(s), float(k), float(san)] for s, k, san in zip(is_source, is_sink, is_sanitizer)],
+            dtype=torch.float32,
+            device=device,
+        )
+        return self.proj(flags)
+
+
+class GraphNodeClassifier(nn.Module):
+    """Auxiliary node-level vulnerability classifier (Fix 3: node-level supervision).
+
+    Predicts whether each node is a 'vulnerability-relevant' node
+    (source, sink, or sanitizer) using node embeddings after RGCN layers.
+    Used as an auxiliary loss during training to force graph encoder to
+    learn vulnerability-relevant structural patterns.
+
+    Args:
+        hidden_dim: Dimension of node embeddings after RGCN.
+        dropout: Dropout.
+    """
+
+    def __init__(self, hidden_dim: int = 128, dropout: float = 0.1) -> None:
+        super().__init__()
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, 3),  # [source, sink, sanitizer] logits
+        )
+
+    def forward(self, node_embeddings: torch.Tensor) -> torch.Tensor:
+        """Predict node-level vulnerability flags.
+
+        Args:
+            node_embeddings: (N, hidden_dim) after RGCN layers.
+
+        Returns:
+            (N, 3) logits for [is_source, is_sink, is_sanitizer].
+        """
+        return self.classifier(node_embeddings)
+
+
 class GraphEncoder(nn.Module):
     """Heterogeneous Graph Neural Network encoder for program graphs using RGCN.
 
@@ -247,6 +333,8 @@ class GraphEncoder(nn.Module):
     structural representations from combined AST + CFG + DFG + Call graphs.
     Hỗ trợ làm giàu Node features với nội dung code qua Hash Embedding (GP 1)
     hoặc Shared Pretrained CodeBERT Backbone (GP 2).
+
+    v2: Thêm vulnerability-aware node features + node-level auxiliary classifier.
 
     Args:
         node_feature_dim: Dimension of initial node features (from NodeTypeEmbedding).
@@ -260,6 +348,8 @@ class GraphEncoder(nn.Module):
         text_vocab_size: Kích thước từ điển băm khi dùng node_encoder_type="hash".
         shared_word_embeddings: Tham chiếu lớp word embedding của CodeBERT khi dùng GP2.
         combine_mode: Phương pháp kết hợp Type + Text: "add" hoặc "concat".
+        use_vul_features: Sử dụng vulnerability-aware node features (is_source, is_sink, is_sanitizer).
+        use_node_classifier: Bật node-level auxiliary classifier (dùng trong training loss).
     """
 
     def __init__(
@@ -270,16 +360,20 @@ class GraphEncoder(nn.Module):
         num_layers: int = 3,
         num_heads: int = 4,
         num_edge_types: int = 5,
-        dropout: float = 0.5,
+        dropout: float = 0.2,  # Giảm từ 0.5 → 0.2 cho stability
         node_encoder_type: str = "hash",
         text_vocab_size: int = 16384,
         shared_word_embeddings: Optional[nn.Embedding] = None,
         combine_mode: str = "add",
+        use_vul_features: bool = True,
+        use_node_classifier: bool = True,
     ) -> None:
         super().__init__()
         self.node_feature_dim = node_feature_dim
         self.node_encoder_type = node_encoder_type
         self.combine_mode = combine_mode
+        self.use_vul_features = use_vul_features
+        self.use_node_classifier = use_node_classifier
 
         # 1. Type embedding
         self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
@@ -305,11 +399,19 @@ class GraphEncoder(nn.Module):
         else:
             self.node_codebert_embedding = None
 
-        # 3. Combine layer
+        # 3. Vulnerability-aware node features (Fix 4 — P0)
+        if use_vul_features:
+            self.vul_features = VulnerabilityNodeFeatures(output_dim=node_feature_dim, dropout=dropout * 0.5)
+        else:
+            self.vul_features = None
+
+        # 4. Combine layer
         num_emb_components = 1  # Base NodeTypeEmbedding
         if self.node_hash_embedding is not None:
             num_emb_components += 1
         if self.node_codebert_embedding is not None:
+            num_emb_components += 1
+        if self.vul_features is not None:
             num_emb_components += 1
 
         if combine_mode == "concat" and num_emb_components > 1:
@@ -342,6 +444,12 @@ class GraphEncoder(nn.Module):
             nn.Dropout(dropout),
         )
 
+        # Node-level auxiliary classifier (Fix 3)
+        if use_node_classifier:
+            self.node_classifier = GraphNodeClassifier(hidden_dim=hidden_dim, dropout=dropout * 0.5)
+        else:
+            self.node_classifier = None
+
     def forward(
         self,
         node_types: list[str],
@@ -349,33 +457,62 @@ class GraphEncoder(nn.Module):
         edge_type: torch.Tensor,
         batch: Optional[torch.Tensor] = None,
         node_texts: Optional[list[str]] = None,
+        node_is_source: Optional[list[bool]] = None,
+        node_is_sink: Optional[list[bool]] = None,
+        node_is_sanitizer: Optional[list[bool]] = None,
         return_node_embeddings: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Encode a batched heterogeneous program graph."""
+        """Encode a batched heterogeneous program graph.
+
+        Args:
+            node_types: List of node type strings (length N).
+            edge_index: (2, E) edge indices.
+            edge_type: (E,) edge type indices.
+            batch: (N,) batch assignment per node.
+            node_texts: Optional list of code text per node.
+            node_is_source: Optional bool list indicating source nodes.
+            node_is_sink: Optional bool list indicating sink nodes.
+            node_is_sanitizer: Optional bool list indicating sanitizer nodes.
+            return_node_embeddings: If True, also return per-node embeddings.
+
+        Returns:
+            graph_out: (B, output_dim) graph-level embedding.
+            node_out (optional): (N, hidden_dim) node-level embeddings.
+        """
+        N = len(node_types)
 
         # 1. Base Node Type Embedding
         type_emb = self.node_embedding(node_types)  # (N, node_feature_dim)
 
-        # 2. Enriched Node Features (Giải pháp 1, Giải pháp 2 hoặc Hybrid Cả Hai)
-        if node_texts is not None and len(node_texts) == len(node_types):
-            text_embs = []
-            if self.node_hash_embedding is not None:
-                text_embs.append(self.node_hash_embedding(node_texts))
-            if self.node_codebert_embedding is not None:
-                text_embs.append(self.node_codebert_embedding(node_texts))
-
-            if text_embs:
-                if self.combine_mode == "concat":
-                    x = self.combine_proj(torch.cat([type_emb] + text_embs, dim=-1))
-                else:
-                    combined_sum = type_emb
-                    for em in text_embs:
-                        combined_sum = combined_sum + em
-                    x = self.combine_proj(combined_sum)
+        # 2. Collect all active feature components
+        components = [type_emb]
+        if self.node_hash_embedding is not None:
+            if node_texts is not None and len(node_texts) == N:
+                components.append(self.node_hash_embedding(node_texts))
             else:
-                x = type_emb
+                components.append(type_emb.new_zeros(N, self.node_feature_dim))
+        if self.node_codebert_embedding is not None:
+            if node_texts is not None and len(node_texts) == N:
+                components.append(self.node_codebert_embedding(node_texts))
+            else:
+                components.append(type_emb.new_zeros(N, self.node_feature_dim))
+        if self.vul_features is not None:
+            if N > 0:
+                src_flags = node_is_source if node_is_source is not None else [False] * N
+                snk_flags = node_is_sink if node_is_sink is not None else [False] * N
+                san_flags = node_is_sanitizer if node_is_sanitizer is not None else [False] * N
+                components.append(self.vul_features(src_flags, snk_flags, san_flags))
+            else:
+                components.append(type_emb.new_zeros(0, self.node_feature_dim))
+
+        # 3. Combine components
+        if self.combine_mode == "concat" and len(components) > 1:
+            x = self.combine_proj(torch.cat(components, dim=-1))
         else:
-            x = type_emb
+            x = components[0]
+            for c in components[1:]:
+                x = x + c
+            x = self.combine_proj(x)
 
         # Ensure edge_index is in COO format (2, E)
         if edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) != 2:
@@ -397,6 +534,7 @@ class GraphEncoder(nn.Module):
                 x = F.relu(x)  # skip message passing if graph has no edges
             else:
                 x = F.relu(layer(x, edge_index, edge_type))
+            x = self.dropout_layer(x)
 
         node_out = x
 
@@ -419,4 +557,3 @@ class GraphEncoder(nn.Module):
             return graph_out, node_out
 
         return graph_out
-

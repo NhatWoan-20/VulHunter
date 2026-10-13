@@ -105,6 +105,9 @@ class CrossAttentionBlock(nn.Module):
         """
         B, L_q, D = query.shape
         _, L_k, _ = key.shape
+        if L_k == 0 or L_q == 0:
+            return torch.zeros(B, L_q, D, device=query.device, dtype=query.dtype)
+
         H = self.num_heads
         head_dim = self.head_dim
 
@@ -124,18 +127,23 @@ class CrossAttentionBlock(nn.Module):
             Q_chunk = Q[:, :, q_start:q_end]  # (B, H, chunk, d)
 
             # Attention scores: (B, H, chunk, L_k)
-            attn = torch.matmul(Q_chunk, K.transpose(-2, -1)) * scale
+            attn = torch.matmul(Q_chunk.float(), K_for_softmax.transpose(-2, -1)) * scale
             if key_mask is not None:
                 # key_mask: (B, L_k) → (B, 1, 1, L_k)
                 mask = ~key_mask[:, None, None, :].bool()
-                attn = attn.masked_fill(mask, torch.finfo(attn.dtype).min)
+                has_valid_keys = key_mask.any(dim=-1, keepdim=True)[:, None, None, :]
+                attn = attn.masked_fill(mask, -10000.0)
+                attn = F.softmax(attn, dim=-1)
+                attn = torch.where(has_valid_keys, attn, torch.zeros_like(attn))
+            else:
+                attn = F.softmax(attn, dim=-1)
 
-            # Compute softmax in float32 for stability, cast back to query dtype.
-            attn = F.softmax(attn, dim=-1).to(query.dtype)
+            # Phòng ngừa NaN tuyệt đối trong FP16
+            attn = torch.nan_to_num(attn, nan=0.0)
             attn = self.attn_dropout(attn)
 
-            # Weighted sum in fp32 to reduce memory, cast back at the end.
-            out_chunk = torch.matmul(attn.float(), V_for_softmax).to(query.dtype)
+            # Weighted sum in fp32, cast back to query dtype
+            out_chunk = torch.matmul(attn, V_for_softmax).to(query.dtype)
             out[:, :, q_start:q_end] = out_chunk
 
         out = out.transpose(1, 2).contiguous().view(B, L_q, D)  # (B, L_q, D)

@@ -195,17 +195,32 @@ class VulHunterDataset(Dataset):
 
         # ── Graph features ──
         sid = sample.get("sample_id")
+        gdata = None
         if sid and sid in self.graph_data:
             gdata = self.graph_data[sid]
+        elif "nodes" in sample or "edges" in sample or "node_types" in sample:
+            gdata = sample
+
+        if gdata is not None:
             if "nodes" in gdata and gdata["nodes"]:
                 result["node_types"] = [n.get("type", "unknown") if isinstance(n, dict) else str(n) for n in gdata["nodes"]]
                 result["node_texts"] = [str(n.get("text") or n.get("label") or n.get("type") or "unknown") if isinstance(n, dict) else str(n) for n in gdata["nodes"]]
+                result["node_is_source"] = [bool(n.get("is_source", False)) if isinstance(n, dict) else False for n in gdata["nodes"]]
+                result["node_is_sink"] = [bool(n.get("is_sink", False)) if isinstance(n, dict) else False for n in gdata["nodes"]]
+                result["node_is_sanitizer"] = [bool(n.get("is_sanitizer", False)) if isinstance(n, dict) else False for n in gdata["nodes"]]
             elif "node_types" in gdata and gdata["node_types"]:
                 result["node_types"] = gdata["node_types"]
-                result["node_texts"] = gdata["node_types"]  # Fallback
+                result["node_texts"] = gdata.get("node_texts", gdata["node_types"])
+                num_n = len(gdata["node_types"])
+                result["node_is_source"] = gdata.get("node_is_source", [False] * num_n)
+                result["node_is_sink"] = gdata.get("node_is_sink", [False] * num_n)
+                result["node_is_sanitizer"] = gdata.get("node_is_sanitizer", [False] * num_n)
             else:
                 result["node_types"] = ["unknown"]
                 result["node_texts"] = ["unknown"]
+                result["node_is_source"] = [False]
+                result["node_is_sink"] = [False]
+                result["node_is_sanitizer"] = [False]
             edges = gdata.get("edges", [])
             # Always filter to keep only PDG edges as defined in EDGE_TYPE_MAP
             edges = [e for e in edges if e.get("type") in EDGE_TYPE_MAP]
@@ -221,6 +236,9 @@ class VulHunterDataset(Dataset):
         else:
             result["node_types"] = ["unknown"]
             result["node_texts"] = ["unknown"]
+            result["node_is_source"] = [False]
+            result["node_is_sink"] = [False]
+            result["node_is_sanitizer"] = [False]
             result["edge_index"] = torch.zeros(2, 0, dtype=torch.long)
             result["edge_type"] = torch.zeros(0, dtype=torch.long)
 
@@ -261,6 +279,9 @@ def collate_fn(batch: list[dict], pad_to_multiple_of: int = 8) -> dict:
     if "node_types" in batch[0]:
         all_node_types: list[str] = []
         all_node_texts: list[str] = []
+        all_node_is_source: list[bool] = []
+        all_node_is_sink: list[bool] = []
+        all_node_is_sanitizer: list[bool] = []
         edge_indices: list[torch.Tensor] = []
         edge_types: list[torch.Tensor] = []
         graph_batch: list[int] = []
@@ -271,6 +292,9 @@ def collate_fn(batch: list[dict], pad_to_multiple_of: int = 8) -> dict:
             ntexts = s.get("node_texts", ntypes)
             all_node_texts.extend(ntexts)
             num_nodes = len(ntypes)
+            all_node_is_source.extend(s.get("node_is_source", [False] * num_nodes))
+            all_node_is_sink.extend(s.get("node_is_sink", [False] * num_nodes))
+            all_node_is_sanitizer.extend(s.get("node_is_sanitizer", [False] * num_nodes))
             if "edge_index" in s and s["edge_index"].size(1) > 0:
                 edge_indices.append(s["edge_index"] + node_offset)
                 edge_types.append(s["edge_type"])
@@ -278,6 +302,9 @@ def collate_fn(batch: list[dict], pad_to_multiple_of: int = 8) -> dict:
             node_offset += num_nodes
         result["node_types"] = all_node_types
         result["node_texts"] = all_node_texts
+        result["node_is_source"] = all_node_is_source
+        result["node_is_sink"] = all_node_is_sink
+        result["node_is_sanitizer"] = all_node_is_sanitizer
         result["batch"] = torch.tensor(graph_batch, dtype=torch.long)
         if edge_indices:
             result["edge_index"] = torch.cat(edge_indices, dim=1)

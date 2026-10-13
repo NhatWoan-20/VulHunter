@@ -38,9 +38,11 @@ class ModelOutput:
     Attributes:
         binary_logits: Binary vulnerability logits shape ``(B, 1)``.
         fused_embedding: Pooled fused representation shape ``(B, output_dim)``.
+        node_logits: Auxiliary node-level logits shape ``(N, 3)`` if enabled.
     """
     binary_logits: torch.Tensor | None = None
     fused_embedding: torch.Tensor | None = None
+    node_logits: torch.Tensor | None = None
 
     def __iter__(self):
         return iter((self.binary_logits, self.fused_embedding))
@@ -96,12 +98,21 @@ class VulHunterModel(nn.Module):
         if mode in ("fusion", "graph_only"):
             graph_config.setdefault("output_dim", output_dim)
             # Giải pháp 2 & Hybrid (1 + 2): Chia sẻ CodeBERT word_embeddings cho GraphEncoder
-            if graph_config.get("node_encoder_type") in ("shared_codebert", "both", "hybrid") and hasattr(self, "semantic_encoder"):
-                try:
-                    graph_config["shared_word_embeddings"] = self.semantic_encoder.backbone.embeddings.word_embeddings
-                    logger.info("Liên kết shared CodeBERT word_embeddings cho GraphEncoder (Giải pháp 2 / Hybrid)")
-                except Exception as e:
-                    logger.warning("Không thể trích xuất word_embeddings từ semantic_encoder: %s", e)
+            if graph_config.get("node_encoder_type") in ("shared_codebert", "both", "hybrid"):
+                if hasattr(self, "semantic_encoder"):
+                    try:
+                        graph_config["shared_word_embeddings"] = self.semantic_encoder.backbone.embeddings.word_embeddings
+                        logger.info("Liên kết shared CodeBERT word_embeddings cho GraphEncoder (Giải pháp 2 / Hybrid)")
+                    except Exception as e:
+                        logger.warning("Không thể trích xuất word_embeddings từ semantic_encoder: %s", e)
+                elif graph_config.get("load_pretrained_word_embeddings", True):
+                    try:
+                        from transformers import AutoModel
+                        cb = AutoModel.from_pretrained("microsoft/codebert-base")
+                        graph_config["shared_word_embeddings"] = cb.embeddings.word_embeddings
+                        logger.info("Đã nạp pre-trained CodeBERT word_embeddings cho Graph-Only (Giải pháp 2 / Hybrid)")
+                    except Exception as e:
+                        logger.warning("Không thể nạp pre-trained CodeBERT word_embeddings: %s", e)
             self.graph_encoder = GraphEncoder(**graph_config)
             logger.info("Khởi tạo GraphEncoder")
             
@@ -150,6 +161,10 @@ class VulHunterModel(nn.Module):
         edge_index: torch.Tensor | None = None,
         edge_type: torch.Tensor | None = None,
         batch: torch.Tensor | None = None,
+        node_is_source: list[bool] | None = None,
+        node_is_sink: list[bool] | None = None,
+        node_is_sanitizer: list[bool] | None = None,
+        return_node_logits: bool = False,
     ) -> ModelOutput:
         """Forward pass.
 
@@ -161,9 +176,13 @@ class VulHunterModel(nn.Module):
             edge_index: Edge indices, shape ``(2, E)``. Cần cho graph/fusion.
             edge_type: Edge type indices, shape ``(E,)``. Cần cho graph/fusion.
             batch: Graph batch vector, shape ``(N,)``. Cần cho graph/fusion.
+            node_is_source: Optional bool list indicating source nodes.
+            node_is_sink: Optional bool list indicating sink nodes.
+            node_is_sanitizer: Optional bool list indicating sanitizer nodes.
+            return_node_logits: If True and node classifier exists, return node logits.
 
         Returns:
-            ModelOutput chứa binary_logits và fused_embedding.
+            ModelOutput chứa binary_logits, fused_embedding, và node_logits (optional).
         """
         output = ModelOutput()
 
@@ -178,30 +197,50 @@ class VulHunterModel(nn.Module):
                 edge_index = edge_index.new_zeros(2, 0)
             elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
                 edge_index = edge_index.view(2, -1)
-            graph_pooled = self.graph_encoder(
+
+            ret_nodes = return_node_logits and getattr(self.graph_encoder, "node_classifier", None) is not None
+            res = self.graph_encoder(
                 node_types=node_types,
                 edge_index=edge_index,
                 edge_type=edge_type,
                 batch=batch,
                 node_texts=node_texts,
+                node_is_source=node_is_source,
+                node_is_sink=node_is_sink,
+                node_is_sanitizer=node_is_sanitizer,
+                return_node_embeddings=ret_nodes,
             )
+            if ret_nodes:
+                graph_pooled, node_embs = res
+                output.node_logits = self.graph_encoder.node_classifier(node_embs)
+            else:
+                graph_pooled = res
             fused_pooled = graph_pooled
 
         elif self.mode == "fusion":
-            # Graph branch (Giải pháp 1 & 2: truyền node_texts)
+            # Graph branch (Giải pháp 1, 2, 4: truyền node_texts và vulnerability flags)
             if edge_index is not None and edge_index.dim() == 1:
                 edge_index = edge_index.new_zeros(2, 0)
             elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
                 edge_index = edge_index.view(2, -1)
                 
-            graph_pooled = self.graph_encoder(
+            ret_nodes = return_node_logits and getattr(self.graph_encoder, "node_classifier", None) is not None
+            res = self.graph_encoder(
                 node_types=node_types,
                 edge_index=edge_index,
                 edge_type=edge_type,
                 batch=batch,
                 node_texts=node_texts,
-                return_node_embeddings=False,
+                node_is_source=node_is_source,
+                node_is_sink=node_is_sink,
+                node_is_sanitizer=node_is_sanitizer,
+                return_node_embeddings=ret_nodes,
             )
+            if ret_nodes:
+                graph_pooled, node_embs = res
+                output.node_logits = self.graph_encoder.node_classifier(node_embs)
+            else:
+                graph_pooled = res
 
             # Giải pháp 3: Token-level Fusion vs Vector-level Late Fusion
             if getattr(self, "fusion_level", "token") == "token":
@@ -224,7 +263,7 @@ class VulHunterModel(nn.Module):
                     # 'last' -> CLS token tại vị trí 0
                     fused_pooled = fused_seq[:, 0, :]
             else:
-                # Vector-level / Late fusion
+                # Vector-level / Late fusion (siêu ổn định, ít gradient steps)
                 sem_pooled = self.semantic_encoder(input_ids, attention_mask, return_sequence=False)
                 fused_pooled = self.fusion(
                     semantic=sem_pooled,
