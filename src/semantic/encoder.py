@@ -134,7 +134,14 @@ class SemanticEncoder(nn.Module):
             pooled: shape (B, output_dim).
             sequence (optional): shape (B, L, output_dim) nếu return_sequence=True.
         """
-        outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
+        # Nếu backbone đang bị đóng băng hoàn toàn (như trong Stage 1), chạy backbone
+        # dưới torch.no_grad() để không tốn VRAM lưu trữ intermediate activations cho autograd
+        backbone_frozen = not any(p.requires_grad for p in self.backbone.parameters())
+        if backbone_frozen:
+            with torch.no_grad():
+                outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
+        else:
+            outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
 
         # ── Pooling ──
         if self.pooling == "mean":

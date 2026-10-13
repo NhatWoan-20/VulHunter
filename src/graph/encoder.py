@@ -137,8 +137,9 @@ class NodeTextEmbedding(nn.Module):
         if num_nodes == 0:
             return torch.zeros((0, self.output_dim), device=device)
 
-        token_ids = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.long, device=device)
-        mask = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.float32, device=device)
+        # Khởi tạo tensor trên CPU để lặp và ghi chỉ số cực nhanh, tránh 20,000 lần copy CUDA đồng bộ
+        token_ids = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.long)
+        mask = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.float32)
 
         for i, text in enumerate(node_texts):
             if not text or text == "unknown":
@@ -148,6 +149,10 @@ class NodeTextEmbedding(nn.Module):
                 h = (zlib.crc32(tok.encode("utf-8", errors="ignore")) % (self.vocab_size - 1)) + 1
                 token_ids[i, j] = h
                 mask[i, j] = 1.0
+
+        # Đẩy 1 lần duy nhất sang GPU qua DMA non-blocking
+        token_ids = token_ids.to(device, non_blocking=True)
+        mask = mask.to(device, non_blocking=True)
 
         tok_embs = self.embedding(token_ids)  # (N, max_tokens, embedding_dim)
         mask_sum = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
@@ -216,8 +221,9 @@ class NodeCodeBERTEmbedding(nn.Module):
         if num_nodes == 0:
             return torch.zeros((0, self.output_dim), device=device)
 
-        token_ids = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.long, device=device)
-        mask = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.float32, device=device)
+        # Khởi tạo tensor trên CPU để lặp và ghi chỉ số cực nhanh, tránh 20,000 lần copy CUDA đồng bộ
+        token_ids = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.long)
+        mask = torch.zeros((num_nodes, self.max_tokens_per_node), dtype=torch.float32)
         for i, text in enumerate(node_texts):
             if not text or text == "unknown":
                 continue
@@ -225,6 +231,10 @@ class NodeCodeBERTEmbedding(nn.Module):
             for j, t in enumerate(toks):
                 token_ids[i, j] = (zlib.crc32(t.encode("utf-8", errors="ignore")) % 50260) + 2
                 mask[i, j] = 1.0
+
+        # Đẩy 1 lần duy nhất sang GPU qua DMA non-blocking
+        token_ids = token_ids.to(device, non_blocking=True)
+        mask = mask.to(device, non_blocking=True)
 
         embs = self.word_embeddings(token_ids)
         mask_sum = mask.sum(dim=1, keepdim=True).clamp(min=1.0)

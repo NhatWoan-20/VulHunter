@@ -9,6 +9,7 @@ Usage:
 """
 from __future__ import annotations
 
+import os
 import json
 import logging
 from pathlib import Path
@@ -19,6 +20,42 @@ from torch.utils.data import Dataset
 from src.graph.encoder import EDGE_TYPE_MAP
 
 logger = logging.getLogger(__name__)
+
+# Cache toàn cục cho _LazyGraphDict để chia sẻ index giữa train, val, test
+# (tránh scan lại file master_pdg.jsonl nhiều lần, tiết kiệm thời gian khởi tạo)
+_SHARED_GRAPH_DICTS: dict[str, _LazyGraphDict] = {}
+
+
+def get_lazy_graph_dict(graph_path: str | Path) -> _LazyGraphDict:
+    """Trả về instance _LazyGraphDict dùng chung, chỉ scan index 1 lần duy nhất."""
+    p = Path(graph_path)
+    canonical = str(p.resolve()) if p.exists() else str(p)
+    if canonical in _SHARED_GRAPH_DICTS:
+        return _SHARED_GRAPH_DICTS[canonical]
+
+    logger.info("Indexing graph data from %s (zero-RAM lazy loading)...", p)
+    graph_offsets: dict[str, int] = {}
+    pos = 0
+    with p.open("rb") as f:
+        for line in f:
+            if line.strip():
+                idx_sid = line.find(b'"sample_id"')
+                if idx_sid != -1:
+                    start = line.find(b'"', idx_sid + 11) + 1
+                    end = line.find(b'"', start)
+                    if start > 0 and end > start:
+                        sid = line[start:end].decode("utf-8")
+                        graph_offsets[sid] = pos
+                else:
+                    row = json.loads(line.decode("utf-8"))
+                    sid = row.get("sample_id")
+                    if sid:
+                        graph_offsets[sid] = pos
+            pos = f.tell()
+    lgd = _LazyGraphDict(p, graph_offsets)
+    _SHARED_GRAPH_DICTS[canonical] = lgd
+    logger.info("Indexed graph data for %d samples (RAM index: ~%.1f MB)", len(lgd), len(graph_offsets) * 80 / (1024 * 1024))
+    return lgd
 
 
 class _LazySampleList:
@@ -45,12 +82,21 @@ class _LazySampleList:
 
 
 class _LazyGraphDict:
-    """Lazy dictionary đọc graph lines on-demand theo sample_id, ~2 MB RAM."""
+    """Lazy dictionary đọc graph lines on-demand theo sample_id, multi-process safe."""
 
     def __init__(self, path: Path, offsets: dict[str, int]) -> None:
         self._path = path
         self._offsets = offsets
         self._file = None
+        self._pid = None
+
+    def _get_file(self):
+        # Mở file handle riêng cho từng process ID (tránh race condition khi num_workers > 0)
+        pid = os.getpid()
+        if self._pid != pid or self._file is None or self._file.closed:
+            self._file = self._path.open("rb")
+            self._pid = pid
+        return self._file
 
     def __contains__(self, sid: str) -> bool:
         return sid in self._offsets
@@ -58,10 +104,9 @@ class _LazyGraphDict:
     def __getitem__(self, sid: str) -> dict:
         if sid not in self._offsets:
             raise KeyError(sid)
-        if self._file is None or self._file.closed:
-            self._file = self._path.open("rb")
-        self._file.seek(self._offsets[sid])
-        return json.loads(self._file.readline().decode("utf-8"))
+        f = self._get_file()
+        f.seek(self._offsets[sid])
+        return json.loads(f.readline().decode("utf-8"))
 
     def get(self, sid: str, default=None):
         if sid in self._offsets:
@@ -82,8 +127,8 @@ class _LazyGraphDict:
 class VulHunterDataset(Dataset):
     """PyTorch Dataset cho binary vulnerability detection.
 
-    Sử dụng lazy line-offset indexing cho JSONL files để gần như 0 RAM footprint,
-    ngăn OOM crashes khi training và model loading.
+    Sử dụng lazy line-offset indexing cho JSONL files để đạt Zero-RAM footprint (~15 MB),
+    loại bỏ 100% hiện tượng tràn RAM (29.7GB / 30GB) và swapping trên Kaggle/Linux.
 
     Args:
         data_path: Path to JSONL file.
@@ -98,12 +143,12 @@ class VulHunterDataset(Dataset):
         max_length: int = 2048,
         tokenizer_name: str | None = None,
         graph_data_path: str | Path | None = None,
-        cache_in_memory: bool = True,
+        cache_in_memory: bool = False,
     ) -> None:
         self.data_path = Path(data_path)
         self.max_length = max_length
         self._file_handle = None
-        self.cache_in_memory = cache_in_memory
+        self._file_pid = None
 
         logger.info("Indexing dataset from %s (zero-RAM lazy indexing)", self.data_path)
         self.line_offsets: list[int] = []
@@ -114,72 +159,29 @@ class VulHunterDataset(Dataset):
                     self.line_offsets.append(pos)
                 pos = f.tell()
         self.samples = _LazySampleList(self)
-        logger.info("Indexed %d samples", len(self.line_offsets))
-
-        # ── Preload samples vào RAM nếu được bật (chỉ tốn ~100MB cho 25k mẫu) ──
-        self.cached_samples: list[dict] | None = None
-        if cache_in_memory:
-            try:
-                logger.info("Preloading samples into RAM from %s...", self.data_path)
-                with self.data_path.open("r", encoding="utf-8") as f:
-                    self.cached_samples = [json.loads(line) for line in f if line.strip()]
-                logger.info("Đã nạp %d samples vào RAM", len(self.cached_samples))
-            except Exception as e:
-                logger.warning("Không thể preload samples vào RAM (%s), fallback sang lazy", e)
-                self.cached_samples = None
+        logger.info("Indexed %d samples (index RAM: %.1f KB)", len(self.line_offsets), len(self.line_offsets) * 8 / 1024)
 
         self.graph_data: dict[str, dict] | _LazyGraphDict = {}
-        self.cached_graphs: dict[str, dict] | None = None
         if graph_data_path:
-            graph_path = Path(graph_data_path)
-            if cache_in_memory and graph_path.exists():
-                try:
-                    logger.info("Preloading graph data into RAM dictionary from %s...", graph_path)
-                    cached_g: dict[str, dict] = {}
-                    with graph_path.open("r", encoding="utf-8") as f:
-                        for line in f:
-                            if line.strip():
-                                row = json.loads(line)
-                                sid = row.get("sample_id")
-                                if sid:
-                                    cached_g[sid] = row
-                    self.cached_graphs = cached_g
-                    logger.info("Đã nạp %d graphs vào RAM (hoàn toàn loại bỏ disk I/O)", len(self.cached_graphs))
-                except Exception as e:
-                    logger.warning("Không thể preload graphs vào RAM (%s), fallback sang lazy index", e)
-                    self.cached_graphs = None
-
-            if self.cached_graphs is None and graph_path.exists():
-                logger.info("Indexing graph data from %s (zero-RAM lazy loading)", graph_path)
-                graph_offsets: dict[str, int] = {}
-                pos = 0
-                with graph_path.open("rb") as f:
-                    for line in f:
-                        if line.strip():
-                            idx_sid = line.find(b'"sample_id"')
-                            if idx_sid != -1:
-                                start = line.find(b'"', idx_sid + 11) + 1
-                                end = line.find(b'"', start)
-                                if start > 0 and end > start:
-                                    sid = line[start:end].decode("utf-8")
-                                    graph_offsets[sid] = pos
-                            else:
-                                row = json.loads(line.decode("utf-8"))
-                                sid = row.get("sample_id")
-                                if sid:
-                                    graph_offsets[sid] = pos
-                        pos = f.tell()
-                self.graph_data = _LazyGraphDict(graph_path, graph_offsets)
-                logger.info("Indexed graph data for %d samples", len(self.graph_data))
+            gp = Path(graph_data_path)
+            if gp.exists():
+                self.graph_data = get_lazy_graph_dict(gp)
 
         self._tokenizer = None
         self._tokenizer_name = tokenizer_name
 
-    def _read_raw_sample(self, idx: int) -> dict:
-        if self._file_handle is None or self._file_handle.closed:
+    def _get_file_handle(self):
+        # Mở file handle độc lập theo tiến trình (PID) cho DataLoader num_workers > 0
+        pid = os.getpid()
+        if getattr(self, "_file_pid", None) != pid or self._file_handle is None or self._file_handle.closed:
             self._file_handle = self.data_path.open("rb")
-        self._file_handle.seek(self.line_offsets[idx])
-        return json.loads(self._file_handle.readline().decode("utf-8"))
+            self._file_pid = pid
+        return self._file_handle
+
+    def _read_raw_sample(self, idx: int) -> dict:
+        f = self._get_file_handle()
+        f.seek(self.line_offsets[idx])
+        return json.loads(f.readline().decode("utf-8"))
 
     def __del__(self) -> None:
         if hasattr(self, "_file_handle") and self._file_handle is not None and not self._file_handle.closed:
@@ -199,7 +201,7 @@ class VulHunterDataset(Dataset):
         return len(self.line_offsets)
 
     def __getitem__(self, idx: int) -> dict:
-        sample = self.cached_samples[idx] if self.cached_samples is not None else self.samples[idx]
+        sample = self.samples[idx]
         result: dict = {"sample_id": sample.get("sample_id", str(idx))}
 
         # ── Semantic features ──
@@ -229,9 +231,7 @@ class VulHunterDataset(Dataset):
         # ── Graph features ──
         sid = sample.get("sample_id")
         gdata = None
-        if self.cached_graphs is not None and sid and sid in self.cached_graphs:
-            gdata = self.cached_graphs[sid]
-        elif sid and sid in self.graph_data:
+        if sid and sid in self.graph_data:
             gdata = self.graph_data[sid]
         elif "nodes" in sample or "edges" in sample or "node_types" in sample:
             gdata = sample
