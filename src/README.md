@@ -20,15 +20,11 @@ The apex of the model architecture.
 - **`heads.py`**: Defines lightweight, task-specific prediction layers (Binary) that branch off from the fused representation.
 - **`model.py`**: Defines the `VulHunterModel`, which composes the semantic encoder, graph encoder, fusion module, and the binary task head into a single, end-to-end trainable PyTorch `nn.Module`.
 
-### 5. `explainability/` (Archived)
-Handles the post-hoc translation of model predictions into human-readable, actionable security reports.
-- **`generator.py`**: The `ExplanationGenerator` can operate in two modes: a fast, offline heuristic mode (using pre-defined templates), or an LLM-assisted mode.
-- **`prompts.py`**: Contains system prompts, and formatting logic.
-
-### 6. `utils/`
+### 5. `utils/`
 Core utilities shared across the project.
-- **`dataset.py`**: Defines the `VulHunterDataset` and `collate_fn` for PyTorch DataLoaders. It handles padding, heterogeneous graph batching (via PyTorch Geometric), and dynamic label extraction.
-- **`metrics.py`**: Calculation functions for all benchmarks (Binary F1/MCC).
+- **`dataset.py`**: Defines the `VulHunterDataset` and `collate_fn` for PyTorch DataLoaders with Zero-RAM Lazy Indexing (~15MB RAM total) and multi-worker prefetching.
+- **`losses.py`**: Implements `FocalLoss` and `BinaryClassificationLoss` to handle class imbalance (78.4% benign : 21.6% vulnerable).
+- **`metrics.py`**: Calculation functions for all benchmarks (Binary F1, Precision, Recall, Accuracy, ROC-AUC, PR-AUC, MCC) and dynamic threshold tuning (`find_best_threshold`).
 
 ---
 

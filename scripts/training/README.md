@@ -1,6 +1,6 @@
 # Model Training
 
-> **Objective:** Train the multi-task, multi-modal VulHunter model.
+> **Objective:** Train the multi-modal VulHunter binary vulnerability detection model.
 
 This directory contains the central training script for the project. It orchestrates the loading of models, datasets, criteria (loss functions), and optimization schedules to train the network end-to-end.
 
@@ -41,7 +41,7 @@ Trains only the CodeBERT semantic encoder. Does not require graph data.
 python scripts/training/train.py \
     --mode semantic_only \
     --model-config configs/kaggle/model_kaggle.yaml \
-    --config configs/train/semantic.yaml \
+    --config configs/train/semantic_codebert.yaml \
     --train-data /kaggle/input/vulhunter-pre-tokenized/train.jsonl \
     --val-data /kaggle/input/vulhunter-pre-tokenized/validation.jsonl
 ```
