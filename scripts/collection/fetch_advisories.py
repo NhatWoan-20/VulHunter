@@ -1,4 +1,4 @@
-﻿"""Step 1: Fetch Security Advisories for the PIP (Python) ecosystem from GitHub GraphQL API.
+"""Step 1: Fetch Security Advisories for the PIP (Python) ecosystem from GitHub GraphQL API.
 
 Usage:
     python scripts/collection/fetch_advisories.py [--token <GITHUB_PAT>] [--limit <N>] [--resume]

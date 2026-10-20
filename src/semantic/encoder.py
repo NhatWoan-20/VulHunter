@@ -3,7 +3,7 @@
 Architecture:
     Code String -> Tokenizer -> Transformer Backbone -> [CLS]/mean pooling -> Projection -> Embedding
 
-Kỹ thuật tối ưu hóa (aligned với codebert_finetune_optimized.ipynb):
+Kỹ thuật tối ưu hóa huấn luyện:
     - Full fine-tuning (~125M params, đủ nhỏ, không cần PEFT/LoRA)
     - Hỗ trợ freeze_layers: đóng băng N layer đầu của backbone
     - Gradient checkpointing: giảm VRAM, trade-off speed
@@ -30,7 +30,7 @@ class SemanticEncoder(nn.Module):
         output_dim: Projected embedding dimension. Default 256.
         dropout: Dropout probability. Default 0.1.
         freeze_layers: Số transformer layer đầu của backbone bị đóng băng.
-            0 = full fine-tuning (mặc định optimized).
+            0 = full fine-tuning (mặc định khuyến nghị).
             Ví dụ: 6 = freeze 6 layer đầu, fine-tune phần còn lại.
         gradient_checkpointing: Bật gradient checkpointing để giảm VRAM.
             Trade-off: tốc độ forward pass chậm hơn ~20% nhưng tiết kiệm ~40% VRAM.

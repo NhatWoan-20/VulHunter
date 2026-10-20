@@ -1,7 +1,7 @@
-﻿"""Prediction Heads — Task-specific prediction layers.
+"""Prediction Heads — Task-specific prediction layers.
 
 Currently supports binary vulnerability detection (vulnerable vs. safe).
-Multi-task heads sẽ được thêm sau khi hoàn thiện task chính.
+Kiến trúc modular sẵn sàng mở rộng cho các classification heads bổ sung (CWE, Severity).
 """
 from __future__ import annotations
 

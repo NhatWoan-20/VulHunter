@@ -1,4 +1,4 @@
-﻿# ─── Training Configuration (Semantic Only Mode - CodeBERT Baseline) ───
+# ─── Training Configuration (Semantic Only Mode - CodeBERT Baseline) ───
 # Baseline semantic-only sử dụng CodeBERT (microsoft/codebert-base).
 # Mục đích: Nghiên cứu khả năng của encoder-only model đời đầu so với LLM hiện đại.
 training:

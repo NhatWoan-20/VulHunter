@@ -4,7 +4,7 @@
 # Cập nhật theo phương pháp đã đề xuất:
 #   - Semantic: CodeBERT + cls pooling (encoder-only)
 #   - Fusion: residual_alpha=0.3 giữ semantic signal khi graph rỗng/noisy
-#   - Heads: chỉ BinaryHead (multi-task sẽ thêm sau)
+#   - Heads: BinaryHead (kiến trúc sẵn sàng mở rộng multi-task)
 model:
   # ─── Semantic encoder (src/semantic/encoder.py) ───
   semantic:

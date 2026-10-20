@@ -326,10 +326,9 @@ class GraphEncoder(nn.Module):
 
     Stacks multiple RGCN layers with edge-type-aware convolutions to learn
     structural representations from combined AST + CFG + DFG + Call graphs.
-    Hỗ trợ làm giàu Node features với nội dung code qua Hash Embedding (GP 1)
-    hoặc Shared Pretrained CodeBERT Backbone (GP 2).
-
-    v2: Thêm vulnerability-aware node features + node-level auxiliary classifier.
+    Hỗ trợ làm giàu Node features với nội dung mã nguồn qua Enriched Subtoken Hashing,
+    Shared Pretrained CodeBERT Backbone, Vulnerability-Aware Flow Signals,
+    và node-level auxiliary classification.
 
     Args:
         node_feature_dim: Dimension of initial node features (from NodeTypeEmbedding).

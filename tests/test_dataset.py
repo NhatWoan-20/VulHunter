@@ -1,4 +1,4 @@
-﻿"""Unit tests for VulHunterDataset ? lazy zero-RAM indexing and collation."""
+"""Unit tests for VulHunterDataset ? lazy zero-RAM indexing and collation."""
 from __future__ import annotations
 
 import json

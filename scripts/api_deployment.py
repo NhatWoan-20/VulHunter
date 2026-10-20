@@ -1,7 +1,7 @@
-"""FastAPI Deployment Script for VulHunter (Simplified 3-Task API).
+"""FastAPI Deployment Script for VulHunter Binary Vulnerability Detection API.
 
 This script provides a REST API to detect vulnerabilities in Python code snippets
-using the simplified VulHunter model (Binary).
+using the VulHunter model.
 
 Usage:
     uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000

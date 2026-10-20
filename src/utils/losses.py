@@ -1,4 +1,4 @@
-﻿"""Loss Functions — Loss computation cho binary vulnerability detection.
+"""Loss Functions — Loss computation cho binary vulnerability detection.
 
 Implements:
     - FocalLoss: For imbalanced binary classification
@@ -49,7 +49,7 @@ class FocalLoss(nn.Module):
 class BinaryClassificationLoss(nn.Module):
     """Binary focal loss.
 
-    Returns dict với keys 'binary' và 'total' để tương thích API cũ.
+    Returns dict với keys 'binary' và 'total' để tương thích cấu trúc đa mục tiêu của pipeline.
     """
 
     def __init__(self, focal_alpha: float = 0.5, focal_gamma: float = 2.0) -> None:

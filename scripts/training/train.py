@@ -510,7 +510,7 @@ def main() -> None:
     if not param_groups:
         param_groups.append({"params": [p for p in model.parameters() if p.requires_grad], "lr": backbone_lr})
     weight_decay = float(tcfg.get("weight_decay", 0.01))
-    # ⚡ Fused AdamW: kernel-fused, nhanh hơn ~10% trên GPU (aligned với adamw_torch_fused của optimized notebook)
+    # ⚡ Fused AdamW: kernel-fused optimizer, tối ưu thông lượng huấn luyện trên GPU CUDA
     _use_fused = (
         torch.cuda.is_available()
         and device.type == "cuda"

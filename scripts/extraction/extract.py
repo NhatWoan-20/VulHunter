@@ -1,4 +1,9 @@
-﻿from __future__ import annotations
+"""extract.py — Trích xuất các hàm Python (vulnerable & fixed) từ CVEFixes SQLite database.
+
+Input : data/raw/databases/cvefixes.db
+Output: data/raw/python_cvefixes_methods.jsonl
+"""
+from __future__ import annotations
 
 import difflib
 import hashlib

@@ -1,4 +1,4 @@
-﻿"""Step 2: Extract changed Python functions from Fix Commits.
+"""Step 2: Extract changed Python functions from Fix Commits.
 
 Crawls GitHub REST API to download vulnerable/patched Python files from
 fix commits identified in Step 1, then uses AST to extract the specific
