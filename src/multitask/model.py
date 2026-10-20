@@ -97,12 +97,12 @@ class VulHunterModel(nn.Module):
 
         if mode in ("fusion", "graph_only"):
             graph_config.setdefault("output_dim", output_dim)
-            # Giải pháp 2 & Hybrid (1 + 2): Chia sẻ CodeBERT word_embeddings cho GraphEncoder
+            # Shared Semantic Backbone & Hybrid Representation: Chia sẻ CodeBERT word_embeddings cho GraphEncoder
             if graph_config.get("node_encoder_type") in ("shared_codebert", "both", "hybrid"):
                 if hasattr(self, "semantic_encoder"):
                     try:
                         graph_config["shared_word_embeddings"] = self.semantic_encoder.backbone.embeddings.word_embeddings
-                        logger.info("Liên kết shared CodeBERT word_embeddings cho GraphEncoder (Giải pháp 2 / Hybrid)")
+                        logger.info("Liên kết shared CodeBERT word_embeddings cho GraphEncoder (Shared Backbone / Hybrid)")
                     except Exception as e:
                         logger.warning("Không thể trích xuất word_embeddings từ semantic_encoder: %s", e)
                 elif graph_config.get("load_pretrained_word_embeddings", True):
@@ -110,7 +110,7 @@ class VulHunterModel(nn.Module):
                         from transformers import AutoModel
                         cb = AutoModel.from_pretrained("microsoft/codebert-base")
                         graph_config["shared_word_embeddings"] = cb.embeddings.word_embeddings
-                        logger.info("Đã nạp pre-trained CodeBERT word_embeddings cho Graph-Only (Giải pháp 2 / Hybrid)")
+                        logger.info("Đã nạp pre-trained CodeBERT word_embeddings cho Graph-Only (Shared Backbone / Hybrid)")
                     except Exception as e:
                         logger.warning("Không thể nạp pre-trained CodeBERT word_embeddings: %s", e)
             self.graph_encoder = GraphEncoder(**graph_config)
@@ -124,7 +124,7 @@ class VulHunterModel(nn.Module):
             fusion_config.setdefault("hidden_dim", output_dim)
             # Extract residual_alpha before passing to constructor (not an init param)
             self._fusion_residual_alpha = float(fusion_config.pop("residual_alpha", 0.3))
-            # Giải pháp 3: Cho phép cấu hình fusion_level: "token" (token-level) hoặc "pooled" (late fusion)
+            # FiLM Modulation / Cross-Modal Fusion: Cho phép cấu hình fusion_level: "token" (token-level) hoặc "pooled" (late fusion)
             self.fusion_level = fusion_config.pop("fusion_level", "token")
             self.fusion = CrossModalFusion(**fusion_config)
             logger.info(
@@ -218,7 +218,7 @@ class VulHunterModel(nn.Module):
             fused_pooled = graph_pooled
 
         elif self.mode == "fusion":
-            # Graph branch (Giải pháp 1, 2, 4: truyền node_texts và vulnerability flags)
+            # Graph branch: truyền enriched node_texts và vulnerability flow flags
             if edge_index is not None and edge_index.dim() == 1:
                 edge_index = edge_index.new_zeros(2, 0)
             elif edge_index is not None and edge_index.dim() == 2 and edge_index.size(0) == 1:
@@ -242,7 +242,7 @@ class VulHunterModel(nn.Module):
             else:
                 graph_pooled = res
 
-            # Giải pháp 3: Token-level Fusion vs Vector-level Late Fusion
+            # Cross-modal Modulation: Token-level Fusion vs Vector-level Late Fusion
             if getattr(self, "fusion_level", "token") == "token":
                 # Lấy cả sequence (B, L, D) từ CodeBERT
                 sem_pooled, sem_sequence = self.semantic_encoder(

@@ -359,7 +359,7 @@ class CrossModalFusion(nn.Module):
         else:
             raise ValueError(f"Unknown combine strategy: {self.combine}")
 
-        # Residual skip (Giải pháp 3): Giữ lại tín hiệu mạnh của Semantic khi graph rỗng/noise
+        # Residual skip connection: Giữ lại tín hiệu mạnh của Semantic khi graph rỗng/noise
         # Với FiLM: Áp dụng additive residual skip nhẹ để bảo vệ semantic representation
         if residual_alpha > 0:
             res = semantic_only_residual

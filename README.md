@@ -207,7 +207,7 @@ curl -X POST "http://localhost:8000/predict" \
    - **Executed Benchmarks** (chạy sẵn với full outputs & đánh giá trên 13,990 test samples):
      - [`notebooks/results/vulhunter-fusion.ipynb`](notebooks/results/vulhunter-fusion.ipynb) — SOTA Multimodal Fusion (F1 = 0.7519, Recall = 0.8659)
      - [`notebooks/results/vulhunter-semantic-only-codebert.ipynb`](notebooks/results/vulhunter-semantic-only-codebert.ipynb) — Semantic Baseline CodeBERT (F1 = 0.7514)
-     - [`notebooks/results/vulhunter-graph-only-advanced.ipynb`](notebooks/results/vulhunter-graph-only-advanced.ipynb) — Graph Advanced RGCN GP1+GP4 (F1 = 0.6094)
+     - [`notebooks/results/vulhunter-graph-only-advanced.ipynb`](notebooks/results/vulhunter-graph-only-advanced.ipynb) — Graph Advanced RGCN (Enriched Subtokens + Security Roles, F1 = 0.6094)
      - [`notebooks/results/vulhunter-graph-only.ipynb`](notebooks/results/vulhunter-graph-only.ipynb) — Graph Baseline Pure AST (F1 = 0.4346)
    - **Clean Templates** (đã dọn sạch outputs, sẵn sàng clone và train):
      - [`notebooks/train_fusion.ipynb`](notebooks/train_fusion.ipynb) — Multi-modal fusion template
@@ -234,7 +234,7 @@ python scripts/training/train.py \
 
 #### Scenario B: Graph-Only Structural Learning (RGCN)
 Hỗ trợ cả 2 kỹ thuật biểu diễn nút (chuyển đổi qua cấu hình trong [`notebooks/train_graph_only.ipynb`](notebooks/train_graph_only.ipynb)):
-- **Graph Advanced [Đề xuất]**: RGCN + GP1 Subtoken Hashing (16k) + GP4 Security Roles (F1 = **0.6094**, ROC-AUC = **0.8452**).
+- **Graph Advanced [Đề xuất]**: RGCN + Enriched Subtoken Hashing (16k) + Security Role Taint Flags (F1 = **0.6094**, ROC-AUC = **0.8452**).
 - **Pure AST Baseline**: RGCN + NodeType Embedding thuần (F1 = **0.4346**, ROC-AUC = **0.7034**).
 
 ```bash
@@ -285,7 +285,7 @@ python scripts/training/train.py \
 | Model Variant | Architecture / Encoder | Optimal Threshold | Binary F1 | Recall | Precision | ROC-AUC | PR-AUC | MCC |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | **Graph Baseline** | 3-layer RGCN (Pure AST) | 0.65 | 0.4346 | 0.7258 | 0.3101 | 0.7034 | 0.3847 | 0.2315 |
-| **Graph Advanced** | RGCN + Subtoken Hashing (GP1) + Roles (GP4) | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
+| **Graph Advanced** | RGCN + Enriched Subtoken Hashing + Security Roles | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
 | **Semantic Baseline** | CodeBERT Full Fine-Tuning | 0.45 | 0.7514 | 0.8603 | **0.6670** | **0.9402** | 0.7916 | 0.6811 |
 | 🛡️ **VulHunter Fusion** | **CodeBERT + Enriched RGCN + FiLM Modulation** | **0.25** | **0.7519** | **0.8659** | 0.6644 | 0.9399 | **0.7921** | **0.6821** |
 
@@ -322,7 +322,7 @@ VulHunter/
 │   └── results/                 # ★ Executed benchmark notebooks (Full outputs)
 │       ├── vulhunter-fusion.ipynb                 # SOTA Fusion (F1=0.7519, Recall=0.8659)
 │       ├── vulhunter-semantic-only-codebert.ipynb # Semantic CodeBERT (F1=0.7514)
-│       ├── vulhunter-graph-only-advanced.ipynb    # Graph Advanced GP1+GP4 (F1=0.6094)
+│       ├── vulhunter-graph-only-advanced.ipynb    # Graph Advanced (Enriched Subtokens + Security Roles, F1=0.6094)
 │       └── vulhunter-graph-only.ipynb             # Graph Pure AST Baseline (F1=0.4346)
 ├── src/                         # Core VulHunter Library
 │   ├── semantic/encoder.py      # CodeBERT, CLS pooling
@@ -367,6 +367,25 @@ pytest tests --cov=src --cov-report=term-missing
 
 ---
 
+## 🔮 Hướng Phát Triển & Nghiên Cứu Mở Rộng (Future Directions)
+
+Dự án đang tích cực mở rộng nghiên cứu sang thế hệ mô hình tiếp theo, kết hợp năng lực suy luận ngữ nghĩa của **Large Language Models (LLMs)** với tính chuẩn xác về cấu trúc luồng của **Graph Neural Networks (GNNs)**:
+
+### 1. Fine-tuning Foundation Code LLMs
+- **Mô hình mục tiêu**: Đánh giá và benchmark các mô hình mã nguồn mở hàng đầu: `DeepSeek-Coder-V2 / 6.7B`, `CodeLlama-7B/13B`, `StarCoder2`, và `Qwen2.5-Coder`.
+- **Kỹ thuật tối ưu**: Áp dụng **Parameter-Efficient Fine-Tuning (PEFT / QLoRA 4-bit)** kết hợp **Focal Loss** để tinh chỉnh thích ứng trên tập dữ liệu lỗ hổng mất cân bằng, mở rộng context window lên $16\text{k} - 32\text{k}$ tokens nhằm bắt được các lỗ hổng liên hàm (inter-procedural vulnerabilities).
+
+### 2. Mô Hình Kết Hợp LLM + Graph Reasoning (Graph-Augmented LLMs & Graph-RAG)
+Mặc dù LLM sở hữu năng lực hiểu ngữ nghĩa và quy ước code vượt trội, các nghiên cứu gần đây chỉ ra LLM thường gặp hiện tượng *"mù cấu trúc"* (structural blindness) và dễ hallucinate trên các đường dẫn lan truyền dữ liệu (taint flow) phức tạp hoặc phân nhánh rẽ nhiều cấp. Hướng tiếp cận kế thừa từ VulHunter:
+- **Graph-Guided Context Slicing (Graph-RAG)**: Sử dụng PDG (Program Dependence Graph) để cắt lát chương trình (program slicing) tự động từ Taint Source đến Dangerous Sink, đưa đúng lát cắt code quan trọng vào prompt của LLM thay vì nạp toàn bộ file code dài gây loãng tín hiệu chú ý (lost in the middle).
+- **Joint Graph-LLM Embedding Alignment**: Tương tự cơ chế FiLM / Gated Cross-Attention trong nhánh Fusion của VulHunter, biểu diễn ẩn của LLM (hidden states) sẽ được điều biến hoặc tương tác trực tiếp với node/graph embeddings từ RGCN, kết hợp hoàn hảo giữa *suy luận ngữ nghĩa tự nhiên* và *ràng buộc luồng dữ liệu hình thức*.
+
+### 3. Giải Thích và Định Vị Lỗ Hổng Trực Quan (Explainable AI - XAI)
+- **Taint Path Tracing**: Tận dụng đồ thị PDG để trích xuất và hiển thị trực quan cây lan truyền lỗ hổng (Vulnerability Propagation Path) trên giao diện web hoặc IDE extension.
+- **Automated Patch Generation**: Kết hợp kết quả phân loại nhị phân chính xác của VulHunter với khả năng sinh code sửa lỗi (vulnerability remediation) từ LLM theo zero-shot / few-shot prompting.
+
+---
+
 ## 🤝 Contributing & License
 
 Contributions welcome! Đảm bảo pass existing unit tests (`pytest tests -q`).
@@ -377,6 +396,7 @@ Distributed under the **MIT License**.
 - **CVEFixes**: [secureIT-project/CVEfixes](https://github.com/secureIT-project/CVEfixes) (Zenodo DOI: `10.5281/zenodo.13118970`)
 - **GitHub Security Advisories (GHSA)**: [GitHub Advisory Database](https://github.com/advisories)
 - **CodeBERT**: Microsoft Research
+
 
 
 

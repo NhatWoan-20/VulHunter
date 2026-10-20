@@ -12,12 +12,12 @@ Dự án cung cấp 4 notebook đã được chạy hoàn chỉnh trên Kaggle v
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | 🛡️ [`vulhunter-fusion.ipynb`](results/vulhunter-fusion.ipynb) | **[SOTA] CodeBERT + Enriched RGCN + FiLM Modulation** (Pooled level, residual $\alpha=0.2$) | ~131.7M | 0.25 | **0.7519** | **0.8659** | 0.6644 | 0.9399 | **0.7921** | **0.6821** |
 | 🔤 [`vulhunter-semantic-only-codebert.ipynb`](results/vulhunter-semantic-only-codebert.ipynb) | **Semantic Baseline**: Full Fine-Tuning `microsoft/codebert-base` (512 tokens, CLS pooling) | ~124.6M | 0.45 | 0.7514 | 0.8603 | **0.6670** | **0.9402** | 0.7916 | 0.6811 |
-| 🕸️ [`vulhunter-graph-only-advanced.ipynb`](results/vulhunter-graph-only-advanced.ipynb) | **Graph Advanced**: 3-layer RGCN + GP1 Subtoken Hashing (16k vocab) + GP4 Security Roles | ~3.25M | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
+| 🕸️ [`vulhunter-graph-only-advanced.ipynb`](results/vulhunter-graph-only-advanced.ipynb) | **Graph Advanced**: 3-layer RGCN + Enriched Subtoken Hashing (16k vocab) + Security Roles | ~3.25M | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
 | 🌲 [`vulhunter-graph-only.ipynb`](results/vulhunter-graph-only.ipynb) | **Graph Baseline**: 3-layer RGCN + Pure AST NodeType Embedding (64 node types) | ~585K | 0.65 | 0.4346 | 0.7258 | 0.3101 | 0.7034 | 0.3847 | 0.2315 |
 
 > Ngoài 4 executed notebooks trên, thư mục cũng duy trì các **Template Notebooks sạch** ([`train_fusion.ipynb`](train_fusion.ipynb), [`train_semantic_codebert.ipynb`](train_semantic_codebert.ipynb), [`train_graph_only.ipynb`](train_graph_only.ipynb)) đã được dọn sạch outputs để người dùng dễ dàng clone và huấn luyện lại từ đầu.
 >
-> 💡 **Lưu ý đặc biệt cho [`train_graph_only.ipynb`](train_graph_only.ipynb)**: Notebook này đã tích hợp sẵn biến cấu hình `GRAPH_TECHNIQUE = "advanced"` hoặc `"pure_ast"` tại Cell 2. Người dùng có thể dễ dàng chuyển đổi chỉ với 1 dòng code để huấn luyện mô hình **Graph Advanced (GP1+GP4)** (F1 = 0.6094) hoặc **Pure AST Baseline** (F1 = 0.4346) phục vụ nghiên cứu bóc tách (Ablation Study).
+> 💡 **Lưu ý đặc biệt cho [`train_graph_only.ipynb`](train_graph_only.ipynb)**: Notebook này đã tích hợp sẵn biến cấu hình `GRAPH_TECHNIQUE = "advanced"` hoặc `"pure_ast"` tại Cell 2. Người dùng có thể dễ dàng chuyển đổi chỉ với 1 dòng code để huấn luyện mô hình **Graph Advanced (Enriched Subtokens + Security Roles)** (F1 = 0.6094) hoặc **Pure AST Baseline** (F1 = 0.4346) phục vụ nghiên cứu bóc tách (Ablation Study).
 
 ---
 
@@ -102,7 +102,7 @@ Do môi trường chuẩn của Kaggle chưa tích hợp sẵn `torch-geometric`
 ### 1. `vulhunter-fusion.ipynb` (Multimodal SOTA)
 - **Kiến trúc**:
   - Semantic Encoder: Full Fine-Tuning `microsoft/codebert-base` (d=768, sequence length=512, [CLS] representation).
-  - Graph Encoder: 3-layer Relational Graph Convolutional Network (RGCN, hidden=256) xử lý đa quan hệ cạnh (AST, CFG, DFG, Call) với node features mở rộng (GP1 subtoken hashing + GP4 security role tags).
+  - Graph Encoder: 3-layer Relational Graph Convolutional Network (RGCN, hidden=256) xử lý đa quan hệ cạnh (AST, CFG, DFG, Call) với node features mở rộng (Enriched Subtoken Hashing + Security Role Taint Flags).
   - Fusion Module: **FiLM Modulation (Pooled level)** điều biến đặc trưng ngữ nghĩa bằng đồ thị cấu trúc:
     $$\mathbf{z} = (1 + \gamma(\mathbf{v})) \odot \mathbf{u} + \beta(\mathbf{v}) + 0.2 \cdot \mathbf{u}$$
   - Head: `BinaryClassificationHead` với Focal Loss ($\alpha=0.791, \gamma=2.0$).
@@ -119,7 +119,7 @@ Do môi trường chuẩn của Kaggle chưa tích hợp sẵn `torch-geometric`
 ### 3. `vulhunter-graph-only-advanced.ipynb` (Graph Advanced)
 - **Kiến trúc**:
   - 3-layer RGCN với heterogeneous edges.
-  - Node Features cải tiến: GP1 Subtoken Hashing (vocab=16,384, dim=128) để đọc được tên biến/hàm con + GP4 Security Roles (nhận diện nguồn dữ liệu taint source, hàm sink nguy hiểm và sanitizer).
+  - Node Features cải tiến: Enriched Subtoken Hashing (vocab=16,384, dim=128) để học ngữ nghĩa tên biến/hàm con + Security Roles (nhận diện nguồn dữ liệu taint source, hàm sink nguy hiểm và sanitizer).
   - Batch size 256 tối ưu hóa GPU Tensor Cores.
 
 ### 4. `vulhunter-graph-only.ipynb` (Graph Baseline)

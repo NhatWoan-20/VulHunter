@@ -90,7 +90,7 @@ class NodeTypeEmbedding(nn.Module):
 
 
 class NodeTextEmbedding(nn.Module):
-    """Giải pháp 1: Learnable hash-based embedding cho AST/PDG node code texts.
+    """Enriched Node Features: Learnable hash-based embedding cho AST/PDG node code texts.
 
     Trích xuất tokens, identifiers và operators từ chuỗi text của node code,
     băm sang bảng embedding lớn (vocab_size), pooling và chiếu sang không gian node feature.
@@ -162,7 +162,7 @@ class NodeTextEmbedding(nn.Module):
 
 
 class NodeCodeBERTEmbedding(nn.Module):
-    """Giải pháp 2: Shared Backbone / Pretrained CodeBERT word embeddings cho AST nodes.
+    """Shared Backbone: Pretrained CodeBERT word embeddings cho AST nodes.
 
     Tận dụng trực tiếp bảng word embeddings được pre-trained của CodeBERT (50,265 tokens)
     để biểu diễn các từ khóa, biến, hàm quan trọng, sau đó chiếu sang node_feature_dim.
@@ -243,7 +243,7 @@ class NodeCodeBERTEmbedding(nn.Module):
 
 
 class VulnerabilityNodeFeatures(nn.Module):
-    """Giải pháp 4 (mới): Vulnerability-aware node features.
+    """Vulnerability-Aware Node Features: Biểu diễn cờ an ninh luồng dữ liệu (Taint Flow Flags).
 
     Chiếu các binary flags is_source, is_sink, is_sanitizer lên không gian
     embedding node, sau đó cộng vào node representation chính.
@@ -339,9 +339,9 @@ class GraphEncoder(nn.Module):
         num_heads: Ignored (kept for API compatibility).
         num_edge_types: Number of distinct edge types (relations).
         dropout: Dropout probability.
-        node_encoder_type: Loại encoder cho node text: "hash" (GP1), "shared_codebert" (GP2), "none".
+        node_encoder_type: Loại encoder cho node text: "hash" (Subtoken Hashing), "shared_codebert" (Shared Backbone), "both"/"hybrid" (Hybrid), "none".
         text_vocab_size: Kích thước từ điển băm khi dùng node_encoder_type="hash".
-        shared_word_embeddings: Tham chiếu lớp word embedding của CodeBERT khi dùng GP2.
+        shared_word_embeddings: Tham chiếu lớp word embedding của CodeBERT khi dùng shared_codebert / hybrid.
         combine_mode: Phương pháp kết hợp Type + Text: "add" hoặc "concat".
         use_vul_features: Sử dụng vulnerability-aware node features (is_source, is_sink, is_sanitizer).
         use_node_classifier: Bật node-level auxiliary classifier (dùng trong training loss).
@@ -373,7 +373,7 @@ class GraphEncoder(nn.Module):
         # 1. Type embedding
         self.node_embedding = NodeTypeEmbedding(num_types=64, embedding_dim=node_feature_dim)
 
-        # 2. Text embedding (Giải pháp 1, Giải pháp 2, hoặc Hybrid cả hai)
+        # 2. Text embedding (Subtoken Hashing, Shared CodeBERT, hoặc Hybrid cả hai)
         if node_encoder_type in ("hash", "both", "hybrid"):
             self.node_hash_embedding = NodeTextEmbedding(
                 vocab_size=text_vocab_size,
@@ -516,19 +516,18 @@ class GraphEncoder(nn.Module):
             else:
                 edge_index = edge_index.view(2, -1)
 
-        # Handle empty graphs smoothly
-        no_edges = (
+        # Handle empty graphs smoothly: ensure valid (2, 0) tensor for message passing layers
+        if (
             edge_index is None
             or edge_index.dim() != 2
             or edge_index.size(0) != 2
             or edge_index.size(-1) == 0
-        )
+        ):
+            edge_index = x.new_zeros(2, 0, dtype=torch.long)
+            edge_type = x.new_zeros(0, dtype=torch.long)
 
         for layer in self.layers:
-            if no_edges:
-                x = F.relu(x)  # skip message passing if graph has no edges
-            else:
-                x = F.relu(layer(x, edge_index, edge_type))
+            x = F.relu(layer(x, edge_index, edge_type))
             x = self.dropout_layer(x)
 
         node_out = x
