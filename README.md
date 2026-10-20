@@ -61,38 +61,45 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
 ## 🏗️ Architecture
 
 ```text
-                                Python Function Code
-                                         │
-                 ┌───────────────────────┴───────────────────────┐
-                 ▼                                               ▼
-       ┌──────────────────────┐                        ┌──────────────────────┐
-       │   Semantic Branch    │                        │  Structural Branch   │
-       │    CodeBERT (125M)   │                        │ Program Dependence   │
-       │  + Full Fine-Tuning  │                        │     Graph (RGCN)     │
-       │     CLS Pooling      │                        │ AST+CFG+DFG+Call     │
-       └──────────┬───────────┘                        └──────────┬───────────┘
-                  │                                               │
-           Token sequence                                  Heterogeneous node
-           representations [B, 256]                        representations [B, 256]
-                  │                                               │
-                  └───────────────────────┬───────────────────────┘
-                                          ▼
-                       ┌─────────────────────────────────────┐
-                       │  FiLM Modulation / Cross-Attention  │
-                       │     + Residual Skip (alpha=0.3)     │
-                       └──────────────────┬──────────────────┘
-                                          │
-                               Fused representation [B, 256]
-                                          ▼
-                       ┌─────────────────────────────────────┐
-                       │       Binary Prediction Head        │
-                       │     (Class-Weighted Focal Loss)     │
-                       └──────────────────┬──────────────────┘
-                                          │
-                                          ▼
-                                P(vulnerable) ∈ [0, 1]
-                                          ▼
-                                      ŷ ∈ {0, 1}
+                                Python Function Source Code
+                                             │
+                 ┌───────────────────────────┴───────────────────────────┐
+                 ▼                                                       ▼
+    ┌───────────────────────────┐                           ┌───────────────────────────┐
+    │      Semantic Branch      │                           │     Structural Branch     │
+    │  CodeBERT Backbone (125M) │                           │ Heterogeneous PDG + RGCN  │
+    │    + Full Fine-Tuning     │                           │  (AST + CFG + DFG + Call) │
+    ├───────────────────────────┤                           ├───────────────────────────┤
+    │ • BPE Tokenizer (512 ctx) │                           │ • NodeType Embedding      │
+    │ • Transformer 12 layers   │                           │ • Subtoken Hashing (16k)  │
+    │ • [CLS] Pooling [B, 768]  │                           │ • Security Flow Signals   │
+    │ • Linear Proj [B, 256]    │                           │ • Stacked RGCN Convolutions│
+    │                           │                           │ • Graph Readout Pooling   │
+    └─────────────┬─────────────┘                           └─────────────┬─────────────┘
+                  │                                                       │
+                  │ h_sem ∈ ℝ^(B × 256)                   h_graph ∈ ℝ^(B × 256)
+                  │                                                       │
+                  └───────────────────────────┬───────────────────────────┘
+                                              ▼
+                           ┌─────────────────────────────────────┐
+                           │   Cross-Modal Fusion Stage (FiLM)   │
+                           │   γ(h_graph) ⊙ h_sem + β(h_graph)   │
+                           │    + Residual Skip (α = 0.2-0.3)    │
+                           └──────────────────┬──────────────────┘
+                                              │
+                                              │ h_fused ∈ ℝ^(B × 256)
+                                              ▼
+                           ┌─────────────────────────────────────┐
+                           │       Binary Prediction Head        │
+                           │  MLP: Linear(256→128)→GELU→Linear(1)│
+                           │    Class-Weighted Focal Loss        │
+                           │  (α = 0.5, γ = 2.0, Threshold τ*)   │
+                           └──────────────────┬──────────────────┘
+                                              │
+                                              ▼
+                                    P(vulnerable) ∈ [0, 1]
+                                              ▼
+                                ŷ = 𝟙(P ≥ τ*) ∈ {0: Safe, 1: Vuln}
 ```
 
 > **Configuration Source**: Default model topology is specified in [`configs/model/default.yaml`](configs/model/default.yaml) and training schedules in [`configs/train/`](configs/train/) (`semantic_codebert.yaml`, `graph.yaml`, `fusion.yaml`).
