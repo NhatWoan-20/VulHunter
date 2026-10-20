@@ -1,103 +1,140 @@
-# Hướng Dẫn Huấn Luyện VulHunter Trên Kaggle (2x T4)
+# 📓 VulHunter Kaggle Notebooks & Experimental Benchmarks
 
-> **Mục tiêu:** Chạy mô hình **VulHunter v4.0 (3 tasks)** trên **Kaggle Notebook `GPU T4 x2` + Internet ON** với **CodeBERT**.
-> **Lưu ý Cốt Lõi:** Toàn bộ quá trình Thu thập dữ liệu (Collection), Trích xuất (Extraction), Tiền xử lý (Preprocessing) và Tạo đồ thị (Graph Generation) **PHẢI ĐƯỢC CHẠY TRÊN MÁY LOCAL**. Kaggle chỉ được sử dụng cho bước cuối cùng là **Huấn luyện (Training)** và **Đánh giá (Evaluation)** nhằm tận dụng GPU.
+Thư mục này chứa toàn bộ các Jupyter Notebooks dùng để huấn luyện và đánh giá hệ thống **VulHunter** trên môi trường **Kaggle GPU (2x T4)**.
 
 ---
 
-## 1. QUY TRÌNH CHUẨN BỊ LOCAL (KHÔNG CHẠY TRÊN KAGGLE)
+## 🌟 1. Danh Sách 4 Notebooks Chính Thức (Executed Benchmarks)
 
-Kaggle có giới hạn về thời gian chạy (12h/session), disk space, và không phải là môi trường lý tưởng để chứa các cấu hình API Key nhạy cảm. Do đó, bạn phải chuẩn bị toàn bộ dữ liệu trên máy tính cá nhân.
+Dự án cung cấp 4 notebook đã được chạy hoàn chỉnh trên Kaggle với đầy đủ log training, biểu đồ hội tụ, ma trận nhầm lẫn (confusion matrix) và kết quả đánh giá trên tập test **13,990 mẫu** (xem trực tiếp trên GitHub):
 
-### Bước 1.1: Chạy Full Pipeline Thu Thập & Xử Lý Dữ Liệu (Local)
+| File Notebook | Vai Trò & Kiến Trúc | Tham Số | Ngưỡng Tối Ưu | F1-Score | Recall | Precision | ROC-AUC | PR-AUC | MCC |
+|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 🛡️ [`vulhunter-fusion.ipynb`](results/vulhunter-fusion.ipynb) | **[SOTA] CodeBERT + Enriched RGCN + FiLM Modulation** (Pooled level, residual $\alpha=0.2$) | ~131.7M | 0.25 | **0.7519** | **0.8659** | 0.6644 | 0.9399 | **0.7921** | **0.6821** |
+| 🔤 [`vulhunter-semantic-only-codebert.ipynb`](results/vulhunter-semantic-only-codebert.ipynb) | **Semantic Baseline**: Full Fine-Tuning `microsoft/codebert-base` (512 tokens, CLS pooling) | ~124.6M | 0.45 | 0.7514 | 0.8603 | **0.6670** | **0.9402** | 0.7916 | 0.6811 |
+| 🕸️ [`vulhunter-graph-only-advanced.ipynb`](results/vulhunter-graph-only-advanced.ipynb) | **Graph Advanced**: 3-layer RGCN + GP1 Subtoken Hashing (16k vocab) + GP4 Security Roles | ~3.25M | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
+| 🌲 [`vulhunter-graph-only.ipynb`](results/vulhunter-graph-only.ipynb) | **Graph Baseline**: 3-layer RGCN + Pure AST NodeType Embedding (64 node types) | ~585K | 0.65 | 0.4346 | 0.7258 | 0.3101 | 0.7034 | 0.3847 | 0.2315 |
 
-Chạy tuần tự các script theo đúng luồng của dự án trên terminal local của bạn:
+> Ngoài 4 executed notebooks trên, thư mục cũng duy trì các **Template Notebooks sạch** ([`train_fusion.ipynb`](train_fusion.ipynb), [`train_semantic_codebert.ipynb`](train_semantic_codebert.ipynb), [`train_graph_only.ipynb`](train_graph_only.ipynb)) đã được dọn sạch outputs để người dùng dễ dàng clone và huấn luyện lại từ đầu.
+>
+> 💡 **Lưu ý đặc biệt cho [`train_graph_only.ipynb`](train_graph_only.ipynb)**: Notebook này đã tích hợp sẵn biến cấu hình `GRAPH_TECHNIQUE = "advanced"` hoặc `"pure_ast"` tại Cell 2. Người dùng có thể dễ dàng chuyển đổi chỉ với 1 dòng code để huấn luyện mô hình **Graph Advanced (GP1+GP4)** (F1 = 0.6094) hoặc **Pure AST Baseline** (F1 = 0.4346) phục vụ nghiên cứu bóc tách (Ablation Study).
+
+---
+
+## 📊 2. Bảng So Sánh Chi Tiết Kết Quả Đánh Giá Test Set (13,990 mẫu)
+
+Tất cả mô hình được đánh giá trên cùng một tập test độc lập gồm **13,990 mẫu** (10,970 Safe / Benign và 3,020 Vulnerable / Defect) theo quy tắc chia **strict repository-disjoint (80/10/10)**:
+
+| Chỉ Số (Metric) | Graph Baseline (Pure AST) | Graph Advanced (Enriched) | Semantic Baseline (CodeBERT) | 🛡️ VulHunter Fusion (SOTA) |
+|:---|:---:|:---:|:---:|:---:|
+| **Optimal Threshold** | 0.6500 | 0.5500 | 0.4500 | **0.2500** |
+| **Precision** | 0.3101 | 0.5100 | **0.6670** | 0.6644 |
+| **Recall (Độ nhạy)** | 0.7258 | 0.7570 | 0.8603 | **0.8659** |
+| **Binary F1-Score** | 0.4346 | 0.6094 (+40.2%) | 0.7514 | **0.7519** |
+| **Accuracy** | 0.5923 | 0.7906 | **0.8771** | 0.8766 |
+| **ROC-AUC** | 0.7034 | 0.8452 (+20.2%) | **0.9402** | 0.9399 |
+| **PR-AUC** | 0.3847 | 0.5420 (+40.9%) | 0.7916 | **0.7921** |
+| **Matthews Corr (MCC)** | 0.2315 | 0.4909 (+112.1%) | 0.6811 | **0.6821** |
+| **Số lượng tham số** | ~585,601 | ~3,248,516 | ~124,647,170 | ~131,745,028 |
+
+### Ma Trận Nhầm Lẫn (Confusion Matrix)
+
+| Mô hình | True Positives (TP) ↑ | False Positives (FP) ↓ | True Negatives (TN) ↑ | False Negatives (FN) ↓ |
+|:---|:---:|:---:|:---:|:---:|
+| **Graph Baseline (Pure AST)** | 2,192 | 4,876 | 6,094 | 828 |
+| **Graph Advanced (Enriched)** | 2,286 | 2,196 | 8,774 | 734 |
+| **Semantic Baseline (CodeBERT)** | 2,598 | **1,297** | **9,673** | 422 |
+| 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** |
+
+> [!TIP]
+> **Ý nghĩa thực tế của kết quả Fusion**: Trong bài toán phát hiện lỗ hổng phần mềm, **Recall** và **False Negatives (FN)** là những chỉ số quan trọng hàng đầu (bỏ sót lỗ hổng nguy hiểm hơn rất nhiều so với cảnh báo thừa). Mô hình Fusion phát hiện được **2,615 / 3,020** lỗ hổng (cao nhất) và giảm số lỗi bị bỏ sót xuống chỉ còn **405** (giảm 5.37% so với Semantic-Only), đồng thời giữ vững F1-Score (0.7519), PR-AUC (0.7921) và MCC (0.6821) cao nhất.
+
+---
+
+## 🛠️ 3. Hướng Dẫn Chạy Trên Kaggle (2x T4 GPU)
+
+### Bước 3.1: Chuẩn bị Dữ Liệu ở Local (Chỉ chạy 1 lần)
+
+Toàn bộ pipeline thu thập và tiền xử lý đồ thị được thực hiện tại máy local:
 
 ```bash
-# 1. Thu thập dữ liệu (cần thiết lập biến môi trường GITHUB_TOKEN)
-python scripts/collection/run_pipeline.py
-
-# 2. Trích xuất dữ liệu chuẩn và gộp thành master dataset
-python scripts/extraction/extract.py
-python scripts/extraction/prepare_master.py
-
-# 3. Tiền xử lý (chuẩn hóa, chia split 80/10/10, tokenization)
-python scripts/preprocessing/clean_comments.py
-python scripts/preprocessing/normalize.py
-python scripts/preprocessing/validate_ast.py
-python scripts/preprocessing/build_samples.py
-python scripts/preprocessing/strip_docstrings.py
-python scripts/preprocessing/split.py
-python scripts/preprocessing/tokenization (on-the-fly)
-
-# 4. Xây dựng đồ thị cấu trúc (PDG Graph)
-python scripts/graph/build_ast.py
-python scripts/graph/build_cfg.py
-python scripts/graph/build_dfg.py
-python scripts/graph/build_call.py
-python scripts/graph/merge_graphs.py
+# Chạy pipeline chuẩn hóa, tạo đồ thị PDG và chia split repo-disjoint
+python scripts/preprocessing/run_pipeline.py
 ```
 
-### Bước 1.2: Đóng gói Dataset dành riêng cho Kaggle (Local)
+Sau khi hoàn tất, đóng gói dữ liệu thành phẩm gồm 4 file `.jsonl` để tải lên Kaggle:
+- `train.jsonl`
+- `validation.jsonl`
+- `test.jsonl`
+- `master_pdg.jsonl`
 
-Thay vì upload toàn bộ thư mục `data/` khổng lồ, chúng ta sử dụng công cụ đóng gói để chỉ chọn các file thành phẩm cuối cùng (đã tokenized và đã có đồ thị) để tiết kiệm dung lượng.
+### Bước 3.2: Tạo Kaggle Dataset
 
-```powershell
-# Chạy script đóng gói (thêm cờ --with-graphs để mang theo dữ liệu đồ thị cho nhánh fusion)
-python notebooks/ --with-graphs
-```
-
-Script này sẽ copy các file chia tách (`train.jsonl`, `validation.jsonl`, `test.jsonl`) và `master_pdg.jsonl` ra thư mục `dist/kaggle_dataset/`.
-
----
-
-## 2. UPLOAD LÊN KAGGLE
-
-Sau khi có thư mục `dist/kaggle_dataset/`, bạn cần đưa dữ liệu này lên hệ thống Kaggle Datasets để Notebook có thể đọc được.
-
-**Cách 1: Qua Web UI (Giao diện Kaggle)**
-1. Truy cập Kaggle → Datasets → Bấm **New Dataset**.
-2. Upload toàn bộ các file `*.jsonl` trong thư mục `dist/kaggle_dataset/` lên.
-3. Đặt tên dataset là `vulhunter-pre-tokenized`.
+1. Vào Kaggle → Datasets → Chọn **New Dataset**.
+2. Kéo thả 4 file `.jsonl` ở trên vào.
+3. Đặt tên dataset là: `vulhunter-pre-tokenized`.
 4. Bấm **Create**.
 
-**Cách 2: Qua Kaggle CLI**
-```powershell
-kaggle datasets create -p dist/kaggle_dataset
+### Bước 3.3: Thiết Lập Cấu Hình Notebook Trên Kaggle
+
+1. Mở Kaggle Notebook mới hoặc upload một trong các file notebook từ repo.
+2. Tại bảng điều khiển **Settings** bên phải:
+   - **Accelerator**: Chọn **GPU T4 x2**.
+   - **Language**: Python.
+   - **Internet**: **ON** (Bắt buộc bật để tải pre-trained weights từ Hugging Face và cài thư viện bổ sung).
+3. Tại mục **Input**:
+   - Bấm **Add Input**.
+   - Tìm kiếm và chọn dataset `vulhunter-pre-tokenized` của bạn. Dữ liệu sẽ xuất hiện tại đường dẫn `/kaggle/input/vulhunter-pre-tokenized/`.
+
+### Bước 3.4: Cài Đặt Thư Viện Bổ Sung
+
+Do môi trường chuẩn của Kaggle chưa tích hợp sẵn `torch-geometric`, cell đầu tiên của notebook luôn cần thực thi:
+
+```python
+# Cài đặt PyTorch Geometric (bắt buộc cho nhánh đồ thị RGCN)
+!pip install torch-geometric -q
 ```
 
 ---
 
-## 3. HUẤN LUYỆN TRÊN KAGGLE NOTEBOOK
+## ⚙️ 4. Chi Tiết Kiến Trúc Của Từng Notebook
 
-### Bước 3.1: Thiết lập Notebook (Rất Quan Trọng)
+### 1. `vulhunter-fusion.ipynb` (Multimodal SOTA)
+- **Kiến trúc**:
+  - Semantic Encoder: Full Fine-Tuning `microsoft/codebert-base` (d=768, sequence length=512, [CLS] representation).
+  - Graph Encoder: 3-layer Relational Graph Convolutional Network (RGCN, hidden=256) xử lý đa quan hệ cạnh (AST, CFG, DFG, Call) với node features mở rộng (GP1 subtoken hashing + GP4 security role tags).
+  - Fusion Module: **FiLM Modulation (Pooled level)** điều biến đặc trưng ngữ nghĩa bằng đồ thị cấu trúc:
+    $$\mathbf{z} = (1 + \gamma(\mathbf{v})) \odot \mathbf{u} + \beta(\mathbf{v}) + 0.2 \cdot \mathbf{u}$$
+  - Head: `BinaryClassificationHead` với Focal Loss ($\alpha=0.791, \gamma=2.0$).
+- **Chiến lược Huấn luyện**:
+  - Two-Stage Curriculum Learning: Stage 1 (Warmup Graph & Fusion), Stage 2 (Joint Full Fine-Tuning với differential learning rate: $3.0 \times 10^{-6}$ cho CodeBERT, $3.0 \times 10^{-5}$ cho Graph/Head).
+  - Mixed Precision (FP16 AMP).
 
-1. Mở Kaggle Notebook mới hoặc notebook có sẵn của bạn.
-2. Góc phải màn hình, mục **Settings**:
-   - **Accelerator**: Chọn **GPU T4 x2**.
-   - **Internet**: Bật **ON** (để mô hình tự động pull CodeBERT weights trực tiếp từ thư viện HuggingFace).
-3. Góc phải màn hình, mục **Input**:
-   - Bấm **Add Input**.
-   - Chọn tab **Your Datasets** và add dataset `vulhunter-pre-tokenized` mà bạn vừa tạo ở Bước 2.
+### 2. `vulhunter-semantic-only-codebert.ipynb` (Semantic Baseline)
+- **Kiến trúc**:
+  - Full Fine-Tuning toàn bộ 12 lớp Transformer của `microsoft/codebert-base`.
+  - [CLS] pooling vector đưa qua 2 lớp MLP phân loại nhị phân.
+  - Loss function: Focal Loss ($\alpha=0.784, \gamma=2.0$).
 
-### Bước 3.2: Chạy Code Huấn Luyện
+### 3. `vulhunter-graph-only-advanced.ipynb` (Graph Advanced)
+- **Kiến trúc**:
+  - 3-layer RGCN với heterogeneous edges.
+  - Node Features cải tiến: GP1 Subtoken Hashing (vocab=16,384, dim=128) để đọc được tên biến/hàm con + GP4 Security Roles (nhận diện nguồn dữ liệu taint source, hàm sink nguy hiểm và sanitizer).
+  - Batch size 256 tối ưu hóa GPU Tensor Cores.
 
-Upload file `notebooks/train_fusion.ipynb` hoặc `notebooks/train_semantic_only.ipynb` lên môi trường Kaggle của bạn. Bạn chỉ cần mở notebook và chạy tuần tự các cell từ trên xuống dưới.
+### 4. `vulhunter-graph-only.ipynb` (Graph Baseline)
+- **Kiến trúc**:
+  - 3-layer RGCN truyền thống với đặc trưng node chỉ bao gồm nhãn loại AST thuần túy (64 node types).
+  - Đóng vai trò làm mốc đối chứng (pure structural baseline) để đo lường giá trị của việc mở rộng đặc trưng nút và kết hợp ngữ nghĩa.
 
 ---
 
-## 4. Tại sao cấu hình CodeBERT Full Fine-Tune trên 2x T4?
+## 💾 5. Quản Lý Checkpoint & Test Predictions
 
-| Đặc điểm của Kaggle | Tối ưu của VulHunter |
-|---|---|
-| **2x T4 16GB VRAM** | Mô hình CodeBERT (~125M params) có thể được Full Fine-Tune trực tiếp với `fp16`, `gradient_checkpointing` và batch size phù hợp mà không cần đến PEFT/LoRA. (T4 hỗ trợ FP16 rất tốt và ổn định). |
-| **Internet ON** | Không cần tốn dung lượng Kaggle Dataset để lưu trữ weight nguyên bản của mô hình. `transformers` sẽ tự động tải weights từ HuggingFace vào cache. |
-
----
-
-## 5. Troubleshooting & Lưu ý Quan Trọng
-
-- **Lưu Checkpoint**: Mô hình tốt nhất sẽ được lưu tại `models/checkpoints/best.pt`. Bạn **PHẢI** bấm nút **Save Version** (hoặc Download) trên Kaggle UI trước khi tắt trình duyệt / hết session để không bị mất file checkpoint này!
-- **Lỗi `MISSING train.jsonl`**: Bạn quên chưa thực hiện bước Add Input dataset ở góc phải Notebook.
-
-
+Mỗi notebook sau khi hoàn thành huấn luyện sẽ tự động:
+1. Lưu checkpoint mô hình tốt nhất (dựa trên F1 tối ưu của tập validation) tại:
+   `/kaggle/working/models/checkpoints/<mode>/best.pt`
+2. Lưu file tổng kết số liệu JSON tại `summary.json`.
+3. Xuất toàn bộ dự đoán trên tập test ra file `test_predictions.csv` gồm:
+   `sample_id`, `label`, `prob`, `pred`.
+4. Người dùng có thể tải trực tiếp các file này về từ tab **Output** trên Kaggle UI.

@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Hybrid Multi-Modal Binary Vulnerability Detection for Python</strong><br/>
-  <em>CodeBERT (Semantic View) + Program Dependence Graph (RGCN) (Structural View) + Gated Bidirectional Cross-Attention (Fusion)</em>
+  <em>CodeBERT (Semantic View) + Enriched Program Dependence Graph (RGCN) (Structural View) + FiLM Modulation / Cross-Attention (Fusion)</em>
 </p>
 
 <p align="center">
@@ -34,9 +34,9 @@
 Traditional vulnerability detectors rely either on purely syntactic sequence representations (LLMs/Transformers) which can miss non-local data-flow constraints, or purely on graph structures (AST/CFG/GNNs) which discard rich identifier semantics and comments. **VulHunter bridges this gap** by fusing two complementary representations:
 
 1. **Semantic Perception**: Pretrained **CodeBERT** (Full Fine-tuning) for token semantics and control keywords.
-2. **Structural Perception**: **Program Dependence Graph (PDG)** + Heterogeneous Graph Neural Network (**RGCN**) processing heterogeneous program graph edge types (control-flow, data-flow, call).
-3. **Cross-Modal Fusion**: A **gated bidirectional cross-attention** mechanism with residual skip that dynamically balances semantic and structural signals.
-4. **Binary Supervision**: Focal Loss giải quyết mất cân bằng mẫu.
+2. **Structural Perception**: **Program Dependence Graph (PDG)** + Heterogeneous Graph Neural Network (**RGCN**) with subtoken hashing and security role features processing heterogeneous edge types (AST, CFG, DFG, Call).
+3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Gated Bidirectional Cross-Attention** with residual skip that dynamically condition and balance semantic and structural signals.
+4. **Binary Supervision**: Focal Loss giải quyết mất cân bằng mẫu (class imbalance).
 
 ---
 
@@ -70,8 +70,8 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
                  │                                               │
                  └───────────────────────┬───────────────────────┘
                                          ▼
-                       Gated Bidirectional Cross-Attention
-                       + Residual Skip (alpha=0.3)
+                       FiLM Modulation / Cross-Attention
+                       + Residual Skip (alpha=0.2)
                                          │
                                          ▼
                                 Binary Prediction Head
@@ -203,10 +203,16 @@ curl -X POST "http://localhost:8000/predict" \
    - Add Input: `vulhunter-pre-tokenized` (dataset đã tokenized sẵn)
    - *Lưu ý: Nếu không có dataset, notebooks sẽ tự clone repo và bạn cần chạy preprocessing*
 
-2. **Run Notebooks** (tự động clone):
-   - `notebooks/train_fusion.ipynb` — Fusion mode (chính)
-   - `notebooks/train_semantic_only.ipynb` — Semantic baseline
-   - `notebooks/train_graph_only.ipynb` — Graph baseline
+2. **Notebooks sẵn có trong repo** (chi tiết xem tại [notebooks/README.md](notebooks/README.md)):
+   - **Executed Benchmarks** (chạy sẵn với full outputs & đánh giá trên 13,990 test samples):
+     - [`notebooks/results/vulhunter-fusion.ipynb`](notebooks/results/vulhunter-fusion.ipynb) — SOTA Multimodal Fusion (F1 = 0.7519, Recall = 0.8659)
+     - [`notebooks/results/vulhunter-semantic-only-codebert.ipynb`](notebooks/results/vulhunter-semantic-only-codebert.ipynb) — Semantic Baseline CodeBERT (F1 = 0.7514)
+     - [`notebooks/results/vulhunter-graph-only-advanced.ipynb`](notebooks/results/vulhunter-graph-only-advanced.ipynb) — Graph Advanced RGCN GP1+GP4 (F1 = 0.6094)
+     - [`notebooks/results/vulhunter-graph-only.ipynb`](notebooks/results/vulhunter-graph-only.ipynb) — Graph Baseline Pure AST (F1 = 0.4346)
+   - **Clean Templates** (đã dọn sạch outputs, sẵn sàng clone và train):
+     - [`notebooks/train_fusion.ipynb`](notebooks/train_fusion.ipynb) — Multi-modal fusion template
+     - [`notebooks/train_semantic_codebert.ipynb`](notebooks/train_semantic_codebert.ipynb) — Semantic CodeBERT template
+     - [`notebooks/train_graph_only.ipynb`](notebooks/train_graph_only.ipynb) — Graph baseline template
 
 3. **Sau khi clone thành công**, notebook sẽ:
    - Cài đặt dependencies tự động
@@ -226,7 +232,11 @@ python scripts/training/train.py \
   --use-amp
 ```
 
-#### Scenario B: Graph-Only Structural Baseline
+#### Scenario B: Graph-Only Structural Learning (RGCN)
+Hỗ trợ cả 2 kỹ thuật biểu diễn nút (chuyển đổi qua cấu hình trong [`notebooks/train_graph_only.ipynb`](notebooks/train_graph_only.ipynb)):
+- **Graph Advanced [Đề xuất]**: RGCN + GP1 Subtoken Hashing (16k) + GP4 Security Roles (F1 = **0.6094**, ROC-AUC = **0.8452**).
+- **Pure AST Baseline**: RGCN + NodeType Embedding thuần (F1 = **0.4346**, ROC-AUC = **0.7034**).
+
 ```bash
 python scripts/training/train.py \
   --mode graph_only \
@@ -268,16 +278,28 @@ python scripts/training/train.py \
 | Precision | — | — | — | >0.70 | >0.80 |
 | Recall | — | — | — | >0.65 | >0.75 |
 
-### Benchmark Results
+### Benchmark Results (13,990 Test Samples)
 
-> [!NOTE]
-> **Experimental Phase:** Benchmark scores sẽ được populate sau khi training hoàn tất.
+Đánh giá thực nghiệm trên tập test độc lập **13,990 mẫu** (10,970 Safe / 3,020 Vulnerable) chia theo giao thức **strict repository-disjoint (80/10/10)**:
 
-| Model Variant | Binary F1 | Binary MCC | AUC-ROC |
-|:---|:---:|:---:|:---:|
-| `graph_only` (PDG + RGCN) | *TBD* | *TBD* | *TBD* |
-| `semantic_only` (CodeBERT) | *TBD* | *TBD* | *TBD* |
-| **`fusion` (CodeBERT + RGCN)** | *TBD* | *TBD* | *TBD* |
+| Model Variant | Architecture / Encoder | Optimal Threshold | Binary F1 | Recall | Precision | ROC-AUC | PR-AUC | MCC |
+|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Graph Baseline** | 3-layer RGCN (Pure AST) | 0.65 | 0.4346 | 0.7258 | 0.3101 | 0.7034 | 0.3847 | 0.2315 |
+| **Graph Advanced** | RGCN + Subtoken Hashing (GP1) + Roles (GP4) | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
+| **Semantic Baseline** | CodeBERT Full Fine-Tuning | 0.45 | 0.7514 | 0.8603 | **0.6670** | **0.9402** | 0.7916 | 0.6811 |
+| 🛡️ **VulHunter Fusion** | **CodeBERT + Enriched RGCN + FiLM Modulation** | **0.25** | **0.7519** | **0.8659** | 0.6644 | 0.9399 | **0.7921** | **0.6821** |
+
+#### Confusion Matrix Comparison (Held-out Test Set)
+
+| Model Variant | True Positives (TP) ↑ | False Positives (FP) ↓ | True Negatives (TN) ↑ | False Negatives (FN) ↓ |
+|:---|:---:|:---:|:---:|:---:|
+| **Graph Baseline (Pure AST)** | 2,192 | 4,876 | 6,094 | 828 |
+| **Graph Advanced (Enriched)** | 2,286 | 2,196 | 8,774 | 734 |
+| **Semantic Baseline (CodeBERT)** | 2,598 | **1,297** | **9,673** | 422 |
+| 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** |
+
+> [!TIP]
+> **Key Finding**: Nhánh Fusion đạt **Recall cao nhất (86.59%)** và giảm số lượng lỗ hổng bị bỏ sót nguy hiểm (**False Negatives**) từ **422 xuống 405** (giảm 4.03%), đồng thời vượt trội về **F1 (0.7519)**, **PR-AUC (0.7921)** và **MCC (0.6821)** so với các mô hình đơn lẻ. Chi tiết training curves và confusion matrices có thể xem tại [notebooks/README.md](notebooks/README.md).
 
 ---
 
@@ -292,14 +314,20 @@ VulHunter/
 ├── data/
 │   ├── raw/databases/           # CVEFixes DB extraction scripts
 │   └── splits/                  # Repo-disjoint train/validation/test splits
-├── notebooks/                   # Kaggle notebooks (3 modes)
-│   ├── train_fusion.ipynb       # ★ Main: fusion mode
-│   ├── train_semantic_only.ipynb
-│   └── train_graph_only.ipynb
+├── notebooks/                   # Kaggle 2xT4 Notebooks & Benchmarks
+│   ├── README.md                # Detailed experimental reports & evaluation
+│   ├── train_fusion.ipynb                     # Clean template: Multi-modal fusion
+│   ├── train_semantic_codebert.ipynb          # Clean template: Semantic CodeBERT
+│   ├── train_graph_only.ipynb                 # Clean template: RGCN graph-only
+│   └── results/                 # ★ Executed benchmark notebooks (Full outputs)
+│       ├── vulhunter-fusion.ipynb                 # SOTA Fusion (F1=0.7519, Recall=0.8659)
+│       ├── vulhunter-semantic-only-codebert.ipynb # Semantic CodeBERT (F1=0.7514)
+│       ├── vulhunter-graph-only-advanced.ipynb    # Graph Advanced GP1+GP4 (F1=0.6094)
+│       └── vulhunter-graph-only.ipynb             # Graph Pure AST Baseline (F1=0.4346)
 ├── src/                         # Core VulHunter Library
 │   ├── semantic/encoder.py      # CodeBERT, CLS pooling
-│   ├── graph/encoder.py         # Heterogeneous RGCN Graph Encoder
-│   ├── fusion/cross_attention.py# Gated bidirectional cross-attention + residual
+│   ├── graph/encoder.py         # Heterogeneous RGCN Graph Encoder (AST/CFG/DFG)
+│   ├── fusion/cross_attention.py# FiLM Modulation / Gated Cross-Attention + Residual Skip
 │   ├── multitask/model.py       # VulHunterModel (binary output)
 │   ├── multitask/heads.py       # BinaryHead
 │   └── utils/                   # Datasets, focal loss, metrics

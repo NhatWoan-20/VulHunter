@@ -1,0 +1,56 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches and temporary test directories
+.pytest_cache/
+.test-tmp/
+.coverage
+htmlcov/
+
+# Environments & secrets
+.env
+*.env
+.venv/
+env/
+venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Data directories & large datasets (~5.8GB+ stored externally / on Kaggle)
+data/final/
+data/processed/
+data/splits/
+data/raw/cvefixes/
+data/raw/ghsa/
+data/**/*.jsonl
+data/**/*.csv
+data/**/*.db
+data/**/*.sqlite
+data/**/*.sql
+data/**/*.sql.gz
+data/**/*.gz
+
+# Model weights, checkpoints, logs, and artifacts
+models/checkpoints/
+*.pt
+*.pth
+*.bin
+*.safetensors
+runs/
+outputs/
+wandb/
+
+# Distribution and archives
+dist/
+build/
+*.egg-info/
+*.zip
+*.tar.gz
+
+# OS generated files
+.DS_Store
+Thumbs.db
