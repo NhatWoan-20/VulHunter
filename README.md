@@ -60,40 +60,42 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
 
 ## 🏗️ Architecture
 
-```mermaid
-flowchart TD
-    RawCode["Python Function Code"]
-    
-    subgraph SemanticBranch ["1. Semantic Perception Branch"]
-        Tokenizer["CodeBERT Tokenizer (512 tokens)"] --> Backbone["CodeBERT Backbone (125M Params)\nFull Fine-Tuning + FP16 AMP"]
-        Backbone --> CLSPooling["CLS Pooling [B, 768]"]
-        CLSPooling --> SemProj["Linear Projection [B, 256]"]
-    end
-
-    subgraph StructuralBranch ["2. Structural Perception Branch"]
-        ASTParser["AST / PDG Parser"] --> PDG["Heterogeneous PDG\nAST + CFG + DFG + Call"]
-        PDG --> NodeEmbed["Subtoken Hashing + Security Roles\nNodeType Embedding [N, 128]"]
-        NodeEmbed --> RGCN["Stacked RGCN (Relational Convolutions)\nMulti-head Neighbor Aggregation"]
-        RGCN --> GraphPooling["Attentive Graph Readout [B, 256]"]
-    end
-
-    RawCode --> Tokenizer
-    RawCode --> ASTParser
-
-    SemProj --> FusionBlock
-    GraphPooling --> FusionBlock
-
-    subgraph FusionStage ["3. Cross-Modal Fusion"]
-        FusionBlock["FiLM Modulation / Cross-Attention\nγ(Graph) ⊙ Semantic + β(Graph)\n+ Residual Skip Connection (α = 0.3)"]
-        FusionBlock --> FusedRep["Fused Embedding [B, 256]"]
-    end
-
-    subgraph HeadStage ["4. Binary Prediction Head"]
-        FusedRep --> MLP["MLP Classification Head\nLinear(256→128) → GELU → Linear(128→1)"]
-        MLP --> FocalLoss["Focal Loss (α=0.5, γ=2.0)\nOptimal Threshold Tuning"]
-        FocalLoss --> Output["P(Vulnerable) ∈ [0.0, 1.0]"]
-    end
+```text
+                                Python Function Code
+                                         │
+                 ┌───────────────────────┴───────────────────────┐
+                 ▼                                               ▼
+       ┌──────────────────────┐                        ┌──────────────────────┐
+       │   Semantic Branch    │                        │  Structural Branch   │
+       │    CodeBERT (125M)   │                        │ Program Dependence   │
+       │  + Full Fine-Tuning  │                        │     Graph (RGCN)     │
+       │     CLS Pooling      │                        │ AST+CFG+DFG+Call     │
+       └──────────┬───────────┘                        └──────────┬───────────┘
+                  │                                               │
+           Token sequence                                  Heterogeneous node
+           representations [B, 256]                        representations [B, 256]
+                  │                                               │
+                  └───────────────────────┬───────────────────────┘
+                                          ▼
+                       ┌─────────────────────────────────────┐
+                       │  FiLM Modulation / Cross-Attention  │
+                       │     + Residual Skip (alpha=0.3)     │
+                       └──────────────────┬──────────────────┘
+                                          │
+                               Fused representation [B, 256]
+                                          ▼
+                       ┌─────────────────────────────────────┐
+                       │       Binary Prediction Head        │
+                       │     (Class-Weighted Focal Loss)     │
+                       └──────────────────┬──────────────────┘
+                                          │
+                                          ▼
+                                P(vulnerable) ∈ [0, 1]
+                                          ▼
+                                      ŷ ∈ {0, 1}
 ```
+
+> **Configuration Source**: Default model topology is specified in [`configs/model/default.yaml`](configs/model/default.yaml) and training schedules in [`configs/train/`](configs/train/) (`semantic_codebert.yaml`, `graph.yaml`, `fusion.yaml`).
 
 ---
 
