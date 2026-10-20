@@ -87,15 +87,20 @@ Configuration wiring được tách riêng ở `configs/model/default.yaml` và 
 
 ## 📦 Dataset
 
-VulHunter trains trên consolidated **Master Dataset** kết hợp:
+VulHunter được huấn luyện và đánh giá trên **Master Dataset** quy mô lớn (tổng hợp từ CVEFixes, GHSA và tập mã nguồn mở mở rộng), sau khi qua pipeline khử trùng lặp (Global SHA-1 dedup) và kiểm định cú pháp AST:
 
-| Source | Raw Samples | Cleaned Pairs | Role Samples |
+| Nguồn Dữ Liệu (Source) | Mô Tả & Định Dạng | Số Lượng Thô (Raw) | Sau Làm Sạch & AST Valid |
 |:---|:---|:---:|:---:|
-| **CVEFixes** | Zenodo SQL dump | **2,985** | 5,958 |
-| **GHSA** | GitHub Security Advisories | **12,366** | 24,496 |
-| **Master (Unified)** | CVEFixes + GHSA | **15,351** | **30,454** |
+| **CVEFixes** | Zenodo SQLite SQL dump (v1.0.8) | 2,985 fix pairs | ~5,958 methods |
+| **GHSA** | GitHub Security Advisories API | 17,049 methods | ~16,980 methods |
+| **Large Python Corpus** | Open-source Python & Verified CVEs | 155,014 singles | ~116,941 singles |
+| **Master Dataset (Consolidated)** | Unified, Deduplicated & Validated | **175,048** | **139,879 mẫu** (30,193 Vuln / 109,686 Safe) |
+| **Master PDG Graphs** | Program Dependence Graphs (AST+CFG+DFG+Call) | — | **139,847 đồ thị** |
 
-Split: **80/10/10 repository-disjoint** (strict repo-disjoint).
+Phân chia tập dữ liệu theo quy chuẩn **80/10/10 Strict Repository-Disjoint** (ngăn chặn 100% rò rỉ repository giữa các tập):
+- 🏋️ **Train Set**: **111,902 mẫu** (87,748 Safe / 24,154 Vulnerable)
+- ⚖️ **Validation Set**: **13,987 mẫu** (10,968 Safe / 3,019 Vulnerable)
+- 🧪 **Test Set (Held-out)**: **13,990 mẫu** (10,970 Safe / 3,020 Vulnerable)
 
 ```json
 {

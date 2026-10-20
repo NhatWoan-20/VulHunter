@@ -26,12 +26,12 @@ a unified single-sample schema, cleansed, deduplicated, and split repository-dis
 ### 1.3 Large Scale Benign Dataset (Single-Sample)
 - **Source:** Diverse non-vulnerable open-source Python repositories
 - **Format:** Single-sample (`code`, `label=0`)
-- **Location:** `data/raw/large/benign_samples.jsonl` (~90,000 samples)
+- **Location:** `data/raw/large/benign_samples.jsonl` (~130,000 samples)
 
 ### 1.4 Large Scale Vulnerable Dataset (Single-Sample)
 - **Source:** Verified CVE / GHSA fix commits
 - **Format:** Single-sample (`code`, `label=1`)
-- **Location:** `data/raw/large/vulnerable_samples.jsonl` (~15,000 samples)
+- **Location:** `data/raw/large/vulnerable_samples.jsonl` (~25,014 samples)
 
 ---
 
@@ -57,13 +57,13 @@ data/raw/python_cvefixes_methods.jsonl ─┐
 data/raw/ghsa/ghsa_methods.jsonl ───────┼─ merge_all_sources.py (explode pairs, noise filter, SHA-1 dedup)
 data/raw/large/benign_samples.jsonl ────┤
 data/raw/large/vulnerable_samples.jsonl ─┘
-  ▼ data/raw/master_samples.jsonl          (~101,414 records)
+  ▼ data/raw/master_samples.jsonl          (~139,957 records)
 clean_comments.py                          (remove inline comments)
   ▼ data/processed/master_cleaned.jsonl
 normalize.py                              (standardize whitespace, CRLF->LF, dedent)
   ▼ data/processed/master_normalized.jsonl
 validate_ast.py                           (verify valid Python AST via 4 strategies)
-  ▼ data/processed/master_validated.jsonl  (101,336 valid records)
+  ▼ data/processed/master_validated.jsonl  (139,879 valid records)
 build_samples.py                          (canonicalize schema, ensure unique sample_id)
   ▼ data/final/master_semantic_samples.jsonl
 split.py                                  (80/10/10 repository-disjoint, seed 42)
@@ -75,7 +75,7 @@ validate_ast.py
 strip_docstrings.py                       (strip docstrings via AST NodeTransformer)
   ▼ data/processed/master_graph_ready.jsonl
 build_pdg.py                              (construct PDG graph with AST, CFG, DFG, Call edges)
-  ▼ data/final/master_pdg.jsonl
+  ▼ data/final/master_pdg.jsonl            (139,847 graphs)
 ```
 
 ---
@@ -135,11 +135,11 @@ $$\text{fp} = \text{SHA1}(\text{" ".join}(\text{code.split}()))$$
 
 | Split | Total Samples | Vulnerable (1) | Safe (0) | Ratio (Safe:Vuln) |
 |---|---|---|---|---|
-| **Train** | 86,114 | 18,383 | 67,731 | ~3.7 : 1 |
-| **Validation** | 8,446 | 2,445 | 6,001 | ~2.5 : 1 |
-| **Test** | 6,776 | 1,872 | 4,904 | ~2.6 : 1 |
-| **Total** | **101,336** | **22,700** | **78,636** | ~3.5 : 1 |
+| **Train** | 111,902 | 24,154 | 87,748 | ~3.63 : 1 |
+| **Validation** | 13,987 | 3,019 | 10,968 | ~3.63 : 1 |
+| **Test** | 13,990 | 3,020 | 10,970 | ~3.63 : 1 |
+| **Total** | **139,879** | **30,193** | **109,686** | ~3.63 : 1 |
 
 > [!TIP]
-> Notice the class imbalance (~3.5:1 safe to vulnerable). When training, use `focal_loss` with appropriate `alpha` or weighted loss (`class_weight`) to optimize balanced precision and recall.
+> Notice the class imbalance (~3.63:1 safe to vulnerable, ~78.4% safe vs 21.6% vulnerable). When training, use `focal_loss` with appropriate `alpha` (e.g. $\alpha = 1 - \text{pos\_rate} \approx 0.784$) or weighted loss (`class_weight`) to optimize balanced precision and recall.
 

@@ -54,11 +54,11 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 
 | Dataset | Use |
 |---|---|
-| CVEFixes (~2,985 pairs) | Component of the Master training corpus |
-| GHSA (~17,049 pairs) | Component of the Master training corpus |
-| Large Benign (~90,000 samples) | Component of the Master training corpus |
-| Large Vulnerable (~15,000 samples) | Component of the Master training corpus |
-| Master Dataset (`data/raw/master_samples.jsonl`, 101,336 training samples) | Train/val/in-domain test (80/10/10 cross-dataset repository-disjoint, seed 42) |
+| CVEFixes (~2,985 pairs) | Component of the Master training corpus (~5,958 methods) |
+| GHSA (~17,049 methods) | Component of the Master training corpus |
+| Large Benign (~130,000 samples) | Component of the Master training corpus |
+| Large Vulnerable (~25,014 samples) | Component of the Master training corpus |
+| Master Dataset (`master_semantic_samples.jsonl`, 139,879 valid samples) | Train (111,902), Val (13,987), Test (13,990) (80/10/10 repository-disjoint, seed 42) |
 
 ---
 

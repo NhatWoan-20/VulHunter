@@ -14,19 +14,20 @@ Thư mục này quản lý toàn bộ vòng đời dữ liệu của dự án **
 ```text
 data/
 ├── README.md                      # Tài liệu hướng dẫn quản lý dữ liệu này
-├── raw/                           # Dữ liệu nguồn thô từ CVEFixes và GHSA
+├── raw/                           # Dữ liệu nguồn thô từ CVEFixes, GHSA và Large Corpus
 │   ├── databases/                 # Cơ sở dữ liệu SQLite & script nạp CVEFixes (cvefixes.db)
 │   │   ├── README.md              # Hướng dẫn chi tiết tải & dựng cvefixes.db từ Zenodo
 │   │   └── import_cvefixes.py     # Script import CVEfixes_v1.0.8.sql.gz vào SQLite
-│   ├── cvefixes/                  # Dữ liệu thô trích xuất từ CVEFixes
-│   └── ghsa/                      # Dữ liệu thô tải từ GitHub Security Advisories
-├── final/                         # Dữ liệu tổng hợp sau làm sạch và chuẩn hóa
-│   └── master_semantic_samples.jsonl # Tập mẫu code hoàn chỉnh (30,454 mẫu)
-├── processed/                     # Đồ thị mã nguồn phục vụ nhánh Graph & Fusion
-│   └── master_pdg.jsonl           # Biểu diễn đồ thị PDG (AST, CFG, DFG, Call)
+│   ├── python_cvefixes_methods.jsonl # 2,985 fix pairs từ CVEFixes (~5,958 methods)
+│   ├── ghsa/ghsa_methods.jsonl    # 17,049 methods từ GitHub Security Advisories
+│   └── large/                     # 130,000 benign + 25,014 vulnerable samples
+├── final/                         # Dữ liệu tổng hợp sau làm sạch và chuẩn hóa AST
+│   ├── master_semantic_samples.jsonl # Tập mẫu code hoàn chỉnh (139,879 mẫu: 109,686 safe, 30,193 vuln)
+│   └── master_pdg.jsonl           # Biểu diễn đồ thị PDG (139,847 đồ thị: AST, CFG, DFG, Call)
+├── processed/                     # Dữ liệu qua các bước pipeline (cleaned, normalized, validated)
 └── splits/                        # Tập chia huấn luyện 80/10/10 (Strict Repository-Disjoint)
-    ├── train.jsonl                # Tập huấn luyện (~80% repository)
-    ├── validation.jsonl           # Tập kiểm định (~10% repository)
+    ├── train.jsonl                # Tập huấn luyện (111,902 mẫu: 87,748 safe, 24,154 vuln)
+    ├── validation.jsonl           # Tập kiểm định (13,987 mẫu: 10,968 safe, 3,019 vuln)
     └── test.jsonl                 # Tập kiểm thử độc lập (13,990 mẫu: 10,970 safe, 3,020 vuln)
 ```
 

@@ -47,7 +47,7 @@ File tải về là bản sao lưu cơ sở dữ liệu dạng SQL được nén
 Cách này đọc file nén và nạp thẳng vào SQLite mà **không cần tạo file `.sql` trung gian** (tiết kiệm được ~50 GB dung lượng ổ cứng):
 
 *   **Dùng script tiện ích tự động (Khuyên dùng trên Windows/Linux):**
-    Chúng tôi đã viết sẵn script [import_cvefixes.py](file:///c:/Users/NhQu/Documents/VulHunter/data/raw/databases/import_cvefixes.py) trong thư mục này:
+    Chúng tôi đã viết sẵn script [`import_cvefixes.py`](import_cvefixes.py) trong thư mục này:
     ```bash
     # Tự động tìm file CVEfixes_v1.0.8.sql.gz và nạp thẳng vào cvefixes.db
     python data/raw/databases/import_cvefixes.py
@@ -129,14 +129,14 @@ Sau khi file `data/raw/databases/cvefixes.db` đã sẵn sàng, hãy di chuyển
 python scripts/extraction/extract.py
 ```
 
-*   **Kết quả đầu ra:** File [python_cvefixes_methods.jsonl](file:///c:/Users/NhQu/Documents/VulHunter/data/raw/python_cvefixes_methods.jsonl) trong thư mục `data/raw/` với **2,985** mẫu hàm Python.
-*   **Báo cáo trích xuất:** File [reports/extraction/extract.json](file:///c:/Users/NhQu/Documents/VulHunter/reports/extraction/extract.json).
+*   **Kết quả đầu ra:** File [`python_cvefixes_methods.jsonl`](../python_cvefixes_methods.jsonl) trong thư mục `data/raw/` với **2,985** mẫu hàm Python.
+*   **Báo cáo trích xuất:** File `reports/extraction/extract.json`.
 
 ---
 
 ## 4. Giải phóng dung lượng ổ đĩa (Khuyến nghị)
 
-Toàn bộ pipeline tiếp theo của VulHunter (tạo Master dataset bằng [`scripts/extraction/merge_all_sources.py`](file:///c:/Users/NhQu/Documents/GitHub/VulHunter/scripts/extraction/merge_all_sources.py), tiền xử lý, trích xuất đồ thị AST/CFG, và huấn luyện mô hình) chỉ đọc dữ liệu từ `data/raw/python_cvefixes_methods.jsonl`.
+Toàn bộ pipeline tiếp theo của VulHunter (tạo Master dataset bằng [`scripts/extraction/merge_all_sources.py`](../../../scripts/extraction/merge_all_sources.py), tiền xử lý, trích xuất đồ thị AST/CFG, và huấn luyện mô hình) chỉ đọc dữ liệu từ `data/raw/python_cvefixes_methods.jsonl`.
 
 Vì vậy, sau khi `extract.py` chạy thành công:
 1.  Bạn có thể **xóa file `cvefixes.db`** (~51.7 GB) và file `CVEfixes_v1.0.8.sql` nếu muốn tiết kiệm không gian đĩa cứng.

@@ -9,10 +9,10 @@ This directory handles merging all raw sources into a unified single-sample form
 ```mermaid
 flowchart TD
     A[python_cvefixes_methods.jsonl<br/>(2,985 pairs)] -->|Explode to singles| M{merge_all_sources.py}
-    B[ghsa_methods.jsonl<br/>(17,049 pairs)] -->|Explode to singles| M
-    C[large/benign_samples.jsonl<br/>(90,000 singles)] -->|Canonicalize| M
-    D[large/vulnerable_samples.jsonl<br/>(15,000 singles)] -->|Canonicalize| M
-    M -->|Noise Filter + Global SHA-1 Dedup| E[data/raw/master_samples.jsonl<br/>(~101k samples)]
+    B[ghsa_methods.jsonl<br/>(17,049 methods)] -->|Explode to singles| M
+    C[large/benign_samples.jsonl<br/>(130,000 singles)] -->|Canonicalize| M
+    D[large/vulnerable_samples.jsonl<br/>(25,014 singles)] -->|Canonicalize| M
+    M -->|Noise Filter + Global SHA-1 Dedup| E[data/raw/master_samples.jsonl<br/>(139,957 samples)]
 ```
 
 ## Files Description
@@ -32,7 +32,7 @@ flowchart TD
   - `data/raw/large/benign_samples.jsonl`
   - `data/raw/large/vulnerable_samples.jsonl`
 - **Output**:
-  - `data/raw/master_samples.jsonl`: The unified Master Dataset (~101,414 single-sample records).
+  - `data/raw/master_samples.jsonl`: The unified Master Dataset (139,957 single-sample records, yielding 139,879 AST-validated samples).
 
 ## How to Run
 
