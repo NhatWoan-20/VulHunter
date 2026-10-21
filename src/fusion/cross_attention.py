@@ -201,7 +201,8 @@ class CrossModalFusion(nn.Module):
         dropout: Dropout probability.
         combine: How to combine the two modalities after fusion.
             Options: "mean" (average), "concat" (concatenate + project),
-            "gated" (learned gating).
+            "gated" (learned gating), "film" (FiLM modulation; used by the
+            proposed Fusion configs and notebook experiments).
     """
 
     def __init__(

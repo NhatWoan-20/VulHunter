@@ -11,7 +11,7 @@ model:
     output_dim: 256
     freeze_layers: 0           # Full fine-tuning cho mô hình 125M
     dropout: 0.1
-    pooling: "cls"             # ★ [CLS] pooling cho encoder-only
+    pooling: "cls"             # [CLS] pooling cho encoder-only (CodeBERT dung CLS representation)
     gradient_checkpointing: false
     use_fp16: true
   graph:
@@ -28,6 +28,6 @@ model:
     num_layers: 2
     dropout: 0.1
     combine: "film"            # film = FiLM Modulation
-    residual_alpha: 0.2        # ★ 20% semantic residual skip
+    residual_alpha: 0.2        # 20% semantic residual skip (0.2 la optimal tu ablation study)
   heads:
     binary: {hidden_dim: 128, dropout: 0.3}

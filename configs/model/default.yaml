@@ -31,7 +31,7 @@ model:
     num_layers: 2
     dropout: 0.1
     combine: "film"            # gated | concat | mean | film
-    residual_alpha: 0.2        # ★ 20% semantic-only skip
+    residual_alpha: 0.2        # 20% semantic-only skip (default; Graph Advanced notebook dung 0.2)
   # ─── Prediction heads (chỉ binary) ───
   heads:
     binary:

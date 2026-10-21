@@ -13,7 +13,7 @@ Contains the **Semantic Encoder** (`encoder.py`). This module wraps a pre-traine
 Contains the **Graph Encoder** (`encoder.py`). This implements a **Relational Graph Convolutional Network (RGCN)** designed to process heterogeneous program graphs (PDG Graph). It features relation-aware convolutions, allowing the network to distinguish between control-flow, data-flow, and call dependencies when aggregating neighborhood information.
 
 ### 3. `fusion/`
-Contains the **Cross-Modal Fusion** module (`cross_attention.py`). This module implements a Bidirectional Cross-Attention mechanism. It bridges the gap between semantic tokens and structural graph representations, allowing the semantic context to attend to structural graphs and vice-versa, outputting a unified, gated representation.
+Contains the **Cross-Modal Fusion** module (`cross_attention.py`). This module implements a Bidirectional Cross-Attention mechanism. It bridges the gap between semantic tokens and structural graph representations, allowing the semantic context to attend to structural graphs and vice-versa, outputting a unified representation via FiLM modulation (default `combine="film"`) or learned gating/concat/mean.
 
 ### 4. `multitask/`
 The apex of the model architecture.

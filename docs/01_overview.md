@@ -73,7 +73,7 @@ In Python source code, vulnerabilities often stem from subtle semantic interacti
 
 - **Reproducibility:** Deterministic repository-disjoint splitting (seed 42), threshold tuning on validation set, version-pinned dependencies.
 - **Modularity:** Swappable LLM backbones (CodeBERT) and GNN layers (GAT, GCN, Graph Transformer) behind encoder interfaces.
-- **Efficiency:** Gradient accumulation (eff. batch 16-32), FP16 mixed precision, Full Fine-tuning fine-tuning for CodeBERT.
+- **Efficiency:** Gradient accumulation (effective batch 16 on Kaggle 2x T4; 8 local per device, 16 with DDP x2), FP16 mixed precision, Full Fine-tuning for CodeBERT.
 - **Resource Efficient:** Fits Kaggle 2x T4 (16GB VRAM) with proper configuration.
 
 

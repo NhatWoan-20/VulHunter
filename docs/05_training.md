@@ -58,13 +58,18 @@ Different components have different learning rates:
 
 ### 4.2 Training Schedule
 
-| Parameter | Fusion | Semantic | Graph |
+Training hyperparameters are defined per mode in `configs/train/*.yaml`. The table below reflects those shipped configs:
+
+| Parameter | Fusion (`fusion.yaml`) | Semantic (`semantic_codebert.yaml`) | Graph (`graph.yaml`) |
 |---|---|---|---|
-| Epochs | 8-12 | 8-10 | 20-25 |
-| Batch Size | 2 (per device) | 4 | 8 |
-| Grad Accumulation | 4 | 4 | 2 |
-| Effective Batch | 16-32 | 16 | 16 |
-| Patience | 2-4 | 3 | 4-5 |
+| Epochs (early-stopping cap) | 12 | 15 | 30 |
+| Batch Size (per device) | 2 | 8 | 16 |
+| Grad Accumulation | 4 | 2 | 1 |
+| Effective Batch | 8 (16 w/ DDP×2) | 16 | 16 |
+| Patience | 4 | 3 | 5 |
+
+> [!NOTE]
+> Kaggle profile `configs/kaggle/train_kaggle.yaml` overrides the Fusion schedule for a 2x T4 session (8 epochs, per-device batch 2, grad accum 4, effective batch 16, patience 2).
 
 ### 4.3 Common Settings
 
