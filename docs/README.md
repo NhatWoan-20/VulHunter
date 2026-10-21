@@ -35,7 +35,7 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
 
 1. **Semantic Perception**: Pretrained **CodeBERT** (Full Fine-tuning) for token semantics and control keywords.
 2. **Structural Perception**: **Program Dependence Graph (PDG)** + Heterogeneous Graph Neural Network (**RGCN**) with subtoken hashing and security role features processing heterogeneous edge types (AST, CFG, DFG, Call).
-3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Gated Bidirectional Cross-Attention** with residual skip that dynamically condition and balance semantic and structural signals.
+3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Bidirectional Cross-Attention** with residual skip that dynamically condition and balance semantic and structural signals.
 4. **Binary Supervision**: Focal Loss giải quyết mất cân bằng mẫu (class imbalance).
 
 ---
@@ -313,7 +313,7 @@ python scripts/training/train.py \
 ```text
 VulHunter/
 ├── configs/                     # Hyperparameter & architecture specs
-│   ├── model/default.yaml       # CodeBERT + RGCN + Gated Cross-Attention
+│   ├── model/default.yaml       # CodeBERT + RGCN + FiLM Cross-Attention
 │   ├── train/                   # Training profiles (semantic_codebert.yaml, graph.yaml, fusion.yaml)
 │   └── kaggle/                  # Kaggle profiles
 ├── data/
@@ -332,7 +332,7 @@ VulHunter/
 ├── src/                         # Core VulHunter Library
 │   ├── semantic/encoder.py      # CodeBERT, CLS pooling
 │   ├── graph/encoder.py         # Heterogeneous RGCN Graph Encoder (AST/CFG/DFG)
-│   ├── fusion/cross_attention.py# FiLM Modulation / Gated Cross-Attention + Residual Skip
+│   ├── fusion/cross_attention.py# FiLM Modulation / Bidirectional Cross-Attention + Residual Skip
 │   ├── multitask/model.py       # VulHunterModel (binary output)
 │   ├── multitask/heads.py       # BinaryHead
 │   └── utils/                   # Datasets, focal loss, metrics

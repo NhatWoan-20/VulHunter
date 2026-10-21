@@ -27,7 +27,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
                        ┌──────────────────────────────┐
                        │     Cross-Modal Fusion       │
                        │ (Gated Bidirectional Cross-Attn)│
-                       │ + Residual Skip (α=0.3)     │
+                       │ + Residual Skip (α=0.2)     │
                        └──────────────┬───────────────┘
                                       │ h_fused ∈ ℝ^(B×D)
                                       ▼
@@ -72,8 +72,8 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 | Property | Value |
 |---|---|
 | **Mechanism** | Bidirectional multi-head cross-attention |
-| **Combine Mode** | `gated` (options: `concat`, `mean`) |
-| **Residual Skip** | `h_fused = (1-α) * h_cross + α * h_sem` where α=0.3 |
+| **Combine Mode** | `film` (FiLM Modulation; options: `gated`, `concat`, `mean`) |
+| **Residual Skip** | `h_fused = (1-α) * h_cross + α * h_sem` where α=0.2 |
 | **Layers** | 2 cross-attention layers |
 | **Heads** | 8 |
 | **Output** | `h_fused ∈ ℝ^D` (same dimension as semantic/graph outputs) |
@@ -85,7 +85,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 | **Input** | `h_fused ∈ ℝ^D` |
 | **Architecture** | MLP: Linear(D→128) → GELU → Dropout → Linear(128→64) → GELU → Dropout → Linear(64→1) |
 | **Output** | Logit ŷ ∈ ℝ¹ |
-| **Loss Function** | Focal Loss (α=0.5, γ=2.0) |
+| **Loss Function** | Focal Loss (α = 1 − pos_rate ≈ 0.79, γ=2.0) |
 
 ---
 
@@ -134,8 +134,8 @@ model:
     num_heads: 8
     num_layers: 2
     dropout: 0.1
-    combine: "gated"
-    residual_alpha: 0.3
+    combine: "film"
+    residual_alpha: 0.2
   heads:
     binary:
       hidden_dim: 128

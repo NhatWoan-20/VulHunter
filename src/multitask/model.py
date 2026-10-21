@@ -123,7 +123,7 @@ class VulHunterModel(nn.Module):
         if mode == "fusion":
             fusion_config.setdefault("hidden_dim", output_dim)
             # Extract residual_alpha before passing to constructor (not an init param)
-            self._fusion_residual_alpha = float(fusion_config.pop("residual_alpha", 0.3))
+            self._fusion_residual_alpha = float(fusion_config.pop("residual_alpha", 0.2))
             # FiLM Modulation / Cross-Modal Fusion: Cho phép cấu hình fusion_level: "token" (token-level) hoặc "pooled" (late fusion)
             self.fusion_level = fusion_config.pop("fusion_level", "token")
             self.fusion = CrossModalFusion(**fusion_config)

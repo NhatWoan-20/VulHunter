@@ -42,8 +42,8 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
 
 1. **Semantic Perception**: Pretrained **CodeBERT** (Full Fine-tuning) capturing token-level semantics, control keywords, and local context.
 2. **Structural Perception**: **Heterogeneous Program Dependence Graph (PDG)** processed via Relational Graph Convolutional Networks (**RGCN**) with subtoken hashing and vulnerability-aware flow signals (AST, Control Flow, Data Flow, and Call relations).
-3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Bidirectional Cross-Attention** with residual skip connections ($\alpha = 0.3$), dynamically conditioning semantic signals with structural flow context while protecting against noisy graph artifacts.
-4. **Binary Focal Supervision**: Class-weighted Focal Loss ($\alpha=0.5, \gamma=2.0$) coupled with validation threshold tuning to tackle real-world class imbalance.
+3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Bidirectional Cross-Attention** with residual skip connections ($\alpha = 0.2$), dynamically conditioning semantic signals with structural flow context while protecting against noisy graph artifacts.
+4. **Binary Focal Supervision**: Class-weighted Focal Loss ($\alpha = 1 - \text{pos\_rate}$, auto-tuned $\approx 0.79$ on the training split, $\gamma=2.0$) coupled with validation threshold tuning to tackle real-world class imbalance.
 
 ---
 
@@ -84,7 +84,7 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
                            ┌─────────────────────────────────────┐
                            │   Cross-Modal Fusion Stage (FiLM)   │
                            │   γ(h_graph) ⊙ h_sem + β(h_graph)   │
-                           │    + Residual Skip (α = 0.2-0.3)    │
+                           │    + Residual Skip (α = 0.2)        │
                            └──────────────────┬──────────────────┘
                                               │
                                               │ h_fused ∈ ℝ^(B × 256)
@@ -93,7 +93,8 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
                            │       Binary Prediction Head        │
                            │  MLP: Linear(256→128)→GELU→Linear(1)│
                            │    Class-Weighted Focal Loss        │
-                           │  (α = 0.5, γ = 2.0, Threshold τ*)   │
+                           │  (α = 1-pos_rate ≈ 0.79, γ = 2.0,   │
+                           │           Threshold τ*)             │
                            └──────────────────┬──────────────────┘
                                               │
                                               ▼
@@ -328,8 +329,7 @@ VulHunter/
 │   ├── extraction/              # Data collection & merger scripts (merge_all_sources.py)
 │   ├── preprocessing/           # Normalization, AST validation, and repo-disjoint splitting
 │   │   ├── run_pipeline.py      # ★ End-to-end pipeline orchestrator
-│   │   ├── split.py             # Strict repository-disjoint partitioner
-│   │   └── split_random.py      # Stratified random partitioner (ablation baseline)
+│   │   └── split.py             # Strict repository-disjoint partitioner
 │   ├── graph/build_pdg.py       # AST/CFG/DFG heterogeneous PDG builder
 │   ├── training/train.py        # Distributed & mixed-precision training script
 │   ├── evaluation/evaluate.py   # Test set evaluation and metric reporting

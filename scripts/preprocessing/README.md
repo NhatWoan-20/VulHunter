@@ -30,7 +30,6 @@ flowchart TD
 - **`build_samples.py`**: Canonicalizes training schema (`sample_id`, `repository`, `code`, `binary_label`) and ensures unique IDs.
 - **`strip_docstrings.py`**: Removes docstrings via AST NodeTransformer to prepare clean code for graph PDG extraction.
 - **`split.py`**: Performs **repository-disjoint** split (80% train, 10% validation, 10% test, seed=42) and verifies zero cross-split leakage.
-- **`split_random.py`**: Performs **stratified random** split (80/10/10) preserving class distribution without repo isolation (used as an experimental baseline).
 
 ## Input / Output
 

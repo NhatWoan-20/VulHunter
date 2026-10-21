@@ -39,7 +39,7 @@ $$\mathcal{L}_{\text{focal}} = -\alpha_t (1 - p_t)^\gamma \log(p_t)$$
 
 | Parameter | Value | Purpose |
 |---|---|---|
-| α (alpha) | 0.5 | Balanced weighting (auto-tuned based on pos/neg ratio) |
+| α (alpha) | `1 − pos_rate` (≈ 0.79) | Auto-tuned on the training split's pos/neg ratio (`α = 1 − pos_rate`); 0.5 is only the config fallback |
 | γ (gamma) | 2.0 | Focuses gradient updates on hard examples |
 
 ---

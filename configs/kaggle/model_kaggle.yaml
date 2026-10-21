@@ -4,7 +4,7 @@
 #   - Full fine-tuning cho CodeBERT (~125M params) nhẹ nhàng trên 16GB VRAM.
 #   - CLS pooling cho RoBERTa/encoder-only architecture.
 #   - FP16 AMP để tăng tốc độ huấn luyện và tiết kiệm bộ nhớ.
-#   - Residual skip (alpha=0.3) bảo tồn tín hiệu ngữ nghĩa khi đồ thị thưa/nhiễu.
+#   - Residual skip (alpha=0.2) bảo tồn tín hiệu ngữ nghĩa khi đồ thị thưa/nhiễu
 model:
   semantic:
     backbone: "microsoft/codebert-base"
@@ -27,7 +27,7 @@ model:
     num_heads: 8
     num_layers: 2
     dropout: 0.1
-    combine: "gated"
-    residual_alpha: 0.3        # ★ 30% semantic residual skip
+    combine: "film"            # film = FiLM Modulation
+    residual_alpha: 0.2        # ★ 20% semantic residual skip
   heads:
     binary: {hidden_dim: 128, dropout: 0.3}

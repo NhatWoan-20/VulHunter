@@ -57,7 +57,7 @@ Vulnerabilities often involve non-local data dependencies (e.g., untrusted user 
 ### 3.3 Why Residual Skip in Cross-Modal Fusion?
 
 When graph extraction yields sparse, noisy, or empty structures (e.g. for functions with irregular syntax), the fusion module must degrade gracefully to semantic representations. Residual skip connections (`h_fused = α * h_sem + (1-α) * cross_attended`) ensure:
-- **α = 0.3:** 30% semantic signal is preserved unconditionally, guarding against structural noise.
+- **α = 0.2:** 20% semantic signal is preserved unconditionally, guarding against structural noise.
 - **Robust Performance:** Prevents catastrophic drops in model accuracy when graph topology alone provides weak signals across disjoint repositories.
 
 ---

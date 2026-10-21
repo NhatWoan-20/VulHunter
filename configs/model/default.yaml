@@ -3,7 +3,7 @@
 #
 # Cập nhật theo phương pháp đã đề xuất:
 #   - Semantic: CodeBERT + cls pooling (encoder-only)
-#   - Fusion: residual_alpha=0.3 giữ semantic signal khi graph rỗng/noisy
+#   - Fusion: residual_alpha=0.2 giữ semantic signal khi graph rỗng/noisy
 #   - Heads: BinaryHead (kiến trúc sẵn sàng mở rộng multi-task)
 model:
   # ─── Semantic encoder (src/semantic/encoder.py) ───
@@ -30,8 +30,8 @@ model:
     num_heads: 8
     num_layers: 2
     dropout: 0.1
-    combine: "gated"           # gated | concat | mean
-    residual_alpha: 0.3        # ★ 30% semantic-only skip
+    combine: "film"            # gated | concat | mean | film
+    residual_alpha: 0.2        # ★ 20% semantic-only skip
   # ─── Prediction heads (chỉ binary) ───
   heads:
     binary:

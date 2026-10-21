@@ -38,6 +38,6 @@ model:
     pooling: "cls"
     gradient_checkpointing: false  # Bật true nếu OOM trên T4
   fusion:
-    combine: "gated"
-    residual_alpha: 0.3
+    combine: "film"            # film = FiLM Modulation
+    residual_alpha: 0.2
 
