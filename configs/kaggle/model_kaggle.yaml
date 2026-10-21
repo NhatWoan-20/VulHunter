@@ -18,7 +18,7 @@ model:
     node_feature_dim: 128
     hidden_dim: 256
     output_dim: 256
-    num_layers: 4
+    num_layers: 3               # Dong bo thuc nghiem Fusion/Baseline (Graph Advanced=4 qua notebook)
     num_heads: 8
     num_edge_types: 3
     dropout: 0.2

@@ -301,7 +301,7 @@ All experimental variants were evaluated on the exact same held-out test partiti
 ```text
 VulHunter/
 ├── configs/                     # Hyperparameter & architecture specifications
-│   ├── model/default.yaml       # Default CodeBERT + RGCN + Cross-Attention model config
+│   ├── model/default.yaml       # Default CodeBERT + RGCN + FiLM Cross-Attention config
 │   ├── train/                   # Training profiles (semantic_codebert.yaml, graph.yaml, fusion.yaml)
 │   └── kaggle/                  # Kaggle 2xT4 dedicated execution profiles
 ├── data/                        # Dataset schemas & database extraction tools

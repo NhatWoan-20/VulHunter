@@ -383,7 +383,7 @@ Dự án đang tích cực mở rộng nghiên cứu sang thế hệ mô hình t
 ### 2. Mô Hình Kết Hợp LLM + Graph Reasoning (Graph-Augmented LLMs & Graph-RAG)
 Mặc dù LLM sở hữu năng lực hiểu ngữ nghĩa và quy ước code vượt trội, các nghiên cứu gần đây chỉ ra LLM thường gặp hiện tượng *"mù cấu trúc"* (structural blindness) và dễ hallucinate trên các đường dẫn lan truyền dữ liệu (taint flow) phức tạp hoặc phân nhánh rẽ nhiều cấp. Hướng tiếp cận kế thừa từ VulHunter:
 - **Graph-Guided Context Slicing (Graph-RAG)**: Sử dụng PDG (Program Dependence Graph) để cắt lát chương trình (program slicing) tự động từ Taint Source đến Dangerous Sink, đưa đúng lát cắt code quan trọng vào prompt của LLM thay vì nạp toàn bộ file code dài gây loãng tín hiệu chú ý (lost in the middle).
-- **Joint Graph-LLM Embedding Alignment**: Tương tự cơ chế FiLM / Gated Cross-Attention trong nhánh Fusion của VulHunter, biểu diễn ẩn của LLM (hidden states) sẽ được điều biến hoặc tương tác trực tiếp với node/graph embeddings từ RGCN, kết hợp hoàn hảo giữa *suy luận ngữ nghĩa tự nhiên* và *ràng buộc luồng dữ liệu hình thức*.
+- **Joint Graph-LLM Embedding Alignment**: Tương tự cơ chế FiLM / Bidirectional Cross-Attention trong nhánh Fusion của VulHunter, biểu diễn ẩn của LLM (hidden states) sẽ được điều biến hoặc tương tác trực tiếp với node/graph embeddings từ RGCN, kết hợp hoàn hảo giữa *suy luận ngữ nghĩa tự nhiên* và *ràng buộc luồng dữ liệu hình thức*.
 
 ### 3. Giải Thích và Định Vị Lỗ Hổng Trực Quan (Explainable AI - XAI)
 - **Taint Path Tracing**: Tận dụng đồ thị PDG để trích xuất và hiển thị trực quan cây lan truyền lỗ hổng (Vulnerability Propagation Path) trên giao diện web hoặc IDE extension.

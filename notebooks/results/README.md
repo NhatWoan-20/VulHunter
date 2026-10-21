@@ -10,7 +10,7 @@
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | 🛡️ [`vulhunter-fusion.ipynb`](vulhunter-fusion.ipynb) | **[SOTA] CodeBERT + Enriched RGCN + FiLM Modulation** (Pooled level, residual $\alpha=0.2$) | ~131.7M | 0.25 | **0.7519** | **0.8659** | 0.6644 | 0.9399 | **0.7921** | **0.6821** |
 | 🔤 [`vulhunter-semantic-only-codebert.ipynb`](vulhunter-semantic-only-codebert.ipynb) | **Semantic Baseline**: Full Fine-Tuning `microsoft/codebert-base` (512 tokens, CLS pooling) | ~124.6M | 0.45 | 0.7514 | 0.8603 | **0.6670** | **0.9402** | 0.7916 | 0.6811 |
-| 🕸️ [`vulhunter-graph-only-advanced.ipynb`](vulhunter-graph-only-advanced.ipynb) | **Graph Advanced**: 3-layer RGCN + Enriched Subtoken Hashing (16k vocab) + Security Roles | ~3.25M | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
+| 🕸️ [`vulhunter-graph-only-advanced.ipynb`](vulhunter-graph-only-advanced.ipynb) | **Graph Advanced**: 4-layer RGCN + Enriched Subtoken Hashing (16k vocab) + Security Roles | ~3.25M | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
 | 🌲 [`vulhunter-graph-only.ipynb`](vulhunter-graph-only.ipynb) | **Graph Baseline**: 3-layer RGCN + Pure AST NodeType Embedding (64 node types) | ~585K | 0.65 | 0.4346 | 0.7258 | 0.3101 | 0.7034 | 0.3847 | 0.2315 |
 
 ---

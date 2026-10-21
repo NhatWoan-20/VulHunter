@@ -61,7 +61,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 
 | Property | Value |
 |---|---|
-| **Architecture** | Stacked RGCN layers |
+| **Architecture** | Stacked RGCN layers (3 layers default; 4 layers for Graph Advanced) |
 | **Node Features** | `d_node=128` (NodeTypeEmbedding over AST node types) |
 | **Hidden/Output Dim** | 256 |
 | **Edge Types (3)** | `CONTROL_FLOW`, `DATA_FLOW`, `CALL` (`EDGE_TYPE_MAP`) |
@@ -126,7 +126,7 @@ model:
     node_feature_dim: 128
     hidden_dim: 256
     output_dim: 256
-    num_layers: 4
+    num_layers: 3
     num_edge_types: 3
     dropout: 0.2
   fusion:
