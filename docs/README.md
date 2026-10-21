@@ -62,7 +62,7 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
                  ▼                                               ▼
        [Semantic Branch]                                [Structural Branch]
      CodeBERT (125M)                           Heterogeneous Program Graph
-     + Full Fine-tuning                               (AST + CFG + DFG + Call)
+     + Full Fine-tuning                        (3 edge relations: CONTROL/DATA/CALL)
      CLS pooling
                  │                                               │
         Per-token sequence                              NodeType Embedding + 

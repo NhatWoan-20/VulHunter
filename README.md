@@ -68,7 +68,7 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
     ┌───────────────────────────┐                           ┌───────────────────────────┐
     │      Semantic Branch      │                           │     Structural Branch     │
     │  CodeBERT Backbone (125M) │                           │ Heterogeneous PDG + RGCN  │
-    │    + Full Fine-Tuning     │                           │  (AST + CFG + DFG + Call) │
+    │    + Full Fine-Tuning     │                           │ (3 edge relations + AST)  │
     ├───────────────────────────┤                           ├───────────────────────────┤
     │ • BPE Tokenizer (512 ctx) │                           │ • NodeType Embedding      │
     │ • Transformer 12 layers   │                           │ • Subtoken Hashing (16k)  │

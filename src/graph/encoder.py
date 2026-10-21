@@ -325,7 +325,7 @@ class GraphEncoder(nn.Module):
     """Heterogeneous Graph Neural Network encoder for program graphs using RGCN.
 
     Stacks multiple RGCN layers with edge-type-aware convolutions to learn
-    structural representations from combined AST + CFG + DFG + Call graphs.
+    structural representations from PDG (3 edge relations: CONTROL_FLOW, DATA_FLOW, CALL).
     Hỗ trợ làm giàu Node features với nội dung mã nguồn qua Enriched Subtoken Hashing,
     Shared Pretrained CodeBERT Backbone, Vulnerability-Aware Flow Signals,
     và node-level auxiliary classification.
