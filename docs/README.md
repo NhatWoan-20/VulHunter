@@ -81,7 +81,7 @@ Traditional vulnerability detectors rely either on purely syntactic sequence rep
                               P(vulnerable) ∈ [0, 1]
 ```
 
-Configuration wiring được tách riêng ở `configs/model/default.yaml` và training schedules ở `configs/train/` (`semantic.yaml`, `graph.yaml`, `fusion.yaml`).
+Configuration wiring được tách riêng ở `configs/model/default.yaml` và training schedules ở `configs/train/` (`semantic_codebert.yaml`, `graph.yaml`, `fusion.yaml`).
 
 ---
 
@@ -154,7 +154,7 @@ python scripts/preprocessing/run_pipeline.py --skip-tokenize
 # Semantic-only baseline
 python scripts/training/train.py \
     --mode semantic_only \
-    --config configs/train/semantic.yaml \
+    --config configs/train/semantic_codebert.yaml \
     --model-config configs/model/default.yaml \
     --use-amp
 
@@ -232,7 +232,7 @@ curl -X POST "http://localhost:8000/predict" \
 ```bash
 python scripts/training/train.py \
   --mode semantic_only \
-  --config configs/train/semantic.yaml \
+  --config configs/train/semantic_codebert.yaml \
   --model-config configs/kaggle/model_kaggle.yaml \
   --use-amp
 ```
@@ -314,7 +314,7 @@ python scripts/training/train.py \
 VulHunter/
 ├── configs/                     # Hyperparameter & architecture specs
 │   ├── model/default.yaml       # CodeBERT + RGCN + Gated Cross-Attention
-│   ├── train/                   # Training profiles (semantic.yaml, graph.yaml, fusion.yaml)
+│   ├── train/                   # Training profiles (semantic_codebert.yaml, graph.yaml, fusion.yaml)
 │   └── kaggle/                  # Kaggle profiles
 ├── data/
 │   ├── raw/databases/           # CVEFixes DB extraction scripts
@@ -344,7 +344,7 @@ VulHunter/
 │   ├── training/train.py        # Distributed / AMP training runner
 │   ├── evaluation/evaluate.py   # Binary classification evaluation
 │   └── api_deployment.py        # FastAPI server
-├── tests/                       # Test suite (61 unit tests)
+├── tests/                       # Test suite (53 unit tests)
 └── docs/                        # Research methodology & specifications
 ```
 

@@ -100,7 +100,7 @@ The `find_best_threshold()` function scans thresholds from 0.05 to 0.95 and sele
 # Semantic-only baseline
 python scripts/training/train.py \
     --mode semantic_only \
-    --config configs/train/semantic.yaml \
+    --config configs/train/semantic_codebert.yaml \
     --model-config configs/model/default.yaml \
     --use-amp
 
