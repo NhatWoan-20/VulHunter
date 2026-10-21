@@ -26,7 +26,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
                                       ▼
                        ┌──────────────────────────────┐
                        │     Cross-Modal Fusion       │
-                       │ (Gated Bidirectional Cross-Attn)│
+                       │  (FiLM Modulation / Cross-Attn)  │
                        │ + Residual Skip (α=0.2)     │
                        └──────────────┬───────────────┘
                                       │ h_fused ∈ ℝ^(B×D)
@@ -64,7 +64,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 | **Architecture** | Stacked RGCN layers (3 layers default; 4 layers for Graph Advanced) |
 | **Node Features** | `d_node=128` (NodeTypeEmbedding over AST node types) |
 | **Hidden/Output Dim** | 256 |
-| **Edge Types (3)** | `CONTROL_FLOW`, `DATA_FLOW`, `CALL` (`EDGE_TYPE_MAP`) |
+| **Edge Types (3)** | `CONTROL_FLOW`, `DATA_FLOW`, `CALL` (`EDGE_TYPE_MAP`) — shipped configs use `num_edge_types: 3`; the Fusion training notebook over-provisions `5` (unused extra rows are harmless) |
 | **Readout** | Mean + Max pool over nodes → Linear projection → `h_graph ∈ ℝ^D` |
 
 ### 2.3 Cross-Modal Fusion (`src/fusion/cross_attention.py`)
@@ -73,7 +73,7 @@ VulHunter comprises two complementary encoders, cross-modal fusion, and **1 trai
 |---|---|
 | **Mechanism** | Bidirectional multi-head cross-attention |
 | **Combine Mode** | `film` (FiLM Modulation; options: `gated`, `concat`, `mean`) |
-| **Residual Skip** | `h_fused = (1-α) * h_cross + α * h_sem` where α=0.2 |
+| **Residual Skip** | FiLM: `h_fused = (1+γ(v)) ⊙ LN(h_sem) + β(v) + α·h_sem`; non-FiLM: `h_fused = (1-α)·h_cross + α·h_sem`. α=0.2 in both cases |
 | **Layers** | 2 cross-attention layers |
 | **Heads** | 8 |
 | **Output** | `h_fused ∈ ℝ^D` (same dimension as semantic/graph outputs) |

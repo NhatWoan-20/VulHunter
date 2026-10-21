@@ -41,7 +41,7 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
 **VulHunter bridges this fundamental gap** through a co-adaptive multi-modal architecture:
 
 1. **Semantic Perception**: Pretrained **CodeBERT** (Full Fine-tuning) capturing token-level semantics, control keywords, and local context.
-2. **Structural Perception**: **Heterogeneous Program Dependence Graph (PDG)** processed via Relational Graph Convolutional Networks (**RGCN**) with subtoken hashing and vulnerability-aware flow signals (AST, Control Flow, Data Flow, and Call relations).
+2. **Structural Perception**: **Heterogeneous Program Dependence Graph (PDG)** processed via Relational Graph Convolutional Networks (**RGCN**) with subtoken hashing and vulnerability-aware flow signals. The RGCN uses **3 heterogeneous edge relations** (`CONTROL_FLOW`, `DATA_FLOW`, `CALL`; see `EDGE_TYPE_MAP`), while AST structure is encoded through the 64-way AST node-type embedding.
 3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Bidirectional Cross-Attention** with residual skip connections ($\alpha = 0.2$), dynamically conditioning semantic signals with structural flow context while protecting against noisy graph artifacts.
 4. **Binary Focal Supervision**: Class-weighted Focal Loss ($\alpha = 1 - \text{pos\_rate}$, auto-tuned $\approx 0.79$ on the training split, $\gamma=2.0$) coupled with validation threshold tuning to tackle real-world class imbalance.
 
@@ -289,7 +289,7 @@ All experimental variants were evaluated on the exact same held-out test partiti
 | **Graph Baseline (Pure AST)** | 2,192 | 4,876 | 6,094 | 828 | Heavy false alarms due to absence of token semantics |
 | **Graph Advanced (Enriched)** | 2,286 | 2,196 | 8,774 | 734 | Subtoken hashing slashes false alarms by 55% |
 | **Semantic Baseline (CodeBERT)** | 2,598 | **1,297** | **9,673** | 422 | Very strong baseline due to large-scale pretraining |
-| 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** | **Catches the most vulnerabilities (2,615) & reduces missed defects by -5.37%** |
+| 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** | **Catches the most vulnerabilities (2,615) & reduces missed defects by -4.03%** |
 
 > [!TIP]
 > **Why Recall & False Negatives Matter Most**: In automated security auditing, a **False Negative** (a deployed, undetected vulnerability) is disastrous, whereas a False Positive is merely an extra line for triage. VulHunter Fusion detects **2,615 out of 3,020 true vulnerabilities** and achieves the lowest FN rate (405 missed defects), outperforming all single-modality models.

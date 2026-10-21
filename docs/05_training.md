@@ -25,7 +25,7 @@ Three branches share identical data, seed, loss function, scheduler, and early s
 |---|---|---|
 | `semantic_only` | CodeBERT (seq + pool) | Pure semantic baseline |
 | `graph_only` | RGCN on PDG | Pure structural baseline |
-| `fusion` (Proposed) | Semantic + Graph cross-attention | **Proposed hybrid** |
+| `fusion` (Proposed) | Semantic + Graph FiLM modulation (+ cross-attention) | **Proposed hybrid** |
 
 ---
 
@@ -48,9 +48,9 @@ $$\mathcal{L}_{\text{focal}} = -\alpha_t (1 - p_t)^\gamma \log(p_t)$$
 
 ### 4.1 Tiered Learning Rates
 
-Different components have different learning rates:
+Different components have different learning rates. Values below are from the primary `fusion.yaml` profile; per-mode overrides live in each `configs/train/*.yaml` (e.g. `graph.yaml` uses `1e-3` for both the RGCN encoder and the head, `semantic_codebert.yaml` uses `1e-4` for the head since only CodeBERT is fine-tuned):
 
-| Component | Learning Rate | Reason |
+| Component | Learning Rate (fusion) | Reason |
 |---|---|---|
 | Backbone (Full Fine-tuning) | 2e-5 | Fine-tune CodeBERT Transformer layers |
 | Graph Encoder | 1e-4 | Randomly initialized RGCN layers |

@@ -47,7 +47,7 @@ Tất cả mô hình được đánh giá trên cùng một tập test độc l�
 | 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** |
 
 > [!TIP]
-> **Ý nghĩa thực tế của kết quả Fusion**: Trong bài toán phát hiện lỗ hổng phần mềm, **Recall** và **False Negatives (FN)** là những chỉ số quan trọng hàng đầu (bỏ sót lỗ hổng nguy hiểm hơn rất nhiều so với cảnh báo thừa). Mô hình Fusion phát hiện được **2,615 / 3,020** lỗ hổng (cao nhất) và giảm số lỗi bị bỏ sót xuống chỉ còn **405** (giảm 5.37% so với Semantic-Only), đồng thời giữ vững F1-Score (0.7519), PR-AUC (0.7921) và MCC (0.6821) cao nhất.
+> **Ý nghĩa thực tế của kết quả Fusion**: Trong bài toán phát hiện lỗ hổng phần mềm, **Recall** và **False Negatives (FN)** là những chỉ số quan trọng hàng đầu (bỏ sót lỗ hổng nguy hiểm hơn rất nhiều so với cảnh báo thừa). Mô hình Fusion phát hiện được **2,615 / 3,020** lỗ hổng (cao nhất) và giảm số lỗi bị bỏ sót xuống chỉ còn **405** (giảm 4.03% so với Semantic-Only), đồng thời giữ vững F1-Score (0.7519), PR-AUC (0.7921) và MCC (0.6821) cao nhất.
 
 ---
 

@@ -34,7 +34,7 @@
 Traditional vulnerability detectors rely either on purely syntactic sequence representations (LLMs/Transformers) which can miss non-local data-flow constraints, or purely on graph structures (AST/CFG/GNNs) which discard rich identifier semantics and comments. **VulHunter bridges this gap** by fusing two complementary representations:
 
 1. **Semantic Perception**: Pretrained **CodeBERT** (Full Fine-tuning) for token semantics and control keywords.
-2. **Structural Perception**: **Program Dependence Graph (PDG)** + Heterogeneous Graph Neural Network (**RGCN**) with subtoken hashing and security role features processing heterogeneous edge types (AST, CFG, DFG, Call).
+2. **Structural Perception**: **Program Dependence Graph (PDG)** + Heterogeneous Graph Neural Network (**RGCN**) with subtoken hashing and security role features. The RGCN models **3 heterogeneous edge relations** (`CONTROL_FLOW`, `DATA_FLOW`, `CALL`), while AST node structure enters through the node-type embedding (AST/CFG/DFG/Call graphs are combined during PDG construction).
 3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Bidirectional Cross-Attention** with residual skip that dynamically condition and balance semantic and structural signals.
 4. **Binary Supervision**: Focal Loss giải quyết mất cân bằng mẫu (class imbalance).
 

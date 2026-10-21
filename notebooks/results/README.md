@@ -24,7 +24,7 @@ Tất cả mô hình được đánh giá trên cùng tập test gồm **10,970 
 | **Graph Baseline (Pure AST)** | 2,192 | 4,876 | 6,094 | 828 | Bị nhiễu nhiều do thiếu ngữ nghĩa code |
 | **Graph Advanced (Enriched)** | 2,286 | 2,196 | 8,774 | 734 | Subtoken Hashing tăng vọt Precision (+64%) |
 | **Semantic Baseline (CodeBERT)** | 2,598 | **1,297** | **9,673** | 422 | Baseline rất mạnh nhờ pre-training lớn |
-| 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** | **Phát hiện nhiều nhất (2,615) & Giảm FN xuống thấp nhất (-5.37%)** |
+| 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** | **Phát hiện nhiều nhất (2,615) & Giảm FN xuống thấp nhất (-4.03%)** |
 
 ---
 
