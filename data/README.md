@@ -23,7 +23,7 @@ data/
 │   └── large/                     # 130,000 benign + 25,014 vulnerable samples
 ├── final/                         # Dữ liệu tổng hợp sau làm sạch và chuẩn hóa AST
 │   ├── master_semantic_samples.jsonl # Tập mẫu code hoàn chỉnh (139,879 mẫu: 109,686 safe, 30,193 vuln)
-│   └── master_pdg.jsonl           # Biểu diễn đồ thị PDG (139,847 đồ thị: AST, CFG, DFG, Call)
+│   └── master_pdg.jsonl           # Biểu diễn đồ thị PDG (139,847 đồ thị: 3 edge relations + AST node types)
 ├── processed/                     # Dữ liệu qua các bước pipeline (cleaned, normalized, validated)
 └── splits/                        # Tập chia huấn luyện 80/10/10 (Strict Repository-Disjoint)
     ├── train.jsonl                # Tập huấn luyện (111,902 mẫu: 87,748 safe, 24,154 vuln)
@@ -50,7 +50,7 @@ python scripts/preprocessing/run_pipeline.py
 Pipeline sẽ tự động thực hiện:
 1. Gộp các nguồn CVEFixes và GHSA thành `master_semantic_samples.jsonl`.
 2. Kiểm tra tính hợp lệ cú pháp Python AST.
-3. Sinh đồ thị phụ thuộc chương trình (PDG) gồm các quan hệ cạnh đa loại (AST, Control Flow, Data Flow, Call Flow).
+3. Sinh đồ thị phụ thuộc chương trình (PDG) gồm 3 quan hệ cạnh dị thể (CONTROL_FLOW, DATA_FLOW, CALL) cùng cấu trúc AST của node.
 4. Phân chia tập `train.jsonl`, `validation.jsonl`, `test.jsonl` theo nguyên tắc **strict repository-disjoint** (không rò rỉ mã nguồn cùng một repo giữa các tập).
 
 ---

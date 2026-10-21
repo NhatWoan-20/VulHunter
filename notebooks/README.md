@@ -102,7 +102,7 @@ Do môi trường chuẩn của Kaggle chưa tích hợp sẵn `torch-geometric`
 ### 1. `vulhunter-fusion.ipynb` (Multimodal SOTA)
 - **Kiến trúc**:
   - Semantic Encoder: Full Fine-Tuning `microsoft/codebert-base` (d=768, sequence length=512, [CLS] representation).
-  - Graph Encoder: 3-layer Relational Graph Convolutional Network (RGCN, hidden=256) xử lý đa quan hệ cạnh (AST, CFG, DFG, Call) với node features mở rộng (Enriched Subtoken Hashing + Security Role Taint Flags).
+  - Graph Encoder: 3-layer Relational Graph Convolutional Network (RGCN, hidden=256) xử lý **3 quan hệ cạnh dị thể** (`CONTROL_FLOW`, `DATA_FLOW`, `CALL`) với node features mở rộng (Enriched Subtoken Hashing + Security Role Taint Flags); cấu trúc AST được mã hóa qua node-type embedding (64 node types).
   - Fusion Module: **FiLM Modulation (Pooled level)** điều biến đặc trưng ngữ nghĩa bằng đồ thị cấu trúc:
     $$\mathbf{z} = (1 + \gamma(\mathbf{v})) \odot \mathbf{u} + \beta(\mathbf{v}) + 0.2 \cdot \mathbf{u}$$
   - Head: `BinaryClassificationHead` với Focal Loss ($\alpha=0.791, \gamma=2.0$).
@@ -118,7 +118,7 @@ Do môi trường chuẩn của Kaggle chưa tích hợp sẵn `torch-geometric`
 
 ### 3. `vulhunter-graph-only-advanced.ipynb` (Graph Advanced)
 - **Kiến trúc**:
-  - 4-layer RGCN với heterogeneous edges.
+  - 4-layer RGCN với **3 heterogeneous edge relations** (`CONTROL_FLOW`, `DATA_FLOW`, `CALL`).
   - Node Features cải tiến: Enriched Subtoken Hashing (vocab=16,384, dim=128) để học ngữ nghĩa tên biến/hàm con + Security Roles (nhận diện nguồn dữ liệu taint source, hàm sink nguy hiểm và sanitizer).
   - Batch size 256 tối ưu hóa GPU Tensor Cores.
 

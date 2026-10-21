@@ -117,7 +117,7 @@ VulHunter is trained and evaluated on an extensive, unified **Master Dataset** s
 | **GHSA** | GitHub Security Advisories GraphQL API | 17,049 methods | ~16,980 methods |
 | **Large Python Corpus** | Diverse open-source repositories & verified CVEs | 155,014 singles | ~116,941 singles |
 | **Master Dataset (Consolidated)** | **Global SHA-1 Deduplicated & Validated** | **175,048** | **139,879 samples** (109,686 Safe / 30,193 Vuln) |
-| **Master PDG Graphs** | Heterogeneous AST + CFG + DFG + Call Graphs | — | **139,847 graphs** |
+| **Master PDG Graphs** | Heterogeneous PDG: AST node types + 3 edge relations (CONTROL_FLOW, DATA_FLOW, CALL) | — | **139,847 graphs** |
 
 ### Strict Repository-Disjoint Partitioning (80/10/10)
 

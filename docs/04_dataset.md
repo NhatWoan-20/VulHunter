@@ -74,7 +74,7 @@ validate_ast.py
   ▼ data/processed/master_validated.jsonl
 strip_docstrings.py                       (strip docstrings via AST NodeTransformer)
   ▼ data/processed/master_graph_ready.jsonl
-build_pdg.py                              (construct PDG graph with AST, CFG, DFG, Call edges)
+build_pdg.py                              (construct PDG with AST node types + CONTROL_FLOW/DATA_FLOW/CALL edges)
   ▼ data/final/master_pdg.jsonl            (139,847 graphs)
 ```
 
