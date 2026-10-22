@@ -2,7 +2,7 @@
 
 Usage:
     python scripts/evaluation/evaluate.py --checkpoint models/checkpoints/best.pt
-    python scripts/evaluation/evaluate.py --checkpoint best.pt --test-data data/splits/test.jsonl --tune-threshold
+    python scripts/evaluation/evaluate.py --checkpoint best.pt --test-data data/splits/test.jsonl --no-tune
 """
 from __future__ import annotations
 
@@ -157,8 +157,9 @@ def main() -> None:
     test_dataset = VulHunterDataset(data_path=args.test_data, max_length=args.max_length, graph_data_path=args.graph_data)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=0)
     logger.info("Test samples: %d", len(test_dataset))
+    eval_threshold = args.threshold if args.threshold is not None else (0.5 if args.no_tune else None)
     t0 = time.time()
-    results = run_evaluation(model, test_loader, device, threshold=None if not args.no-tune else (args.threshold or 0.5))
+    results = run_evaluation(model, test_loader, device, threshold=eval_threshold)
     elapsed = time.time() - t0
     results["evaluation_time_seconds"] = round(elapsed, 2)
     results["checkpoint"] = str(args.checkpoint)
