@@ -46,27 +46,68 @@ def parse_args() -> argparse.Namespace:
 def load_model(checkpoint_path: Path, device: torch.device) -> VulHunterModel:
     logger.info("Loading checkpoint: %s", checkpoint_path)
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    config = ckpt.get("config", {})
-    mode = config.get("mode", "fusion")
-    model_config = config.get("model", {})
+
+    raw_state = ckpt.get("model_state_dict", {})
+    clean_state = {k.removeprefix("module."): v for k, v in raw_state.items()}
+
+    config = ckpt.get("config") or {}
+    mode = config.get("mode")
+    if not mode:
+        has_semantic = any(k.startswith("semantic_encoder.") for k in clean_state)
+        has_graph = any(k.startswith("graph_encoder.") for k in clean_state)
+        mode = "fusion" if (has_semantic and has_graph) else ("graph_only" if has_graph else "semantic_only")
+
+    model_config = config.get("model") or {}
+    graph_cfg = dict(model_config.get("graph") or {})
+    if mode in ("fusion", "graph_only") and "graph_encoder.layers.0.weight" in clean_state:
+        l0_shape = clean_state["graph_encoder.layers.0.weight"].shape
+        graph_cfg.setdefault("num_edge_types", l0_shape[0])
+        graph_cfg.setdefault("node_feature_dim", l0_shape[1])
+        graph_cfg.setdefault("hidden_dim", l0_shape[2])
+        if "graph_encoder.output_proj.1.weight" in clean_state:
+            graph_cfg.setdefault("output_dim", clean_state["graph_encoder.output_proj.1.weight"].shape[0])
+        layer_indices = [
+            int(k.split(".")[2]) for k in clean_state
+            if k.startswith("graph_encoder.layers.") and k.endswith(".weight")
+        ]
+        if layer_indices:
+            graph_cfg.setdefault("num_layers", max(layer_indices) + 1)
+        has_hash = "graph_encoder.node_hash_embedding.embedding.weight" in clean_state
+        has_codebert = "graph_encoder.node_codebert_embedding.word_embeddings.weight" in clean_state
+        if has_hash and has_codebert:
+            graph_cfg.setdefault("node_encoder_type", "both")
+        elif has_codebert:
+            graph_cfg.setdefault("node_encoder_type", "shared_codebert")
+        elif has_hash:
+            graph_cfg.setdefault("node_encoder_type", "hash")
+        graph_cfg.setdefault("use_vul_features", "graph_encoder.vul_features.proj.0.weight" in clean_state)
+
+    fusion_cfg = dict(model_config.get("fusion") or {})
+    if mode == "fusion":
+        fusion_cfg.setdefault("hidden_dim", graph_cfg.get("output_dim", 256))
+        fusion_cfg.setdefault("combine", "film")
+        fusion_cfg.setdefault("fusion_level", "pooled")
+
+    semantic_cfg = dict(model_config.get("semantic") or {})
+    head_cfg = dict(model_config.get("heads") or {})
+
     model = VulHunterModel(
         mode=mode,
-        semantic_config=model_config.get("semantic", {}),
-        graph_config=model_config.get("graph", {}),
-        fusion_config=model_config.get("fusion", {}),
-        head_config=model_config.get("heads", {}),
+        semantic_config=semantic_cfg,
+        graph_config=graph_cfg,
+        fusion_config=fusion_cfg,
+        head_config=head_cfg,
     )
-    raw_state = ckpt.get("model_state_dict", {})
-    clean_state = {k[7:] if k.startswith("module.") else k: v for k, v in raw_state.items()}
     missing, unexpected = model.load_state_dict(clean_state, strict=False)
     required = {name for name, parameter in model.named_parameters() if parameter.requires_grad}
     missing_required = sorted(required.intersection(missing))
-    if missing_required or unexpected:
-        raise RuntimeError(f"Incompatible checkpoint (missing_trainable={missing_required}, unexpected={unexpected})")
+    if missing_required:
+        raise RuntimeError(f"Incompatible checkpoint (missing_trainable={missing_required})")
     model.to(device)
     model.eval()
-    logger.info("Loaded model (mode=%s, epoch=%d, val_f1=%.4f, threshold=%.2f)",
-                mode, ckpt.get("epoch", 0), ckpt.get("val_f1", 0), ckpt.get("best_threshold", 0.5))
+    logger.info("Loaded model (mode=%s, epoch=%s, val_f1=%.4f, threshold=%.2f)",
+                mode, ckpt.get("epoch", 0), ckpt.get("val_f1") or ckpt.get("best_f1") or 0.0,
+                ckpt.get("best_threshold", 0.25 if mode == "fusion" else 0.5))
     return model
 
 

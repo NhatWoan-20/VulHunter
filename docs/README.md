@@ -9,8 +9,9 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyTorch-2.1%2B-red?logo=pytorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Transformers-4.36%2B-yellow?logo=huggingface&logoColor=white" alt="Transformers">
+  <img src="https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Kaggle-2xT4-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
-  <img src="https://img.shields.io/badge/Tests-Passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-59%20Passed-brightgreen" alt="Tests">
   <a href="https://doi.org/10.5281/zenodo.13118970"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.13118970-blue" alt="DOI"></a>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
 </p>
@@ -20,6 +21,7 @@
   <a href="#-key-features">Key Features</a> •
   <a href="#-architecture">Architecture</a> •
   <a href="#-dataset">Dataset</a> •
+  <a href="#5-triển-khai-rest-api-với-fastapi-production-mode">FastAPI Service</a> •
   <a href="#-run-on-kaggle-2xt4">Kaggle 2x T4</a> •
   <a href="#-training-modes">Training</a> •
   <a href="#-benchmarks--evaluation">Evaluation</a>
@@ -184,14 +186,92 @@ python scripts/evaluation/evaluate.py \
     --output outputs/metrics/evaluation_report.json
 ```
 
-### 5. FastAPI Deployment
+### 5. Triển Khai REST API với FastAPI (Production Mode)
+
+VulHunter cung cấp microservice REST API hiệu năng cao (`scripts/api_deployment.py`) phục vụ suy luận thời gian thực cho mã nguồn Python. Service tích hợp tự động trích xuất đồ thị phụ thuộc PDG (Control Flow, Data Flow, Call), tự động nhận diện kiến trúc mô hình từ checkpoint `.pt` và hỗ trợ đầy đủ các chế độ (`fusion`, `semantic_only`, `graph_only`):
+
+#### 1. Khởi động Server (Yêu cầu Checkpoint `.pt`)
+
+Server tuân thủ nguyên tắc **Fail-Fast**: bắt buộc phải có file checkpoint đã huấn luyện (không chạy mock/fallback), đảm bảo độ tin cậy tuyệt đối trong môi trường Production:
 
 ```bash
+# Cách A: Chạy trực tiếp qua Python CLI với cờ --checkpoint
+python scripts/api_deployment.py --checkpoint notebooks/results/fusion_results/best.pt --port 8000
+
+# Cách B: Sử dụng biến môi trường và Uvicorn
+# Windows PowerShell:
+$env:VULHUNTER_CHECKPOINT="notebooks/results/fusion_results/best.pt"
 uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
 
+# Linux/macOS:
+export VULHUNTER_CHECKPOINT="notebooks/results/fusion_results/best.pt"
+uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
+```
+
+> 🌐 **Giao diện Swagger UI Trực quan**: Truy cập **`http://localhost:8000/docs`** trên trình duyệt để kiểm tra schema OpenAPI và test các endpoint trực tiếp.
+
+#### 2. Thử nghiệm qua cURL (Linux / macOS / Git Bash)
+
+```bash
+# A. Kiểm tra sức khỏe & trạng thái mô hình
+curl http://localhost:8000/health
+
+# B. Dự đoán 1 hàm đơn lẻ (Single Function Prediction)
 curl -X POST "http://localhost:8000/predict" \
      -H "Content-Type: application/json" \
-     -d '{"code": "import os\ndef run():\n    os.system(user_input)"}'
+     -d '{"code": "def execute(cmd):\n    import os\n    os.system(cmd)"}'
+
+# C. Dự đoán hàng loạt (Batch Prediction)
+curl -X POST "http://localhost:8000/predict/batch" \
+     -H "Content-Type: application/json" \
+     -d '{"codes": [
+       "def execute(cmd):\n    import os\n    os.system(cmd)",
+       "def add(a, b):\n    return a + b"
+     ]}'
+```
+
+#### 3. Thử nghiệm trên Windows PowerShell (`Invoke-RestMethod`)
+
+```powershell
+# A. Health Check
+Invoke-RestMethod -Uri "http://localhost:8000/health" -Method Get | ConvertTo-Json
+
+# B. Kiểm tra hàm nguy hiểm
+$payload = @{
+    code = @"
+def execute(cmd):
+    import os
+    os.system(cmd)
+"@
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://localhost:8000/predict" -Method Post -Body $payload -ContentType "application/json" | ConvertTo-Json
+```
+
+#### 4. Thử nghiệm bằng Python Client (`requests`)
+
+```python
+import requests
+
+url = "http://localhost:8000/predict"
+sample_code = """
+def authenticate_user(cursor, username, password):
+    query = "SELECT * FROM users WHERE user = '" + username + "' AND pass = '" + password + "'"
+    cursor.execute(query)
+    return cursor.fetchone()
+"""
+
+response = requests.post(url, json={"code": sample_code})
+data = response.json()
+print(f"Vulnerable: {data['is_vulnerable']} (Prob: {data['vulnerability_probability']:.4f}, Risk: {data['risk_level']})")
+# Output: Vulnerable: True (Prob: 0.7111, Risk: HIGH)
+```
+
+#### 5. Chạy Bộ Kiểm Thử Tự Động Cho API (`pytest`)
+
+```bash
+# Chạy riêng bộ test FastAPI (6 unit & integration tests)
+pytest tests/test_api.py -v
 ```
 
 ---
@@ -344,7 +424,7 @@ VulHunter/
 │   ├── training/train.py        # Distributed / AMP training runner
 │   ├── evaluation/evaluate.py   # Binary classification evaluation
 │   └── api_deployment.py        # FastAPI server
-├── tests/                       # Test suite (53 unit tests)
+├── tests/                       # Test suite (59 unit & integration tests)
 └── docs/                        # Research methodology & specifications
 ```
 
@@ -353,8 +433,12 @@ VulHunter/
 ## 🧪 Testing & Verification
 
 ```bash
-# Run all unit tests
+# Run all unit tests (59 tests)
 pytest tests -q
+
+# Run specific test suites
+pytest tests/test_model.py -v
+pytest tests/test_api.py -v
 
 # Run with coverage
 pytest tests --cov=src --cov-report=term-missing
@@ -368,6 +452,7 @@ pytest tests --cov=src --cov-report=term-missing
 - **Foundation Model**: [CodeBERT](https://github.com/microsoft/CodeBERT) (125M, `microsoft/codebert-base`)
 - **Fine-tuning**: Full Fine-Tuning
 - **Graph Neural Network**: Relational Graph Convolutional Network (RGCN) via PyG
+- **Serving & Microservice**: [FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/), Pydantic
 - **Evaluation**: `scikit-learn`, `scipy`
 
 ---

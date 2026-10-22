@@ -9,8 +9,9 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyTorch-2.1%2B-red?logo=pytorch&logoColor=white" alt="PyTorch">
   <img src="https://img.shields.io/badge/Transformers-4.36%2B-yellow?logo=huggingface&logoColor=white" alt="Transformers">
+  <img src="https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Kaggle-2xT4-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
-  <img src="https://img.shields.io/badge/Tests-53%20Passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-59%20Passed-brightgreen" alt="Tests">
   <a href="https://doi.org/10.5281/zenodo.13118970"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.13118970-blue" alt="DOI"></a>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Docs-%F0%9F%87%BB%F0%9F%87%B3%20Ti%E1%BA%BFng%20Vi%E1%BB%87t-orange" alt="Vietnamese Docs"></a>
@@ -22,10 +23,9 @@
   <a href="#-architecture">Architecture</a> •
   <a href="#-dataset--leakage-prevention">Dataset</a> •
   <a href="#-quick-start--60s">Quick Start</a> •
+  <a href="#-production-api-deployment--live-inference">FastAPI Service</a> •
   <a href="#-run-on-kaggle-2xt4">Kaggle Benchmarks</a> •
-  <a href="#-benchmarks--evaluation">Results</a> •
-  <a href="#-future-research--llm-roadmap">Research Roadmap</a> •
-  <a href="#-citation">Citation</a>
+  <a href="#-benchmarks--evaluation">Results</a>
 </p>
 
 ---
@@ -54,7 +54,7 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
 - **Strict Leakage Prevention**: **80/10/10 split partitioned strictly by GitHub repository** (ensuring zero repository overlap across train, validation, and test sets).
 - **Zero-RAM Lazy Loading**: Custom memory-mapped index (`_LazyGraphDict`) consuming only **~15MB RAM** for 139,847 graphs, eliminating OOM crashes and swapping.
 - **Kaggle 2x T4 Ready**: Optimized for multi-GPU training with FP16 Automatic Mixed Precision (AMP), Fused AdamW, and DataParallel scaling.
-- **Production API Ready**: Includes high-throughput FastAPI inference microservice (`scripts/api_deployment.py`).
+- **Production API Ready**: Includes high-throughput, non-blocking **FastAPI** inference microservice (`scripts/api_deployment.py`) with real-time PDG graph extraction, dynamic thresholding, Swagger UI, and batch prediction support.
 
 ---
 
@@ -234,18 +234,114 @@ python scripts/training/train.py \
     --use-amp
 ```
 
-### 5. Evaluation & API Deployment
+### 5. Offline Evaluation & Benchmark Reporting
 
 ```bash
-# Evaluate checkpoint on held-out test split
+# Evaluate checkpoint on held-out test split (supports auto-configured architecture)
 python scripts/evaluation/evaluate.py \
     --checkpoint models/checkpoints/best.pt \
     --test-data data/splits/test.jsonl \
     --graph-data data/processed/master_pdg.jsonl \
     --output outputs/metrics/evaluation_report.json
+```
 
-# Launch FastAPI deployment microservice
-uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
+---
+
+## 🚀 Production API Deployment & Live Inference
+
+VulHunter includes a production-grade **FastAPI** REST microservice (`scripts/api_deployment.py`) for sub-second, real-time code vulnerability scanning with auto-inferred model architecture and real-time Program Dependence Graph (PDG) extraction.
+
+### 1. Launch Server
+
+```bash
+# Start server with trained checkpoint (.pt)
+python scripts/api_deployment.py --checkpoint models/checkpoints/best.pt --port 8000
+
+# Or using Uvicorn directly:
+# export VULHUNTER_CHECKPOINT="models/checkpoints/best.pt"
+# uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
+```
+
+> 💡 **Interactive Swagger UI**: Open your browser and navigate to **`http://localhost:8000/docs`** to test endpoints interactively.
+
+### 2. Verify Health Status (`GET /health`)
+
+```bash
+curl http://localhost:8000/health
+```
+
+```json
+{
+  "status": "healthy",
+  "device": "cpu",
+  "model_mode": "fusion",
+  "checkpoint_loaded": true,
+  "optimal_threshold": 0.25,
+  "version": "2.0.0"
+}
+```
+
+### 3. Single Function Vulnerability Prediction (`POST /predict`)
+
+```bash
+curl -X POST "http://localhost:8000/predict" \
+     -H "Content-Type: application/json" \
+     -d '{"code": "def execute(cmd):\n    import os\n    os.system(cmd)"}'
+```
+
+**Response:**
+```json
+{
+  "is_vulnerable": true,
+  "vulnerability_probability": 0.7111,
+  "decision_threshold": 0.25,
+  "model_mode": "fusion",
+  "processing_time_ms": 51.09,
+  "risk_level": "HIGH"
+}
+```
+
+### 4. High-Throughput Batch Inference (`POST /predict/batch`)
+
+```bash
+curl -X POST "http://localhost:8000/predict/batch" \
+     -H "Content-Type: application/json" \
+     -d '{"codes": [
+       "def execute(cmd):\n    import os\n    os.system(cmd)",
+       "def calculate_sum(a, b):\n    return a + b"
+     ]}'
+```
+
+### 5. Windows PowerShell Client Testing
+
+```powershell
+# Health Check
+Invoke-RestMethod -Uri "http://localhost:8000/health" -Method Get | ConvertTo-Json
+
+# Single Prediction
+$body = @{ code = "def test(x):\n    import os\n    os.system(x)" } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://localhost:8000/predict" -Method Post -Body $body -ContentType "application/json" | ConvertTo-Json
+```
+
+### 6. Python Client Integration Example
+
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/predict",
+    json={"code": "def run(cmd):\n    import os\n    os.system(cmd)"}
+)
+result = response.json()
+print(f"Vulnerable: {result['is_vulnerable']} | Probability: {result['vulnerability_probability']:.4f} | Risk: {result['risk_level']}")
+# Output: Vulnerable: True | Probability: 0.7111 | Risk: HIGH
+```
+
+### 7. Run Automated API Test Suite
+
+```bash
+# Execute dedicated FastAPI endpoint unit & integration tests
+pytest tests/test_api.py -v
 ```
 
 ---
@@ -333,16 +429,16 @@ VulHunter/
 │   ├── graph/build_pdg.py       # AST/CFG/DFG heterogeneous PDG builder
 │   ├── training/train.py        # Distributed & mixed-precision training script
 │   ├── evaluation/evaluate.py   # Test set evaluation and metric reporting
-│   └── api_deployment.py        # FastAPI inference server
-├── tests/                       # Unit & integration test suite (53 passed tests)
-└── docs/                        # Research documentation & Vietnamese technical specs
+│   └── api_deployment.py        # Production FastAPI microservice (Fusion/Semantic/Graph)
+├── tests/                       # Unit & integration test suite (59 passed tests)
+└── docs/                        # Research documentation & technical specs
 ```
 
 ---
 
 ## 🧪 Testing & Verification
 
-VulHunter maintains a comprehensive test suite covering AST parsing, heterogeneous graph builders, lazy dataset loading, FiLM cross-attention forward passes, focal loss, and repo-disjoint isolation:
+VulHunter maintains a comprehensive test suite (**59 passing tests**) covering AST parsing, heterogeneous graph builders, lazy dataset loading, FiLM cross-attention forward passes, focal loss, repo-disjoint isolation, and live FastAPI endpoints:
 
 ```bash
 # Run full unit test suite

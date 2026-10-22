@@ -13,6 +13,11 @@ pyyaml>=6.0               # scripts/training/train.py
 
 accelerate>=0.30.0
 
+# ─── Serving / Deployment API ───
+fastapi>=0.100.0
+uvicorn>=0.22.0
+pydantic>=2.0.0
+
 # ─── Optional / development ───
 pytest>=7.4.0
 pytest-cov>=4.1.0
