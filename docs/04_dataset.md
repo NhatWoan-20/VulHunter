@@ -141,5 +141,5 @@ $$\text{fp} = \text{SHA1}(\text{" ".join}(\text{code.split}()))$$
 | **Total** | **139,879** | **30,193** | **109,686** | ~3.63 : 1 |
 
 > [!TIP]
-> Notice the class imbalance (~3.63:1 safe to vulnerable, ~78.4% safe vs 21.6% vulnerable). When training, use `focal_loss` with appropriate `alpha` (e.g. $\alpha = 1 - \text{pos\_rate} \approx 0.784$) or weighted loss (`class_weight`) to optimize balanced precision and recall.
+> Notice the class imbalance (~3.63:1 safe to vulnerable, ~78.4% safe vs 21.6% vulnerable). When training, use `focal_loss` with appropriate `alpha` (e.g. $\alpha = 1 - \text{pos-rate} \approx 0.784$) or weighted loss (`class_weight`) to optimize balanced precision and recall.
 

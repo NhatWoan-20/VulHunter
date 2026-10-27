@@ -43,7 +43,7 @@ Traditional code vulnerability detectors typically adopt one of two extremes:
 1. **Semantic Perception**: Pretrained **CodeBERT** (Full Fine-tuning) capturing token-level semantics, control keywords, and local context.
 2. **Structural Perception**: **Heterogeneous Program Dependence Graph (PDG)** processed via Relational Graph Convolutional Networks (**RGCN**) with subtoken hashing and vulnerability-aware flow signals. The RGCN uses **3 heterogeneous edge relations** (`CONTROL_FLOW`, `DATA_FLOW`, `CALL`; see `EDGE_TYPE_MAP`), while AST structure is encoded through the 64-way AST node-type embedding.
 3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Bidirectional Cross-Attention** with residual skip connections ($\alpha = 0.2$), dynamically conditioning semantic signals with structural flow context while protecting against noisy graph artifacts.
-4. **Binary Focal Supervision**: Class-weighted Focal Loss ($\alpha = 1 - \text{pos\_rate}$, auto-tuned $\approx 0.79$ on the training split, $\gamma=2.0$) coupled with validation threshold tuning to tackle real-world class imbalance.
+4. **Binary Focal Supervision**: Class-weighted Focal Loss ($\alpha = 1 - \text{pos-rate}$, auto-tuned $\approx 0.79$ on the training split, $\gamma=2.0$) coupled with validation threshold tuning to tackle real-world class imbalance.
 
 ---
 
