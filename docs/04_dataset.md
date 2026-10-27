@@ -1,8 +1,5 @@
 # 04 — Data Engineering & Splitting: The Master Dataset Strategy
 
-> **Version: 6.0** — Unified Single-Sample & Multi-Source Focus
-> **Authoritative Specification**
-
 This document defines the unified training corpus: a single **Master Dataset** built by
 merging **CVEFixes**, **GHSA**, and **Large Scale Datasets (Benign & Vulnerable)** into
 a unified single-sample schema, cleansed, deduplicated, and split repository-disjoint.

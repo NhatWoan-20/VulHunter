@@ -1,8 +1,5 @@
 # 02 — State of the Art & Literature Review
 
-> **Version: 5.0** — Binary Classification Focus
-> **Authoritative Specification**
-
 ---
 
 ## 1. Vulnerability Detection Approaches

@@ -393,7 +393,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="🛡️ VulHunter Vulnerability Detection API",
     description=(
-        "Production-grade REST API for Binary Vulnerability Detection in Python source code.\n\n"
+        "Production-grade REST API for Vulnerability Detection in Function-Level Python.\n\n"
         "Powered by **CodeBERT** (Sequence Semantics) + **Heterogeneous RGCN** (Control & Data Flow Graph) "
         "fused via **FiLM Modulation**."
     ),

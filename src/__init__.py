@@ -1,1 +1,1 @@
-"""VulHunter — Hybrid multi-modal vulnerability detection for Python source code."""
+"""VulHunter — Hybrid Multi-Modal Vulnerability Detection for Function-Level Python."""

@@ -1,8 +1,5 @@
 # 06 — Evaluation & Metrics
 
-> **Version: 5.0** — Binary Classification Focus
-> **Authoritative Specification**
-
 ---
 
 ## 1. Evaluation Protocol

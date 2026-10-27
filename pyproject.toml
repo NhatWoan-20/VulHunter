@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "VulHunter"
 version = "0.3.3"
-description = "Hybrid multi-modal binary vulnerability detection for Python — CodeBERT (Semantic View) + Enriched Program Dependence Graph RGCN (Structural View) via FiLM Modulation"
+description = "Hybrid Multi-Modal Vulnerability Detection for Function-Level Python — CodeBERT (Semantic View) + Enriched Program Dependence Graph RGCN (Structural View) via FiLM Modulation"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"

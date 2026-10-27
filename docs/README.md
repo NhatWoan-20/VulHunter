@@ -1,7 +1,7 @@
 <h1 align="center">🛡️ VulHunter</h1>
 
 <p align="center">
-  <strong>Hybrid Multi-Modal Binary Vulnerability Detection for Python</strong><br/>
+  <strong>Hybrid Multi-Modal Vulnerability Detection for Function-Level Python</strong><br/>
   <em>CodeBERT (Semantic View) + Enriched Program Dependence Graph (RGCN) (Structural View) + FiLM Modulation / Cross-Attention (Fusion)</em>
 </p>
 
@@ -17,122 +17,136 @@
 </p>
 
 <p align="center">
-  <a href="#-quick-start--60s">Quick Start</a> •
-  <a href="#-key-features">Key Features</a> •
-  <a href="#-architecture">Architecture</a> •
-  <a href="#-dataset">Dataset</a> •
-  <a href="#5-triển-khai-rest-api-với-fastapi-production-mode">FastAPI Service</a> •
-  <a href="#-run-on-kaggle-2xt4">Kaggle 2x T4</a> •
-  <a href="#-training-modes">Training</a> •
-  <a href="#-benchmarks--evaluation">Evaluation</a>
+  <a href="#-vulhunter-là-gì">Tổng quan</a> •
+  <a href="#-tính-năng-nổi-bật">Tính năng nổi bật</a> •
+  <a href="#-kiến-trúc-mô-hình">Kiến trúc mô hình</a> •
+  <a href="#-tập-dữ-liệu">Tập dữ liệu</a> •
+  <a href="#-bắt-đầu-nhanh--60-giây">Khởi động nhanh</a> •
+  <a href="#5-triển-khai-rest-api-với-fastapi-chế-độ-production">Dịch vụ FastAPI</a> •
+  <a href="#-huấn-luyện-trên-kaggle-2x-t4-gpus">Kaggle 2x T4</a> •
+  <a href="#-các-chế-độ-huấn-luyện">Chế độ huấn luyện</a> •
+  <a href="#-kết-quả-thực-nghiệm--đánh-giá">Kết quả thực nghiệm</a>
 </p>
 
 ---
 
-## 📌 What is VulHunter?
+## 📌 VulHunter là gì?
 
-**VulHunter** is an end-to-end deep learning system for **binary vulnerability detection** in Python function-level code (vulnerable vs. safe).
+**VulHunter** là một hệ thống học sâu hoàn chỉnh (end-to-end) phục vụ **phát hiện lỗ hổng bảo mật** ở cấp độ hàm trong mã nguồn Python (bài toán phân loại nhị phân: $y \in \{0, 1\}$, trong đó $1 = \text{có lỗ hổng}, 0 = \text{an toàn}$).
 
-Traditional vulnerability detectors rely either on purely syntactic sequence representations (LLMs/Transformers) which can miss non-local data-flow constraints, or purely on graph structures (AST/CFG/GNNs) which discard rich identifier semantics and comments. **VulHunter bridges this gap** by fusing two complementary representations:
+Các công cụ phát hiện lỗ hổng truyền thống hiện nay thường rơi vào một trong hai thái cực:
+- **Mô hình chuỗi / Ngữ nghĩa thuần túy (Code LLM / Transformers như CodeBERT)**: Rất mạnh trong việc hiểu ngữ nghĩa token, quy ước đặt tên và ngữ cảnh API, nhưng thường gặp hiện tượng *"mù cấu trúc"* (structural blindness) — bỏ sót các ràng buộc luồng dữ liệu phi cục bộ và các chuỗi lan truyền vết bẩn (taint propagation) qua các nhánh rẽ điều khiển lồng nhau.
+- **Mô hình đồ thị / Cấu trúc thuần túy (AST / CFG / Mạng nơ-ron đồ thị GNN)**: Bảo toàn rất tốt cấu trúc hình thức của luồng điều khiển và luồng dữ liệu, nhưng lại lược bỏ ngữ nghĩa phong phú của subtoken, định danh biến và ý định lập trình tự nhiên.
 
-1. **Semantic Perception**: Pretrained **CodeBERT** (Full Fine-tuning) for token semantics and control keywords.
-2. **Structural Perception**: **Program Dependence Graph (PDG)** + Heterogeneous Graph Neural Network (**RGCN**) with subtoken hashing and security role features. The RGCN models **3 heterogeneous edge relations** (`CONTROL_FLOW`, `DATA_FLOW`, `CALL`), while AST node structure enters through the node-type embedding (AST/CFG/DFG/Call graphs are combined during PDG construction).
-3. **Cross-Modal Fusion**: **FiLM Modulation** (Feature-wise Linear Modulation) and **Bidirectional Cross-Attention** with residual skip that dynamically condition and balance semantic and structural signals.
-4. **Binary Supervision**: Focal Loss giải quyết mất cân bằng mẫu (class imbalance).
+**VulHunter giải quyết triệt để ranh giới này** thông qua kiến trúc đa phương thức tương hỗ:
 
----
-
-## ⚡ Key Features
-
-- **Single Task Focus**: Binary vulnerability detection (vulnerable=1 / safe=0) — đơn giản, hiệu quả.
-- **3 Training Modes**: `semantic_only`, `graph_only`, `fusion` — train song song để so sánh.
-- **Full Fine-Tuning**: Tối ưu trực tiếp toàn bộ backbone CodeBERT (~125M params) với FP16.
-- **CLS Pooling**: Sử dụng vector [CLS] tiêu chuẩn của kiến trúc encoder-only RoBERTa.
-- **Threshold Tuning**: Auto-find optimal F1 threshold trên val set.
-- **MLOps Ready**: FastAPI deployment script.
-- **Strict Leakage Prevention**: 80/10/10 split grouped strictly by GitHub repository.
-- **Resource Efficient**: Fits Kaggle 2x T4 (16GB VRAM) với FP16 mixed precision.
+1. **Nhận thức Ngữ nghĩa (Semantic Perception)**: Tinh chỉnh toàn diện (Full Fine-Tuning) mô hình tiền huấn luyện **CodeBERT** để nắm bắt ngữ nghĩa cấp độ token, từ khóa luồng điều khiển và ngữ cảnh cục bộ.
+2. **Nhận thức Cấu trúc (Structural Perception)**: Xây dựng đồ thị phụ thuộc chương trình **Program Dependence Graph (PDG)** kết hợp mạng nơ-ron tích chập đồ thị quan hệ **RGCN** (Relational Graph Convolutional Network) với kỹ thuật băm subtoken (subtoken hashing) và gắn cờ vai trò bảo mật. Mạng RGCN mô hình hóa **3 loại cạnh quan hệ không đồng nhất** (`CONTROL_FLOW`, `DATA_FLOW`, `CALL`; xem `EDGE_TYPE_MAP`), trong khi cấu trúc cú pháp được mã hóa qua tầng nhúng 64 loại node AST.
+3. **Dung hợp Đa phương thức (Cross-Modal Fusion)**: Kết hợp kỹ thuật điều biến tuyến tính đặc trưng **FiLM Modulation** (Feature-wise Linear Modulation) và cơ chế chú ý chéo hai chiều **Bidirectional Cross-Attention** kèm kết nối tắt (residual skip connection, $\alpha = 0.2$), giúp tín hiệu ngữ nghĩa và cấu trúc điều biến linh hoạt cho nhau mà không bị nhiễu đồ thị làm suy giảm biểu diễn.
+4. **Giám sát Nhị phân (Binary Supervision)**: Ứng dụng hàm mất mát trọng số Focal Loss ($\alpha = 1 - \text{pos-rate} \approx 0.79$ tự động cân bằng trên tập train, $\gamma=2.0$) kết hợp quét ngưỡng quyết định trên tập validation nhằm giải quyết triệt để sự mất cân bằng dữ liệu thực tế.
 
 ---
 
-## 🏗️ Architecture
+## ⚡ Tính năng nổi bật
+
+- **Tập trung vào phát hiện lỗ hổng nhị phân**: Định hình bài toán phân loại nhị phân ($P(\text{vulnerable}) \in [0, 1]$) — đơn giản, chuẩn xác và sẵn sàng cho môi trường thực tế.
+- **3 chế độ vận hành thống nhất**: Hỗ trợ đầy đủ `semantic_only`, `graph_only`, và `fusion` trong cùng một codebase để phục vụ nghiên cứu bóc tách (Ablation Study) nghiêm ngặt.
+- **Chống rò rỉ dữ liệu tuyệt đối (Strict Leakage Prevention)**: Phân chia tập dữ liệu **80/10/10 cô lập hoàn toàn theo nguồn gốc repository trên GitHub** (đảm bảo không có bất kỳ repository nào trùng lặp giữa các tập train, validation và test).
+- **Tối ưu hóa RAM đột phá (Zero-RAM Lazy Loading)**: Tự phát triển cơ chế chỉ mục ánh xạ bộ nhớ (`_LazyGraphDict`) chỉ tiêu tốn **~15MB RAM** cho 139,847 đồ thị, loại bỏ hoàn toàn nguy cơ tràn bộ nhớ (OOM Crash) và nghẽn phân trang.
+- **Tối ưu cho phần cứng Kaggle 2x T4**: Hỗ trợ huấn luyện đa GPU với độ chính xác hỗn hợp FP16 Automatic Mixed Precision (AMP), tối ưu hóa AdamW hợp nhất (Fused AdamW) và mở rộng tính toán song song.
+- **Sẵn sàng triển khai Production REST API**: Đi kèm microservice **FastAPI** hiệu năng cao (`scripts/api_deployment.py`) phục vụ suy luận thời gian thực với độ trễ sub-second, tự động trích xuất đồ thị PDG, quét ngưỡng động và giao diện kiểm thử Swagger UI trực quan.
+
+---
+
+## 🏗️ Kiến trúc mô hình
 
 ```text
-                                Python Function Code
-                                         │
-                 ┌───────────────────────┴───────────────────────┐
-                 ▼                                               ▼
-       [Semantic Branch]                                [Structural Branch]
-     CodeBERT (125M)                           Heterogeneous Program Graph
-     + Full Fine-tuning                        (3 edge relations: CONTROL/DATA/CALL)
-     CLS pooling
-                 │                                               │
-        Per-token sequence                              NodeType Embedding + 
-        representations                                 Stacked RGCN Layers
-                 │                                               │
-                 └───────────────────────┬───────────────────────┘
-                                         ▼
-                       FiLM Modulation / Cross-Attention
-                       + Residual Skip (alpha=0.2)
-                                         │
-                                         ▼
-                                Binary Prediction Head
-                                     (Focal Loss)
-                                         │
-                                         ▼
-                              P(vulnerable) ∈ [0, 1]
+                                Mã nguồn hàm Python (Source Code)
+                                                │
+                    ┌───────────────────────────┴───────────────────────────┐
+                    ▼                                                       ▼
+       [Nhánh Ngữ nghĩa - Semantic]                            [Nhánh Cấu trúc - Structural]
+         CodeBERT Backbone (125M)                                Đồ thị phụ thuộc PDG + RGCN
+          + Tinh chỉnh toàn diện                                (3 loại cạnh: CONTROL/DATA/CALL)
+         BPE Tokenizer (512 ctx)                                 NodeType Embedding (64-way)
+         CLS Pooling [B, 768]                                    Subtoken Hashing (16k buckets)
+         Linear Proj [B, 256]                                    3 Tầng RGCN Convolutions
+                    │                                                       │
+                    │ h_sem ∈ ℝ^(B × 256)                   h_graph ∈ ℝ^(B × 256)
+                    │                                                       │
+                    └───────────────────────────┬───────────────────────────┘
+                                                ▼
+                             ┌─────────────────────────────────────┐
+                             │   Khối Dung hợp Đa phương thức      │
+                             │   FiLM Modulation + Cross-Attention │
+                             │    + Residual Skip (α = 0.2)        │
+                             └──────────────────┬──────────────────┘
+                                                │
+                                                │ h_fused ∈ ℝ^(B × 256)
+                                                ▼
+                             ┌─────────────────────────────────────┐
+                             │       Đầu ra phân loại nhị phân     │
+                             │  MLP: Linear(256→128)→GELU→Linear(1)│
+                             │       Class-Weighted Focal Loss     │
+                             │   (α = 1-pos-rate ≈ 0.79, γ = 2.0)  │
+                             └──────────────────┬──────────────────┘
+                                                │
+                                                ▼
+                                      P(vulnerable) ∈ [0, 1]
+                                                ▼
+                                  ŷ = 𝟙(P ≥ τ*) ∈ {0: An toàn, 1: Lỗ hổng}
 ```
 
-Configuration wiring được tách riêng ở `configs/model/default.yaml` và training schedules ở `configs/train/` (`semantic_codebert.yaml`, `graph.yaml`, `fusion.yaml`).
+> **Nguồn cấu hình:** Thiết kế topo mô hình mặc định được chỉ định tại [`configs/model/default.yaml`](../configs/model/default.yaml) và lịch trình huấn luyện tại [`configs/train/`](../configs/train/) (`semantic_codebert.yaml`, `graph.yaml`, `fusion.yaml`).
 
 ---
 
-## 📦 Dataset
+## 📦 Tập dữ liệu
 
-VulHunter được huấn luyện và đánh giá trên **Master Dataset** quy mô lớn (tổng hợp từ CVEFixes, GHSA và tập mã nguồn mở mở rộng), sau khi qua pipeline khử trùng lặp (Global SHA-1 dedup) và kiểm định cú pháp AST:
+VulHunter được huấn luyện và đánh giá trên **Master Dataset** quy mô lớn (tổng hợp từ CVEFixes, GHSA và tập mã nguồn mở mở rộng), sau khi qua pipeline khử trùng lặp toàn cục (Global SHA-1 Deduplication) và kiểm định cú pháp AST nghiêm ngặt:
 
-| Nguồn Dữ Liệu (Source) | Mô Tả & Định Dạng | Số Lượng Thô (Raw) | Sau Làm Sạch & AST Valid |
+| Nguồn Dữ Liệu (Source) | Mô Tả & Định Dạng | Số Lượng Thô (Raw) | Sau Làm Sạch & Hợp Lệ AST |
 |:---|:---|:---:|:---:|
-| **CVEFixes** | Zenodo SQLite SQL dump (v1.0.8) | 2,985 fix pairs | ~5,958 methods |
-| **GHSA** | GitHub Security Advisories API | 17,049 methods | ~16,980 methods |
-| **Large Python Corpus** | Open-source Python & Verified CVEs | 155,014 singles | ~116,941 singles |
-| **Master Dataset (Consolidated)** | Unified, Deduplicated & Validated | **175,048** | **139,879 mẫu** (30,193 Vuln / 109,686 Safe) |
-| **Master PDG Graphs** | Program Dependence Graphs (AST+CFG+DFG+Call) | — | **139,847 đồ thị** |
+| **CVEFixes** | Cơ sở dữ liệu SQLite Zenodo (v1.0.8) | 2,985 cặp sửa lỗi | ~5,958 hàm |
+| **GHSA** | GraphQL API của GitHub Security Advisories | 17,049 hàm | ~16,980 hàm |
+| **Large Python Corpus** | Kho mã nguồn mở đa dạng & CVE đã xác thực | 155,014 hàm đơn lẻ | ~116,941 hàm đơn lẻ |
+| **Master Dataset (Hợp nhất)** | **Khử trùng lặp SHA-1 toàn cục & Xác thực AST** | **175,048** | **139,879 mẫu** (109,686 An toàn / 30,193 Lỗ hổng) |
+| **Master PDG Graphs** | Đồ thị PDG: node AST + 3 quan hệ cạnh (CONTROL, DATA, CALL) | — | **139,847 đồ thị** |
 
-Phân chia tập dữ liệu theo quy chuẩn **80/10/10 Strict Repository-Disjoint** (ngăn chặn 100% rò rỉ repository giữa các tập):
-- 🏋️ **Train Set**: **111,902 mẫu** (87,748 Safe / 24,154 Vulnerable)
-- ⚖️ **Validation Set**: **13,987 mẫu** (10,968 Safe / 3,019 Vulnerable)
-- 🧪 **Test Set (Held-out)**: **13,990 mẫu** (10,970 Safe / 3,020 Vulnerable)
+Phân chia tập dữ liệu theo quy chuẩn **80/10/10 Strict Repository-Disjoint** (ngăn chặn 100% rò rỉ cú pháp giữa các tập):
+- 🏋️ **Tập huấn luyện (Train Set)**: **111,902 mẫu** (87,748 An toàn / 24,154 Lỗ hổng)
+- ⚖️ **Tập kiểm định (Validation Set)**: **13,987 mẫu** (10,968 An toàn / 3,019 Lỗ hổng)
+- 🧪 **Tập kiểm thử độc lập (Test Set)**: **13,990 mẫu** (10,970 An toàn / 3,020 Lỗ hổng)
 
 ```json
 {
   "sample_id": "cvefixes:98919200308f75a4:vulnerable",
-  "code": "def run_query(q):\n    return db.execute('SELECT * WHERE id = ' + q)",
-  "binary_label": 1,
-  "input_ids": [13, 298, ...]
+  "repository": "pallets/flask",
+  "code": "def run_query(user_query):\n    return db.execute('SELECT * FROM users WHERE id = ' + user_query)",
+  "binary_label": 1
 }
 ```
 
 ---
 
-## ⚡ Quick Start — 60s
+## ⚡ Bắt đầu nhanh — 60 giây
 
-### 1. Environment Setup
+### 1. Cài đặt môi trường
 
 ```bash
-# Clone repository
+# Nhân bản repository
 git clone https://github.com/NhatWoan-20/VulHunter.git
 cd VulHunter
 
-# Setup virtual environment
+# Khởi tạo môi trường ảo Python
 python -m venv .venv
-# Windows: .venv\Scripts\Activate.ps1
-# Linux/macOS: source .venv/bin/activate
+# Kích hoạt trên Windows PowerShell: .venv\Scripts\Activate.ps1
+# Kích hoạt trên Linux/macOS: source .venv/bin/activate
 
-# Install PyTorch với CUDA
+# Cài đặt PyTorch hỗ trợ CUDA tương ứng
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install dependencies
+# Cài đặt các thư viện phụ thuộc của dự án
 pip install -r requirements.txt
 pip install -e .
 ```
@@ -140,34 +154,34 @@ pip install -e .
 ### 2. Chuẩn bị dữ liệu (Local hoặc Kaggle)
 
 ```bash
-# Full pipeline: master → samples → AST → graphs → tokenize → split
+# Chạy toàn bộ pipeline tiền xử lý: gộp nguồn -> làm sạch -> AST -> đồ thị PDG -> phân chia tập
 python scripts/preprocessing/run_pipeline.py
 
-# Nếu chỉ cần semantic-only (không cần graph):
+# Nếu chỉ chạy thực nghiệm ngữ nghĩa (bỏ qua trích xuất đồ thị):
 python scripts/preprocessing/run_pipeline.py --skip-graph
 
-# Nếu chỉ cần graph-only (không cần tokenize):
+# Nếu chỉ chạy thực nghiệm đồ thị (bỏ qua tokenize văn bản):
 python scripts/preprocessing/run_pipeline.py --skip-tokenize
 ```
 
-### 3. Training
+### 3. Huấn luyện mô hình
 
 ```bash
-# Semantic-only baseline
+# Kịch bản 1: Nhánh ngữ nghĩa thuần túy (CodeBERT Full Fine-Tuning)
 python scripts/training/train.py \
     --mode semantic_only \
     --config configs/train/semantic_codebert.yaml \
     --model-config configs/model/default.yaml \
     --use-amp
 
-# Graph-only baseline
+# Kịch bản 2: Nhánh đồ thị thuần túy (RGCN trên Program Dependence Graphs)
 python scripts/training/train.py \
     --mode graph_only \
     --config configs/train/graph.yaml \
     --graph-data data/processed/master_pdg.jsonl \
     --use-amp
 
-# Fusion (đề xuất chính)
+# Kịch bản 3: Dung hợp đa phương thức đề xuất (CodeBERT + RGCN qua FiLM Modulation)
 python scripts/training/train.py \
     --mode fusion \
     --config configs/train/fusion.yaml \
@@ -176,7 +190,7 @@ python scripts/training/train.py \
     --use-amp
 ```
 
-### 4. Evaluation
+### 4. Đánh giá kiểm thử độc lập
 
 ```bash
 python scripts/evaluation/evaluate.py \
@@ -186,7 +200,7 @@ python scripts/evaluation/evaluate.py \
     --output outputs/metrics/evaluation_report.json
 ```
 
-### 5. Triển Khai REST API với FastAPI (Production Mode)
+### 5. Triển khai REST API với FastAPI (Chế độ Production)
 
 VulHunter cung cấp microservice REST API hiệu năng cao (`scripts/api_deployment.py`) phục vụ suy luận thời gian thực cho mã nguồn Python. Service tích hợp tự động trích xuất đồ thị phụ thuộc PDG (Control Flow, Data Flow, Call), tự động nhận diện kiến trúc mô hình từ checkpoint `.pt` và hỗ trợ đầy đủ các chế độ (`fusion`, `semantic_only`, `graph_only`):
 
@@ -196,27 +210,27 @@ Server tuân thủ nguyên tắc **Fail-Fast**: bắt buộc phải có file che
 
 ```bash
 # Cách A: Chạy trực tiếp qua Python CLI với cờ --checkpoint
-python scripts/api_deployment.py --checkpoint notebooks/results/fusion_results/best.pt --port 8000
+python scripts/api_deployment.py --checkpoint models/checkpoints/best.pt --port 8000
 
 # Cách B: Sử dụng biến môi trường và Uvicorn
 # Windows PowerShell:
-$env:VULHUNTER_CHECKPOINT="notebooks/results/fusion_results/best.pt"
+$env:VULHUNTER_CHECKPOINT="models/checkpoints/best.pt"
 uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
 
 # Linux/macOS:
-export VULHUNTER_CHECKPOINT="notebooks/results/fusion_results/best.pt"
+export VULHUNTER_CHECKPOINT="models/checkpoints/best.pt"
 uvicorn scripts.api_deployment:app --host 0.0.0.0 --port 8000
 ```
 
-> 🌐 **Giao diện Swagger UI Trực quan**: Truy cập **`http://localhost:8000/docs`** trên trình duyệt để kiểm tra schema OpenAPI và test các endpoint trực tiếp.
+> 🌐 **Giao diện Swagger UI trực quan**: Truy cập **`http://localhost:8000/docs`** trên trình duyệt để kiểm tra schema OpenAPI và gửi request kiểm thử trực tiếp.
 
 #### 2. Thử nghiệm qua cURL (Linux / macOS / Git Bash)
 
 ```bash
-# A. Kiểm tra sức khỏe & trạng thái mô hình
+# A. Kiểm tra trạng thái hoạt động của service
 curl http://localhost:8000/health
 
-# B. Dự đoán 1 hàm đơn lẻ (Single Function Prediction)
+# B. Dự đoán cho 1 hàm đơn lẻ (Single Function Prediction)
 curl -X POST "http://localhost:8000/predict" \
      -H "Content-Type: application/json" \
      -d '{"code": "def execute(cmd):\n    import os\n    os.system(cmd)"}'
@@ -233,10 +247,10 @@ curl -X POST "http://localhost:8000/predict/batch" \
 #### 3. Thử nghiệm trên Windows PowerShell (`Invoke-RestMethod`)
 
 ```powershell
-# A. Health Check
+# A. Kiểm tra sức khỏe hệ thống
 Invoke-RestMethod -Uri "http://localhost:8000/health" -Method Get | ConvertTo-Json
 
-# B. Kiểm tra hàm nguy hiểm
+# B. Kiểm tra đoạn mã nghi vấn
 $payload = @{
     code = @"
 def execute(cmd):
@@ -263,52 +277,51 @@ def authenticate_user(cursor, username, password):
 
 response = requests.post(url, json={"code": sample_code})
 data = response.json()
-print(f"Vulnerable: {data['is_vulnerable']} (Prob: {data['vulnerability_probability']:.4f}, Risk: {data['risk_level']})")
-# Output: Vulnerable: True (Prob: 0.7111, Risk: HIGH)
+print(f"Có lỗ hổng: {data['is_vulnerable']} (Xác suất: {data['vulnerability_probability']:.4f}, Mức rủi ro: {data['risk_level']})")
+# Kết quả mẫu: Có lỗ hổng: True (Xác suất: 0.7111, Mức rủi ro: HIGH)
 ```
 
-#### 5. Chạy Bộ Kiểm Thử Tự Động Cho API (`pytest`)
+#### 5. Chạy bộ kiểm thử tự động cho API (`pytest`)
 
 ```bash
-# Chạy riêng bộ test FastAPI (6 unit & integration tests)
+# Chạy riêng bộ kiểm thử FastAPI (unit & integration tests)
 pytest tests/test_api.py -v
 ```
 
 ---
 
-## ☁️ Run on Kaggle (2x T4 GPUs)
+## ☁️ Huấn luyện trên Kaggle (2x T4 GPUs)
 
-> **Tự động clone:** Các notebooks sẽ tự động clone VulHunter từ GitHub khi chạy. Không cần upload dataset!
+> **Tự động clone:** Các notebook sẽ tự động clone mã nguồn VulHunter từ GitHub khi khởi chạy.
 
-### Workflow
+### Quy trình thực hiện
 
-1. **Launch Kaggle Notebook**:
-   - Accelerator: **GPU T4 x2**
-   - Internet: **ON** | Persistence: **ON**
-   - Add Input: `vulhunter-pre-tokenized` (dataset đã tokenized sẵn)
-   - *Lưu ý: Nếu không có dataset, notebooks sẽ tự clone repo và bạn cần chạy preprocessing*
+1. **Khởi tạo Kaggle Notebook**:
+   - Bộ tăng tốc phần cứng (Accelerator): **GPU T4 x2**
+   - Internet: **Bật (ON)** | Lưu trữ phiên làm việc (Persistence): **Bật (ON)**
+   - Thêm tập dữ liệu đầu vào (Input): `vulhunter-pre-tokenized` (bản dữ liệu đã tiền xử lý sẵn)
 
-2. **Notebooks sẵn có trong repo** (chi tiết xem tại [notebooks/README.md](notebooks/README.md)):
-   - **Executed Benchmarks** (chạy sẵn với full outputs & đánh giá trên 13,990 test samples):
-     - [`notebooks/results/vulhunter-fusion.ipynb`](notebooks/results/vulhunter-fusion.ipynb) — SOTA Multimodal Fusion (F1 = 0.7519, Recall = 0.8659)
-     - [`notebooks/results/vulhunter-semantic-only-codebert.ipynb`](notebooks/results/vulhunter-semantic-only-codebert.ipynb) — Semantic Baseline CodeBERT (F1 = 0.7514)
-     - [`notebooks/results/vulhunter-graph-only-advanced.ipynb`](notebooks/results/vulhunter-graph-only-advanced.ipynb) — Graph Advanced RGCN (Enriched Subtokens + Security Roles, F1 = 0.6094)
-     - [`notebooks/results/vulhunter-graph-only.ipynb`](notebooks/results/vulhunter-graph-only.ipynb) — Graph Baseline Pure AST (F1 = 0.4346)
-   - **Clean Templates** (đã dọn sạch outputs, sẵn sàng clone và train):
-     - [`notebooks/train_fusion.ipynb`](notebooks/train_fusion.ipynb) — Multi-modal fusion template
-     - [`notebooks/train_semantic_codebert.ipynb`](notebooks/train_semantic_codebert.ipynb) — Semantic CodeBERT template
-     - [`notebooks/train_graph_only.ipynb`](notebooks/train_graph_only.ipynb) — Graph baseline template
+2. **Danh sách Notebook sẵn có trong repo** (chi tiết xem tại [notebooks/README.md](../notebooks/README.md)):
+   - **Notebooks đã thực thi (Executed Benchmarks)** (kèm đầy đủ log huấn luyện, biểu đồ và kết quả đánh giá trên 13,990 mẫu test):
+     - [`notebooks/results/vulhunter-fusion.ipynb`](../notebooks/results/vulhunter-fusion.ipynb) — Mô hình SOTA Multimodal Fusion (F1 = 0.7519, Recall = 0.8659)
+     - [`notebooks/results/vulhunter-semantic-only-codebert.ipynb`](../notebooks/results/vulhunter-semantic-only-codebert.ipynb) — Nhánh ngữ nghĩa CodeBERT (F1 = 0.7514)
+     - [`notebooks/results/vulhunter-graph-only-advanced.ipynb`](../notebooks/results/vulhunter-graph-only-advanced.ipynb) — Nhánh đồ thị nâng cao RGCN (Subtoken Hashing + Security Roles, F1 = 0.6094)
+     - [`notebooks/results/vulhunter-graph-only.ipynb`](../notebooks/results/vulhunter-graph-only.ipynb) — Nhánh đồ thị thuần cú pháp Pure AST (F1 = 0.4346)
+   - **Notebooks mẫu sạch (Clean Templates)** (đã dọn sạch output, sẵn sàng clone và huấn luyện):
+     - [`notebooks/train_fusion.ipynb`](../notebooks/train_fusion.ipynb) — Mẫu huấn luyện Multi-Modal Fusion
+     - [`notebooks/train_semantic_codebert.ipynb`](../notebooks/train_semantic_codebert.ipynb) — Mẫu huấn luyện Semantic CodeBERT
+     - [`notebooks/train_graph_only.ipynb`](../notebooks/train_graph_only.ipynb) — Mẫu huấn luyện Graph RGCN
 
 3. **Sau khi clone thành công**, notebook sẽ:
-   - Cài đặt dependencies tự động
-   - Import modules và hiển thị "All imports OK"
-   - Sẵn sàng để train
+   - Tự động cài đặt dependencies cần thiết
+   - Nạp các module hệ thống và kiểm tra tương thích CUDA
+   - Khởi động quá trình huấn luyện phân tán với FP16 AMP
 
 ---
 
-## 🚀 Training Modes
+## 🚀 Các chế độ huấn luyện
 
-#### Scenario A: Semantic-Only (CodeBERT)
+#### Kịch bản A: Nhánh ngữ nghĩa thuần túy (Semantic-Only CodeBERT)
 ```bash
 python scripts/training/train.py \
   --mode semantic_only \
@@ -317,10 +330,10 @@ python scripts/training/train.py \
   --use-amp
 ```
 
-#### Scenario B: Graph-Only Structural Learning (RGCN)
-Hỗ trợ cả 2 kỹ thuật biểu diễn nút (chuyển đổi qua cấu hình trong [`notebooks/train_graph_only.ipynb`](notebooks/train_graph_only.ipynb)):
-- **Graph Advanced [Đề xuất]**: RGCN + Enriched Subtoken Hashing (16k) + Security Role Taint Flags (F1 = **0.6094**, ROC-AUC = **0.8452**).
-- **Pure AST Baseline**: RGCN + NodeType Embedding thuần (F1 = **0.4346**, ROC-AUC = **0.7034**).
+#### Kịch bản B: Nhánh cấu trúc đồ thị thuần túy (Graph-Only RGCN)
+Hỗ trợ cả 2 kỹ thuật biểu diễn nút (chuyển đổi qua cấu hình trong [`notebooks/train_graph_only.ipynb`](../notebooks/train_graph_only.ipynb)):
+- **Graph Advanced [Đề xuất]**: RGCN + Băm subtoken phong phú (16k) + Cờ vai trò bảo mật (F1 = **0.6094**, ROC-AUC = **0.8452**).
+- **Pure AST Baseline**: RGCN + Tầng nhúng NodeType thuần túy (F1 = **0.4346**, ROC-AUC = **0.7034**).
 
 ```bash
 python scripts/training/train.py \
@@ -330,7 +343,7 @@ python scripts/training/train.py \
   --use-amp
 ```
 
-#### Scenario C: Multi-Modal Fusion (CodeBERT + RGCN)
+#### Kịch bản C: Dung hợp đa phương thức đề xuất (Multi-Modal Fusion: CodeBERT + RGCN)
 ```bash
 python scripts/training/train.py \
   --mode fusion \
@@ -341,154 +354,137 @@ python scripts/training/train.py \
   --use-amp
 ```
 
-### Tips:
+### Gợi ý tham số hữu ích:
 
-- **`--tune-threshold`**: Auto-tune classification threshold trên val set sau mỗi epoch.
-- **`--use-amp`**: Bật FP16 mixed precision.
-- **`--data-parallel`**: Force single-node DataParallel (thay vì DDP).
+- **`--tune-threshold`**: Tự động quét tìm ngưỡng phân loại tối ưu $F1$ trên tập validation sau mỗi epoch.
+- **`--use-amp`**: Kích hoạt chế độ tính toán độ chính xác hỗn hợp FP16 (Automatic Mixed Precision).
+- **`--data-parallel`**: Phân chia batch tính toán song song trên cả 2 GPU T4 của Kaggle.
 
 ---
 
-## 📊 Benchmarks & Evaluation
+## 📊 Kết quả thực nghiệm & Đánh giá
 
-Đánh giá theo in-domain test protocol:
-1. **In-Domain**: Held-out 10% test split từ Master Dataset (repo-disjoint).
+Đánh giá thực nghiệm trên tập test độc lập gồm **13,990 mẫu** (10,970 An toàn / 3,020 Lỗ hổng) được phân chia nghiêm ngặt theo quy tắc **strict repository-disjoint (80/10/10)**:
 
-### Metric Targets (binary classification)
+### Bảng so sánh hiệu năng tổng thể trên tập Test (13,990 mẫu)
 
-| Metric | Rất kém | Kém | Trung bình | Tốt | Rất tốt |
-|:---|:---:|:---:|:---:|:---:|:---:|
-| AUC-ROC | <0.55 | 0.55-0.65 | 0.65-0.75 | 0.75-0.85 | >0.85 |
-| F1 Score | <0.20 | 0.20-0.40 | 0.40-0.60 | 0.60-0.75 | >0.75 |
-| Precision | — | — | — | >0.70 | >0.80 |
-| Recall | — | — | — | >0.65 | >0.75 |
-
-### Benchmark Results (13,990 Test Samples)
-
-Đánh giá thực nghiệm trên tập test độc lập **13,990 mẫu** (10,970 Safe / 3,020 Vulnerable) chia theo giao thức **strict repository-disjoint (80/10/10)**:
-
-| Model Variant | Architecture / Encoder | Optimal Threshold | Binary F1 | Recall | Precision | ROC-AUC | PR-AUC | MCC |
+| Biến thể mô hình | Kiến trúc / Bộ mã hóa | Ngưỡng tối ưu | Binary F1 | Recall (Độ nhạy) | Precision | ROC-AUC | PR-AUC | Matthews Corr (MCC) |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Graph Baseline** | 3-layer RGCN (Pure AST) | 0.65 | 0.4346 | 0.7258 | 0.3101 | 0.7034 | 0.3847 | 0.2315 |
-| **Graph Advanced** | RGCN + Enriched Subtoken Hashing + Security Roles | 0.55 | 0.6094 | 0.7570 | 0.5100 | 0.8452 | 0.5420 | 0.4909 |
-| **Semantic Baseline** | CodeBERT Full Fine-Tuning | 0.45 | 0.7514 | 0.8603 | **0.6670** | **0.9402** | 0.7916 | 0.6811 |
-| 🛡️ **VulHunter Fusion** | **CodeBERT + Enriched RGCN + FiLM Modulation** | **0.25** | **0.7519** | **0.8659** | 0.6644 | 0.9399 | **0.7921** | **0.6821** |
+| **Graph Baseline** | 3-layer RGCN (Pure AST) | 0.6500 | 0.4346 | 0.7258 | 0.3101 | 0.7034 | 0.3847 | 0.2315 |
+| **Graph Advanced** | RGCN + Subtoken Hashing + Security Roles | 0.5500 | 0.6094 *(+40.2%)* | 0.7570 | 0.5100 | 0.8452 *(+20.2%)* | 0.5420 *(+40.9%)* | 0.4909 *(+112.1%)* |
+| **Semantic Baseline** | CodeBERT Full Fine-Tuning (CLS Pooling) | 0.4500 | 0.7514 | 0.8603 | **0.6670** | **0.9402** | 0.7916 | 0.6811 |
+| 🛡️ **VulHunter Fusion** | **CodeBERT + Enriched RGCN + FiLM Modulation** | **0.2500** | **0.7519** | **0.8659** | 0.6644 | 0.9399 | **0.7921** | **0.6821** |
 
-#### Confusion Matrix Comparison (Held-out Test Set)
+### Chi tiết ma trận nhầm lẫn (Confusion Matrix Breakdown)
 
-| Model Variant | True Positives (TP) ↑ | False Positives (FP) ↓ | True Negatives (TN) ↑ | False Negatives (FN) ↓ |
-|:---|:---:|:---:|:---:|:---:|
-| **Graph Baseline (Pure AST)** | 2,192 | 4,876 | 6,094 | 828 |
-| **Graph Advanced (Enriched)** | 2,286 | 2,196 | 8,774 | 734 |
-| **Semantic Baseline (CodeBERT)** | 2,598 | **1,297** | **9,673** | 422 |
-| 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** |
+| Biến thể mô hình | Dương tính thật (TP) ↑ | Báo động giả (FP) ↓ | Âm tính thật (TN) ↑ | Bỏ sót lỗi (FN) ↓ | Ý nghĩa kỹ thuật & An ninh mạng |
+|:---|:---:|:---:|:---:|:---:|:---|
+| **Graph Baseline (Pure AST)** | 2,192 | 4,876 | 6,094 | 828 | Báo động giả rất cao do thiếu vắng ngữ nghĩa token |
+| **Graph Advanced (Enriched)** | 2,286 | 2,196 | 8,774 | 734 | Kỹ thuật băm subtoken giúp giảm 55% báo động giả |
+| **Semantic Baseline (CodeBERT)** | 2,598 | **1,297** | **9,673** | 422 | Baseline rất mạnh nhờ trọng số tiền huấn luyện lớn |
+| 🛡️ **VulHunter Fusion (SOTA)** | **2,615** | 1,321 | 9,649 | **405** | **Bắt được nhiều lỗ hổng nhất (2,615) & giảm số lỗi bỏ sót nguy hiểm xuống -4.03%** |
 
 > [!TIP]
-> **Key Finding**: Nhánh Fusion đạt **Recall cao nhất (86.59%)** và giảm số lượng lỗ hổng bị bỏ sót nguy hiểm (**False Negatives**) từ **422 xuống 405** (giảm 4.03%), đồng thời vượt trội về **F1 (0.7519)**, **PR-AUC (0.7921)** và **MCC (0.6821)** so với các mô hình đơn lẻ. Chi tiết training curves và confusion matrices có thể xem tại [notebooks/README.md](notebooks/README.md).
+> **Ý nghĩa thực tế của Recall & False Negatives**: Trong kiểm thử an ninh mã nguồn tự động, một ca **False Negative** (bỏ sót mã độc lọt lên production) là thảm họa an ninh mạng, trong khi False Positive (báo động giả) chỉ là chi phí duyệt mã bổ sung. VulHunter Fusion phát hiện được **2,615 trên tổng số 3,020 lỗ hổng thực tế**, đạt số ca bỏ sót thấp nhất (**chỉ 405 ca**), vượt trội hơn tất cả các biến thể đơn phương thức.
 
 ---
 
-## 📁 Project Structure
+## 📁 Cấu trúc thư mục dự án
 
 ```text
 VulHunter/
-├── configs/                     # Hyperparameter & architecture specs
-│   ├── model/default.yaml       # CodeBERT + RGCN + FiLM Cross-Attention
-│   ├── train/                   # Training profiles (semantic_codebert.yaml, graph.yaml, fusion.yaml)
-│   └── kaggle/                  # Kaggle profiles
-├── data/
-│   ├── raw/databases/           # CVEFixes DB extraction scripts
-│   └── splits/                  # Repo-disjoint train/validation/test splits
-├── notebooks/                   # Kaggle 2xT4 Notebooks & Benchmarks
-│   ├── README.md                # Detailed experimental reports & evaluation
-│   ├── train_fusion.ipynb                     # Clean template: Multi-modal fusion
-│   ├── train_semantic_codebert.ipynb          # Clean template: Semantic CodeBERT
-│   ├── train_graph_only.ipynb                 # Clean template: RGCN graph-only
-│   └── results/                 # ★ Executed benchmark notebooks (Full outputs)
+├── configs/                     # Cấu hình siêu tham số và kiến trúc mô hình
+│   ├── model/default.yaml       # Cấu hình mặc định: CodeBERT + RGCN + FiLM Cross-Attention
+│   ├── train/                   # Profile huấn luyện (semantic_codebert.yaml, graph.yaml, fusion.yaml)
+│   └── kaggle/                  # Profile chạy chuyên dụng trên Kaggle 2x T4
+├── data/                        # Công cụ trích xuất và sơ đồ dữ liệu
+│   ├── raw/databases/           # Script trích xuất database SQLite CVEFixes từ Zenodo
+│   └── splits/                  # Các tập train/val/test chia theo strict repository-disjoint
+├── notebooks/                   # Jupyter Notebooks & tích hợp Kaggle
+│   ├── README.md                # Báo cáo thực nghiệm và hướng dẫn chi tiết
+│   ├── train_fusion.ipynb       # Mẫu sạch: Multi-modal fusion
+│   ├── train_semantic_codebert.ipynb # Mẫu sạch: Semantic CodeBERT baseline
+│   ├── train_graph_only.ipynb   # Mẫu sạch: Graph RGCN baseline
+│   └── results/                 # ★ Executed notebooks (kèm đầy đủ output thực tế)
 │       ├── vulhunter-fusion.ipynb                 # SOTA Fusion (F1=0.7519, Recall=0.8659)
 │       ├── vulhunter-semantic-only-codebert.ipynb # Semantic CodeBERT (F1=0.7514)
-│       ├── vulhunter-graph-only-advanced.ipynb    # Graph Advanced (Enriched Subtokens + Security Roles, F1=0.6094)
+│       ├── vulhunter-graph-only-advanced.ipynb    # Graph Advanced (F1=0.6094)
 │       └── vulhunter-graph-only.ipynb             # Graph Pure AST Baseline (F1=0.4346)
-├── src/                         # Core VulHunter Library
-│   ├── semantic/encoder.py      # CodeBERT, CLS pooling
-│   ├── graph/encoder.py         # Heterogeneous RGCN Graph Encoder (AST/CFG/DFG)
-│   ├── fusion/cross_attention.py# FiLM Modulation / Bidirectional Cross-Attention + Residual Skip
-│   ├── multitask/model.py       # VulHunterModel (binary output)
-│   ├── multitask/heads.py       # BinaryHead
-│   └── utils/                   # Datasets, focal loss, metrics
-├── scripts/
-│   ├── extraction/merge_all_sources.py  # Unified master dataset builder
-│   ├── preprocessing/           # Clean, normalize, AST validate, split
-│   │   └── run_pipeline.py      # ★ End-to-end pipeline orchestrator
-│   ├── graph/                   # PDG extraction
-│   ├── training/train.py        # Distributed / AMP training runner
-│   ├── evaluation/evaluate.py   # Binary classification evaluation
-│   └── api_deployment.py        # FastAPI server
-├── tests/                       # Test suite (59 unit & integration tests)
-└── docs/                        # Research methodology & specifications
+├── src/                         # Thư viện mạng nơ-ron lõi của VulHunter
+│   ├── semantic/encoder.py      # Bộ mã hóa CodeBERT với CLS pooling & FP16 AMP
+│   ├── graph/encoder.py         # Mạng RGCN xử lý đồ thị PDG không đồng nhất
+│   ├── fusion/cross_attention.py# Khối FiLM Modulation & Bidirectional Cross-Attention
+│   ├── multitask/model.py       # Kiến trúc mô hình hợp nhất VulHunterModel
+│   ├── multitask/heads.py       # Tầng phân loại nhị phân BinaryHead
+│   └── utils/                   # Tập dữ liệu Lazy Loading Zero-RAM, Focal Loss, Metrics
+├── scripts/                     # Các công cụ CLI và pipeline độc lập
+│   ├── extraction/              # Thu thập và hợp nhất dữ liệu từ nhiều nguồn
+│   ├── preprocessing/           # Chuẩn hóa cú pháp, kiểm định AST và chia tập repo-disjoint
+│   │   ├── run_pipeline.py      # ★ Bộ điều phối toàn bộ pipeline tiền xử lý
+│   │   └── split.py             # Bộ phân chia dữ liệu cô lập repository
+│   ├── graph/build_pdg.py       # Công cụ sinh đồ thị PDG (AST, CFG, DFG, Call)
+│   ├── training/train.py        # Script huấn luyện phân tán và tối ưu phần cứng
+│   ├── evaluation/evaluate.py   # Script đánh giá mô hình trên tập test độc lập
+│   └── api_deployment.py        # Microservice suy luận thời gian thực với FastAPI
+├── tests/                       # Bộ kiểm thử tự động (59 unit & integration tests)
+└── docs/                        # Tài liệu đặc tả kỹ thuật và phương pháp luận nghiên cứu
 ```
 
 ---
 
-## 🧪 Testing & Verification
+## 🧪 Kiểm thử tự động & Xác minh chất lượng
 
 ```bash
-# Run all unit tests (59 tests)
+# Chạy toàn bộ 59 bài kiểm thử tự động
 pytest tests -q
 
-# Run specific test suites
+# Chạy chi tiết từng bộ kiểm thử cụ thể
 pytest tests/test_model.py -v
 pytest tests/test_api.py -v
 
-# Run with coverage
+# Đo lường mức độ bao phủ mã nguồn (Code Coverage)
 pytest tests --cov=src --cov-report=term-missing
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠️ Công nghệ sử dụng
 
-- **Deep Learning**: [PyTorch 2.1+](https://pytorch.org/), [HuggingFace Transformers](https://huggingface.co/docs/transformers/index)
-- **Foundation Model**: [CodeBERT](https://github.com/microsoft/CodeBERT) (125M, `microsoft/codebert-base`)
-- **Fine-tuning**: Full Fine-Tuning
-- **Graph Neural Network**: Relational Graph Convolutional Network (RGCN) via PyG
-- **Serving & Microservice**: [FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/), Pydantic
-- **Evaluation**: `scikit-learn`, `scipy`
+- **Học sâu (Deep Learning)**: [PyTorch 2.1+](https://pytorch.org/), [HuggingFace Transformers](https://huggingface.co/docs/transformers/index)
+- **Mô hình nền tảng (Foundation Model)**: [CodeBERT](https://github.com/microsoft/CodeBERT) (125M, `microsoft/codebert-base`)
+- **Chiến lược tối ưu hóa**: Tinh chỉnh toàn diện (Full Fine-Tuning) kết hợp FP16 AMP
+- **Mạng nơ-ron đồ thị (Graph Neural Network)**: Relational Graph Convolutional Network (RGCN) qua thư viện PyG
+- **Phục vụ suy luận & Microservice**: [FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/), Pydantic
+- **Đánh giá & Thống kê**: `scikit-learn`, `scipy`
 
 ---
 
-## 🔮 Hướng Phát Triển & Nghiên Cứu Mở Rộng (Future Directions)
+## 🔮 Hướng phát triển & Nghiên cứu mở rộng (Future Directions)
 
 Dự án đang tích cực mở rộng nghiên cứu sang thế hệ mô hình tiếp theo, kết hợp năng lực suy luận ngữ nghĩa của **Large Language Models (LLMs)** với tính chuẩn xác về cấu trúc luồng của **Graph Neural Networks (GNNs)**:
 
-### 1. Fine-tuning Foundation Code LLMs
+### 1. Tinh chỉnh các mô hình nền tảng Code LLMs
 - **Mô hình mục tiêu**: Đánh giá và benchmark các mô hình mã nguồn mở hàng đầu: `DeepSeek-Coder-V2 / 6.7B`, `CodeLlama-7B/13B`, `StarCoder2`, và `Qwen2.5-Coder`.
-- **Kỹ thuật tối ưu**: Áp dụng **Parameter-Efficient Fine-Tuning (PEFT / QLoRA 4-bit)** kết hợp **Focal Loss** để tinh chỉnh thích ứng trên tập dữ liệu lỗ hổng mất cân bằng, mở rộng context window lên $16\text{k} - 32\text{k}$ tokens nhằm bắt được các lỗ hổng liên hàm (inter-procedural vulnerabilities).
+- **Kỹ thuật tối ưu**: Áp dụng **Parameter-Efficient Fine-Tuning (PEFT / QLoRA 4-bit)** kết hợp **Focal Loss** để tinh chỉnh thích ứng trên tập dữ liệu lỗ hổng mất cân bằng, mở rộng context window lên $16\text{k} - 32\text{k}$ tokens nhằm bắt được các lỗ hổng liên hàm (inter-procedural taint flow).
 
-### 2. Mô Hình Kết Hợp LLM + Graph Reasoning (Graph-Augmented LLMs & Graph-RAG)
-Mặc dù LLM sở hữu năng lực hiểu ngữ nghĩa và quy ước code vượt trội, các nghiên cứu gần đây chỉ ra LLM thường gặp hiện tượng *"mù cấu trúc"* (structural blindness) và dễ hallucinate trên các đường dẫn lan truyền dữ liệu (taint flow) phức tạp hoặc phân nhánh rẽ nhiều cấp. Hướng tiếp cận kế thừa từ VulHunter:
-- **Graph-Guided Context Slicing (Graph-RAG)**: Sử dụng PDG (Program Dependence Graph) để cắt lát chương trình (program slicing) tự động từ Taint Source đến Dangerous Sink, đưa đúng lát cắt code quan trọng vào prompt của LLM thay vì nạp toàn bộ file code dài gây loãng tín hiệu chú ý (lost in the middle).
-- **Joint Graph-LLM Embedding Alignment**: Tương tự cơ chế FiLM / Bidirectional Cross-Attention trong nhánh Fusion của VulHunter, biểu diễn ẩn của LLM (hidden states) sẽ được điều biến hoặc tương tác trực tiếp với node/graph embeddings từ RGCN, kết hợp hoàn hảo giữa *suy luận ngữ nghĩa tự nhiên* và *ràng buộc luồng dữ liệu hình thức*.
+### 2. Mô hình kết hợp LLM + Đồ thị (Graph-Augmented LLMs & Graph-RAG)
+Mặc dù LLM sở hữu năng lực hiểu ngữ nghĩa và quy ước code vượt trội, các nghiên cứu gần đây chỉ ra LLM thường gặp hiện tượng *"mù cấu trúc"* (structural blindness) và dễ ảo giác trên các đường dẫn lan truyền dữ liệu (taint flow) phức tạp hoặc phân nhánh rẽ nhiều cấp. Hướng tiếp cận kế thừa từ VulHunter:
+- **Cắt lát ngữ cảnh định hướng đồ thị (Graph-RAG)**: Sử dụng PDG (Program Dependence Graph) để cắt lát chương trình (program slicing) tự động từ Taint Source đến Dangerous Sink, đưa đúng lát cắt code quan trọng vào prompt của LLM thay vì nạp toàn bộ file code dài gây loãng tín hiệu chú ý (lost in the middle).
+- **Đồng bộ không gian nhúng Joint Graph-LLM**: Tương tự cơ chế FiLM / Bidirectional Cross-Attention trong nhánh Fusion của VulHunter, biểu diễn ẩn của LLM (hidden states) sẽ được điều biến hoặc tương tác trực tiếp với node/graph embeddings từ RGCN, kết hợp hoàn hảo giữa *suy luận ngữ nghĩa tự nhiên* và *ràng buộc luồng dữ liệu hình thức*.
 
-### 3. Giải Thích và Định Vị Lỗ Hổng Trực Quan (Explainable AI - XAI)
-- **Taint Path Tracing**: Tận dụng đồ thị PDG để trích xuất và hiển thị trực quan cây lan truyền lỗ hổng (Vulnerability Propagation Path) trên giao diện web hoặc IDE extension.
-- **Automated Patch Generation**: Kết hợp kết quả phân loại nhị phân chính xác của VulHunter với khả năng sinh code sửa lỗi (vulnerability remediation) từ LLM theo zero-shot / few-shot prompting.
+### 3. Giải thích và định vị lỗ hổng trực quan (Explainable AI - XAI)
+- **Truy vết đường đi vết bẩn (Taint Path Tracing)**: Tận dụng đồ thị PDG để trích xuất và hiển thị trực quan cây lan truyền lỗ hổng (Vulnerability Propagation Path) trên giao diện web hoặc extension IDE.
+- **Tự động sinh bản vá lỗi (Automated Patch Generation)**: Kết hợp kết quả phân loại nhị phân chính xác của VulHunter với khả năng sinh code sửa lỗi (vulnerability remediation) từ LLM theo zero-shot / few-shot prompting.
 
 ---
 
-## 🤝 Contributing & License
+## 🤝 Đóng góp & Giấy phép sử dụng
 
-Contributions welcome! Đảm bảo pass existing unit tests (`pytest tests -q`).
+Hoan nghênh mọi đóng góp, phản hồi lỗi và đề xuất mở rộng nghiên cứu! Vui lòng đảm bảo các pull request đều vượt qua toàn bộ 59 bài kiểm thử tự động (`pytest tests -q`).
 
-Distributed under the **MIT License**.
+Phát hành theo giấy phép **MIT License**. Xem chi tiết tại [`LICENSE`](../LICENSE).
 
-### Acknowledgments
+### Lời cảm ơn (Acknowledgments)
 - **CVEFixes**: [secureIT-project/CVEfixes](https://github.com/secureIT-project/CVEfixes) (Zenodo DOI: `10.5281/zenodo.13118970`)
 - **GitHub Security Advisories (GHSA)**: [GitHub Advisory Database](https://github.com/advisories)
 - **CodeBERT**: Microsoft Research
-
-
-
-
-
-

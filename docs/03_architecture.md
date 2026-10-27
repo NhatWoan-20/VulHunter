@@ -1,8 +1,5 @@
 # 03 — System Architecture
 
-> **Version: 5.0** — Binary Classification Focus
-> **Authoritative Specification**
-
 ---
 
 ## 1. High-Level Architecture

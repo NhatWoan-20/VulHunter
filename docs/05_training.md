@@ -1,8 +1,5 @@
 # 05 — Training & Optimization
 
-> **Version: 5.0** — Binary Classification Focus
-> **Authoritative Specification**
-
 ---
 
 ## 1. Data Input Contract

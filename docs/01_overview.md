@@ -1,8 +1,5 @@
 # 01 — Project Overview & Research Objectives
 
-> **Version: 5.0** — **Binary Classification Focus**
-> **Authoritative Specification**
-
 ---
 
 ## 1. Problem Statement

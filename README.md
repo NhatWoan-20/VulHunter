@@ -1,7 +1,7 @@
 <h1 align="center">🛡️ VulHunter</h1>
 
 <p align="center">
-  <strong>Hybrid Multi-Modal Binary Vulnerability Detection for Python Source Code</strong><br/>
+  <strong>Hybrid Multi-Modal Vulnerability Detection for Function-Level Python</strong><br/>
   <em>CodeBERT (Semantic View) + Enriched Program Dependence Graph (RGCN) (Structural View) + FiLM Modulation / Cross-Attention (Fusion)</em>
 </p>
 
@@ -487,7 +487,7 @@ If you use VulHunter, its dataset engineering pipelines, or its benchmarks in yo
 ```bibtex
 @software{vulhunter2025,
   author       = {NhatWoan-20},
-  title        = {VulHunter: Hybrid Multi-Modal Binary Vulnerability Detection for Python Source Code},
+  title        = {VulHunter: Hybrid Multi-Modal Vulnerability Detection for Function-Level Python},
   year         = {2025},
   publisher    = {GitHub},
   journal      = {GitHub repository},
