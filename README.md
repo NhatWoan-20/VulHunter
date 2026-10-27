@@ -12,7 +12,6 @@
   <img src="https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Kaggle-2xT4-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
   <img src="https://img.shields.io/badge/Tests-59%20Passed-brightgreen" alt="Tests">
-  <a href="https://doi.org/10.5281/zenodo.13118970"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.13118970-blue" alt="DOI"></a>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Docs-%F0%9F%87%BB%F0%9F%87%B3%20Ti%E1%BA%BFng%20Vi%E1%BB%87t-orange" alt="Vietnamese Docs"></a>
 </p>
